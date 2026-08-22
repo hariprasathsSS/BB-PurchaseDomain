@@ -1,0 +1,31 @@
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# backend runtime artifacts — regenerated on startup
+Backend/poc.db
+Backend/server.log
+.env
+
+# keep the uploads directory, never its contents
+Backend/uploads/*
+!Backend/uploads/.gitkeep
+
+# images — scans, samples and screenshots stay out of git
+*.png
+*.jpg
+*.jpeg
+*.pdf
+# except the Expo app icons; app.json references them by path and the build fails without them
+!Mobile/assets/*.png
+
+.claude/
+
+# node / expo
+node_modules/
+.expo/
+*.log
+Sample/
+*.md
