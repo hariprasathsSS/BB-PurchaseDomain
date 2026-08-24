@@ -1,14 +1,19 @@
-"""Construction Purchase POC — scanner backend.
+"""Construction Purchase POC — HTTP layer.
 
-Receives scanned documents from the mobile app and stores them on local disk.
+Receives documents from the mobile scanner and from the web console, stores the
+pixels on local disk, and hands each one to extraction in the background.
 
     python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
+This module owns HTTP only. Storage lives in db.py, extraction in extract.py.
+
 Env overrides:
-    SECRET_KEY    HMAC key for session tokens   (default: dev-insecure-key)
-    SESSION_TTL   token lifetime in seconds     (default: 900)
-    HOST_IP       LAN IP to advertise in the QR (default: auto-detected)
-    PORT          port to advertise in the QR   (default: 8000)
+    ANTHROPIC_API_KEY  Claude credentials for extraction (no key = no extraction)
+    EXTRACT_MODEL      override the extraction model     (default: claude-opus-5)
+    SECRET_KEY         HMAC key for session tokens       (default: dev-insecure-key)
+    SESSION_TTL        token lifetime in seconds          (default: 900)
+    HOST_IP            LAN IP to advertise in the QR      (default: auto-detected)
+    PORT               port to advertise in the QR        (default: 8000)
 """
 
 from __future__ import annotations
@@ -24,19 +29,23 @@ import socket
 import sqlite3
 import time
 import uuid
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
 import qrcode
 import qrcode.image.svg
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import (
+    BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
+import db
+import extract
+from db import UPLOAD_DIR, new_id
+
 BASE_DIR = Path(__file__).resolve().parent
-UPLOAD_DIR = BASE_DIR / "uploads"
-DB_PATH = BASE_DIR / "poc.db"
 FE_INDEX = BASE_DIR.parent / "FE" / "index.html"
 
 SECRET = os.environ.get("SECRET_KEY", "dev-insecure-key").encode()
@@ -44,63 +53,6 @@ SESSION_TTL = int(os.environ.get("SESSION_TTL", "900"))
 PORT = int(os.environ.get("PORT", "8000"))
 
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".pdf"}
-
-# The phone no longer says what a document is — classification happens here,
-# after upload. Until it runs, everything is UNCLASSIFIED.
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS projects (
-  id         TEXT PRIMARY KEY,
-  code       TEXT UNIQUE NOT NULL,
-  name       TEXT NOT NULL,
-  site       TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
-);
-CREATE TABLE IF NOT EXISTS scanner_sessions (
-  id            TEXT PRIMARY KEY,
-  session_token TEXT UNIQUE NOT NULL,
-  project_id    TEXT NOT NULL REFERENCES projects(id),
-  created_by    TEXT NOT NULL,
-  created_at    TEXT DEFAULT (datetime('now')),
-  expires_at    TEXT NOT NULL,
-  status        TEXT DEFAULT 'ACTIVE'
-);
-CREATE TABLE IF NOT EXISTS documents (
-  id            TEXT PRIMARY KEY,
-  session_id    TEXT REFERENCES scanner_sessions(id),
-  project_id    TEXT NOT NULL REFERENCES projects(id),
-  document_type TEXT NOT NULL DEFAULT 'UNCLASSIFIED',
-  file_paths    TEXT NOT NULL,          -- JSON array, one entry per page
-  page_count    INTEGER NOT NULL,
-  status        TEXT DEFAULT 'PENDING',
-  uploaded_at   TEXT DEFAULT (datetime('now'))
-);
-"""
-
-
-# ── storage ──────────────────────────────────────────────────────────────────
-
-@contextmanager
-def db():
-    """A connection per request. FastAPI runs sync endpoints in a threadpool,
-    and sqlite3 connections are not shareable across threads."""
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    try:
-        yield con
-        con.commit()
-    finally:
-        con.close()
-
-
-def migrate(con) -> None:
-    """poc.db is checked in and full of test scans, so add the project columns
-    instead of asking anyone to delete it. Pre-project rows get ''."""
-    for table in ("scanner_sessions", "documents"):
-        columns = {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}
-        if "project_id" not in columns:
-            con.execute(
-                f"ALTER TABLE {table} ADD COLUMN project_id TEXT NOT NULL DEFAULT ''"
-            )
 
 
 # ── session tokens ───────────────────────────────────────────────────────────
@@ -164,11 +116,15 @@ def host_ip() -> str:
 
 
 def get_project(project_id: str) -> sqlite3.Row:
-    with db() as con:
+    with db.db() as con:
         row = con.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "No such project")
     return row
+
+
+def project_label(row: sqlite3.Row) -> str:
+    return f"{row['code']} — {row['name']}"
 
 
 def new_session(project_id: str, created_by: str = "web") -> dict:
@@ -180,7 +136,7 @@ def new_session(project_id: str, created_by: str = "web") -> dict:
     token = sign_token(session_id, expires)
     expires_iso = datetime.fromtimestamp(expires, timezone.utc).isoformat()
 
-    with db() as con:
+    with db.db() as con:
         con.execute(
             "INSERT INTO scanner_sessions (id, session_token, project_id, created_by,"
             " expires_at) VALUES (?, ?, ?, ?, ?)",
@@ -192,6 +148,7 @@ def new_session(project_id: str, created_by: str = "web") -> dict:
         "session_token": token,
         "expires_at": expires_iso,
         "project": dict(project),
+        "project_label": project_label(project),
         # Only what the phone needs to reach us. The project name comes back
         # from /health instead, so there is one authoritative copy of it.
         "qr_payload": {
@@ -223,6 +180,21 @@ def parse_page_counts(text: str, n_files: int) -> list[int]:
     return counts
 
 
+def save_page(upload: UploadFile, directory: Path, doc_id: str, page_no: int) -> str:
+    """Write one page to disk and return its stored relative path.
+
+    The client's filename is never used as a path — only its extension is read,
+    and only from a whitelist.
+    """
+    ext = Path(upload.filename or "").suffix.lower() or ".jpg"
+    if ext not in ALLOWED_EXT:
+        raise HTTPException(400, f"unsupported file type {ext!r}")
+    name = f"{doc_id}_p{page_no}{ext}"
+    with open(directory / name, "wb") as fh:
+        shutil.copyfileobj(upload.file, fh)
+    return f"uploads/{directory.name}/{name}"
+
+
 def qr_svg(data: str) -> str:
     img = qrcode.make(data, image_factory=qrcode.image.svg.SvgPathImage, box_size=9, border=2)
     buf = io.BytesIO()
@@ -237,10 +209,13 @@ def row_to_document(row: sqlite3.Row) -> dict:
         "project_id": row["project_id"],
         "project_code": row["project_code"],
         "project_name": row["project_name"],
+        "source": row["source"],
         "document_type": row["document_type"],
         "file_paths": json.loads(row["file_paths"]),
         "page_count": row["page_count"],
         "status": row["status"],
+        "duplicate_of": row["duplicate_of"],
+        "error": row["error"],
         "uploaded_at": row["uploaded_at"],
     }
 
@@ -249,11 +224,10 @@ def row_to_document(row: sqlite3.Row) -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    with db() as con:
-        con.executescript(SCHEMA)
-        migrate(con)
-    print(f"\n  Scanner page:  http://{host_ip()}:{PORT}\n")
+    db.init()
+    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        print("\n  ! No ANTHROPIC_API_KEY — uploads will store fine but extraction will fail.")
+    print(f"\n  Console:  http://{host_ip()}:{PORT}\n")
     yield
 
 
@@ -296,7 +270,7 @@ def scanner_page(project: str | None = None):
             "{{SESSION_ID}}": session["session_id"],
             "{{EXPIRES_AT}}": session["expires_at"],
             "{{PROJECT_ID}}": project,
-            "{{PROJECT_LABEL}}": session["qr_payload"]["projectName"],
+            "{{PROJECT_LABEL}}": session["project_label"],
         }
 
     html = FE_INDEX.read_text(encoding="utf-8")
@@ -307,7 +281,7 @@ def scanner_page(project: str | None = None):
 
 @app.get("/api/v1/projects")
 def list_projects():
-    with db() as con:
+    with db.db() as con:
         rows = con.execute("SELECT * FROM projects ORDER BY code").fetchall()
     return {"total": len(rows), "projects": [dict(r) for r in rows]}
 
@@ -319,9 +293,9 @@ def create_project(body: dict):
     if not code or not name:
         raise HTTPException(400, "code and name are required")
 
-    project_id = str(uuid.uuid4())
+    project_id = new_id("PRJ")
     try:
-        with db() as con:
+        with db.db() as con:
             con.execute(
                 "INSERT INTO projects (id, code, name, site) VALUES (?, ?, ?, ?)",
                 (project_id, code, name, str(body.get("site", "")).strip() or None),
@@ -343,18 +317,61 @@ def create_session(body: dict):
 def health(session_id: str = Depends(current_session)):
     """Also tells the phone which project it just connected to, so the operator
     can see it on screen without ever choosing it."""
-    with db() as con:
+    with db.db() as con:
         row = con.execute(
             "SELECT p.code, p.name FROM scanner_sessions s"
             " LEFT JOIN projects p ON p.id = s.project_id WHERE s.id = ?",
             (session_id,),
         ).fetchone()
-    label = f"{row['code']} — {row['name']}" if row and row["code"] else None
+    label = project_label(row) if row and row["code"] else None
     return {"status": "ok", "session_id": session_id, "project": label}
+
+
+# ── intake ───────────────────────────────────────────────────────────────────
+# Two paths, one storage shape. The phone posts pages grouped into documents
+# against a session; the browser posts loose files against a project. Neither
+# says what the documents are — the classifier decides that during extraction.
+
+def store_documents(
+    con: sqlite3.Connection,
+    directory: Path,
+    project_id: str,
+    session_id: str | None,
+    source: str,
+    groups: list[list[UploadFile]],
+) -> list[dict]:
+    """Write each group of pages as one document row. Returns the created rows."""
+    directory.mkdir(parents=True, exist_ok=True)
+    documents = []
+    for pages in groups:
+        doc_id = new_id("DOC")
+        rel_paths = [
+            save_page(upload, directory, doc_id, page_no)
+            for page_no, upload in enumerate(pages, start=1)
+        ]
+        con.execute(
+            "INSERT INTO documents (id, project_id, session_id, source, file_paths,"
+            " page_count) VALUES (?, ?, ?, ?, ?, ?)",
+            (doc_id, project_id, session_id, source, json.dumps(rel_paths), len(rel_paths)),
+        )
+        documents.append({
+            "document_id": doc_id,
+            "document_type": "UNCLASSIFIED",
+            "file_paths": rel_paths,
+            "page_count": len(rel_paths),
+            "status": "PENDING",
+        })
+    return documents
+
+
+def queue_extraction(background: BackgroundTasks, documents: list[dict]) -> None:
+    for document in documents:
+        background.add_task(extract.process, document["document_id"])
 
 
 @app.post("/api/v1/documents/batch-upload")
 def batch_upload(
+    background: BackgroundTasks,
     session_id: str = Depends(current_session),
     files: list[UploadFile] = File(...),
     page_counts: str = Form(...),
@@ -362,7 +379,7 @@ def batch_upload(
     """Receive N scanned pages grouped into documents, and write them to disk.
 
     The phone sends pixels and page boundaries, nothing else. Document type is
-    decided here by classification; the project comes from the session.
+    decided by the classifier; the project comes from the session.
 
     page_counts is one comma-separated count per document — "2,1,3" means the
     first three pages of `files` are one document, the next one another, and so
@@ -370,51 +387,53 @@ def batch_upload(
     """
     counts = parse_page_counts(page_counts, len(files))
 
-    with db() as con:
+    with db.db() as con:
         row = con.execute(
             "SELECT project_id FROM scanner_sessions WHERE id = ?", (session_id,)
         ).fetchone()
-    if row is None:
-        raise HTTPException(401, "Unknown session — scan the QR again")
-    project_id = row["project_id"]
+        if row is None:
+            raise HTTPException(401, "Unknown session — scan the QR again")
 
-    session_dir = UPLOAD_DIR / session_id
-    session_dir.mkdir(parents=True, exist_ok=True)
-
-    documents, cursor = [], 0
-    with db() as con:
+        groups, cursor = [], 0
         for pages in counts:
-            doc_id = str(uuid.uuid4())
-            rel_paths = []
+            groups.append(files[cursor:cursor + pages])
+            cursor += pages
 
-            for page_no in range(1, pages + 1):
-                upload = files[cursor]
-                cursor += 1
-                # The client's filename is never used as a path — only its
-                # extension is read, and only from a whitelist.
-                ext = Path(upload.filename or "").suffix.lower() or ".jpg"
-                if ext not in ALLOWED_EXT:
-                    raise HTTPException(400, f"unsupported file type {ext!r}")
-                name = f"{doc_id}_p{page_no}{ext}"
-                with open(session_dir / name, "wb") as fh:
-                    shutil.copyfileobj(upload.file, fh)
-                rel_paths.append(f"uploads/{session_id}/{name}")
+        documents = store_documents(
+            con, UPLOAD_DIR / session_id, row["project_id"], session_id, "SCAN", groups,
+        )
 
-            con.execute(
-                "INSERT INTO documents (id, session_id, project_id, file_paths,"
-                " page_count) VALUES (?, ?, ?, ?, ?)",
-                (doc_id, session_id, project_id, json.dumps(rel_paths), pages),
-            )
-            documents.append({
-                "document_id": doc_id,
-                "document_type": "UNCLASSIFIED",
-                "file_paths": rel_paths,
-                "page_count": pages,
-                "status": "PENDING",
-            })
-
+    queue_extraction(background, documents)
     return {"session_id": session_id, "total": len(documents), "documents": documents}
 
+
+@app.post("/api/v1/documents/upload")
+def web_upload(
+    background: BackgroundTasks,
+    project_id: str = Form(...),
+    files: list[UploadFile] = File(...),
+):
+    """Console upload: loose files picked in a browser, no phone and no session.
+
+    One file is one document. A multi-page PDF therefore stores as a single
+    document with page_count 1 — ponytail: the engine reads every page of the
+    PDF regardless, so counting them would mean a PDF library for a number
+    nothing reads. Add pypdf when the review UI needs a real page count.
+    """
+    if not files:
+        raise HTTPException(400, "no files were sent")
+    get_project(project_id)          # 404 before anything touches the disk
+
+    with db.db() as con:
+        documents = store_documents(
+            con, UPLOAD_DIR / "web", project_id, None, "UPLOAD", [[f] for f in files],
+        )
+
+    queue_extraction(background, documents)
+    return {"project_id": project_id, "total": len(documents), "documents": documents}
+
+
+# ── reads ────────────────────────────────────────────────────────────────────
 
 # Every read joins projects, so row_to_document always has the project columns.
 DOC_SELECT = """
@@ -425,7 +444,7 @@ SELECT d.*, p.code AS project_code, p.name AS project_name
 
 @app.get("/api/v1/documents")
 def list_documents(session_id: str | None = None, project_id: str | None = None,
-                   limit: int = 100):
+                   status: str | None = None, limit: int = 100):
     where, args = [], []
     if session_id:
         where.append("d.session_id = ?")
@@ -433,21 +452,91 @@ def list_documents(session_id: str | None = None, project_id: str | None = None,
     if project_id:
         where.append("d.project_id = ?")
         args.append(project_id)
+    if status:
+        where.append("d.status = ?")
+        args.append(status.upper())
 
     sql = DOC_SELECT + (f" WHERE {' AND '.join(where)}" if where else "")
     sql += " ORDER BY d.uploaded_at DESC, d.rowid DESC LIMIT ?"
-    with db() as con:
+    with db.db() as con:
         rows = con.execute(sql, (*args, limit)).fetchall()
     return {"total": len(rows), "documents": [row_to_document(r) for r in rows]}
 
 
 @app.get("/api/v1/documents/{document_id}")
 def get_document(document_id: str):
-    with db() as con:
+    """The document plus whatever extraction produced, for the review screen."""
+    with db.db() as con:
         row = con.execute(DOC_SELECT + " WHERE d.id = ?", (document_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "No such document")
+
+        header = con.execute(
+            "SELECT * FROM doc_headers WHERE document_id = ?", (document_id,)
+        ).fetchone()
+        lines = con.execute(
+            "SELECT * FROM doc_lines WHERE document_id = ? ORDER BY line_no", (document_id,)
+        ).fetchall()
+
+    return row_to_document(row) | {
+        "header": dict(header) if header else None,
+        "lines": [dict(line) for line in lines],
+    }
+
+
+@app.post("/api/v1/documents/{document_id}/extract")
+def reextract(document_id: str, background: BackgroundTasks):
+    """Re-run extraction — for a FAILED document, or after the engine changes."""
+    with db.db() as con:
+        row = con.execute("SELECT id FROM documents WHERE id = ?", (document_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "No such document")
-    return row_to_document(row)
+    background.add_task(extract.process, document_id)
+    return {"document_id": document_id, "status": "PROCESSING"}
+
+
+@app.post("/api/v1/documents/{document_id}/review")
+def review(document_id: str, body: dict):
+    """Mark a document reviewed, and learn any material mapping the human fixed.
+
+    A correction is the whole learning mechanism: the alias goes in the table and
+    the next document worded the same way is an exact hit.
+    """
+    reviewed_by = str((body or {}).get("reviewed_by", "")).strip()
+    if not reviewed_by:
+        raise HTTPException(400, "reviewed_by is required")
+
+    with db.db() as con:
+        row = con.execute(
+            "SELECT 1 FROM doc_headers WHERE document_id = ?", (document_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(409, "Nothing extracted yet — cannot review this document")
+
+        for fix in (body or {}).get("material_fixes") or []:
+            description, material_id = fix.get("description_raw"), fix.get("material_id")
+            if not description or not material_id:
+                raise HTTPException(400, "each material fix needs description_raw and material_id")
+            extract.learn_material_alias(con, description, material_id)
+            con.execute(
+                "UPDATE doc_lines SET material_id = ? WHERE document_id = ? AND description_raw = ?",
+                (material_id, document_id, description),
+            )
+
+        extract.mark_reviewed(con, document_id, reviewed_by)
+
+    return get_document(document_id)
+
+
+@app.get("/api/v1/materials")
+def list_materials(verified_only: bool = False):
+    """The review screen needs this to offer a correct material for a bad guess."""
+    sql = "SELECT * FROM materials"
+    if verified_only:
+        sql += " WHERE verified = 1"
+    with db.db() as con:
+        rows = con.execute(sql + " ORDER BY category, name").fetchall()
+    return {"total": len(rows), "materials": [dict(r) for r in rows]}
 
 
 # ── self-check: the token logic is the only security-critical part here ──────

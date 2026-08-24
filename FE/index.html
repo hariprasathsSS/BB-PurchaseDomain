@@ -3,13 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Purchase Document Scanner</title>
+<title>Purchase Division — Project Register</title>
 <style>
 /* ============================================================================
    Purchase Division — design system
-   Modelled on the Build Superfast (BSF) internal UI so the POC sits visually
-   alongside the tools the purchase team already uses.
-   No web fonts, no CDN — this runs on a site LAN with no guaranteed internet.
+   Palette inherited from the Build Superfast (BSF) internal UI so the POC sits
+   visually alongside the tools the purchase team already uses.
+   No web fonts, no CDN — this runs on a site LAN with no guaranteed internet,
+   so weight, size, casing and the mono face carry the personality instead.
    ========================================================================= */
 
 /* ── tokens ──────────────────────────────────────────────────────────────── */
@@ -44,8 +45,11 @@
   --radius:       6px;
   --radius-lg:    10px;
   --shadow:       0 1px 3px rgba(22, 39, 59, .08);
-  --shadow-lg:    0 2px 10px rgba(22, 39, 59, .10);
-  --header-h:     62px;
+  --shadow-lg:    0 8px 28px rgba(22, 39, 59, .18);
+  --header-h:     60px;
+
+  /* type */
+  --mono: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
 }
 
 /* ── base ────────────────────────────────────────────────────────────────── */
@@ -55,19 +59,32 @@ body {
   margin: 0;
   background: var(--page-bg);
   color: var(--text);
-  font: 14px/1.45 "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font: 14.5px/1.5 "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-a { color: var(--blue); text-decoration: none; }
+a { color: var(--blue); }
 
-code, .mono {
-  font-family: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
-  font-size: 12px;
-}
+code, .mono { font-family: var(--mono); }
 
 .muted { color: var(--text-muted); }
 .right { text-align: right; }
+
+/* Site laptops get dusty screens and daylight glare. Focus has to be loud. */
+:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* Section labels. Wide-tracked uppercase, the register-book register. */
+.eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
 
 /* ── app chrome: top bar ─────────────────────────────────────────────────── */
 .appbar {
@@ -76,8 +93,8 @@ code, .mono {
   color: var(--text-invert);
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 0 18px;
+  gap: 16px;
+  padding: 0 20px;
   position: sticky;
   top: 0;
   z-index: 20;
@@ -86,7 +103,7 @@ code, .mono {
 .brand {
   font-size: 21px;
   font-weight: 700;
-  letter-spacing: .3px;
+  letter-spacing: .2px;
   white-space: nowrap;
 }
 .brand em {
@@ -97,174 +114,99 @@ code, .mono {
   margin-left: 1px;
 }
 
-.hamburger {
-  background: none;
-  border: 0;
-  color: var(--text-invert);
-  font-size: 20px;
-  cursor: pointer;
-  padding: 6px 8px;
-  line-height: 1;
-  opacity: .85;
-}
-.hamburger:hover { opacity: 1; }
-
-.search {
-  flex: 0 1 420px;
-  position: relative;
-}
-.search input {
-  width: 100%;
-  height: 34px;
-  border: 0;
-  border-radius: 17px;
-  padding: 0 38px 0 16px;
-  background: #f2f5f8;
-  color: var(--text);
-  font-size: 13px;
-}
-.search input:focus { outline: 2px solid var(--blue); }
-.search::after {
-  content: "⌕";
-  position: absolute;
-  right: 14px;
-  top: 50%;
-  transform: translateY(-52%);
-  font-size: 18px;
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
 .appbar-spacer { flex: 1; }
 
-.appnav { display: flex; align-items: center; gap: 22px; }
-.appnav-item {
-  display: flex;
-  flex-direction: column;
+/* The address the phone has to reach. The one fact worth pinning to the bar. */
+.server-chip {
+  display: inline-flex;
   align-items: center;
-  gap: 2px;
-  font-size: 11px;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12.5px;
   color: #cfd8e3;
-  cursor: pointer;
-  position: relative;
-  min-width: 46px;
+  background: rgba(255, 255, 255, .08);
+  border-radius: 15px;
+  padding: 6px 14px;
 }
-.appnav-item:hover { color: #fff; }
-.appnav-item .ico { font-size: 17px; line-height: 1; }
-.appnav-item .dot {
-  position: absolute;
-  top: -2px;
-  right: 8px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--red);
+.server-chip b {
+  font-family: "Segoe UI", sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  color: #8fa3bb;
 }
+@media (max-width: 720px) { .server-chip { display: none; } }
 
 /* ── layout ──────────────────────────────────────────────────────────────── */
-.wrap { padding: 14px 18px 28px; }
-
-.grid-2 {
-  display: grid;
-  grid-template-columns: 340px 1fr;
-  gap: 14px;
-  align-items: start;
-}
-@media (max-width: 960px) {
-  .grid-2 { grid-template-columns: 1fr; }
-}
+.wrap { padding: 18px 20px 40px; max-width: 1560px; margin: 0 auto; }
 
 /* ── page title bar ──────────────────────────────────────────────────────── */
 .pagebar {
-  background: var(--card-bg);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
-  padding: 12px 18px;
   display: flex;
-  align-items: flex-end;
-  gap: 18px;
-  margin-bottom: 14px;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
   flex-wrap: wrap;
 }
-
 .pagebar h1 {
-  font-size: 21px;
-  font-weight: 600;
-  margin: 0 8px 4px 0;
-  white-space: nowrap;
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -.3px;
+  margin: 0;
 }
-
-.field { display: flex; flex-direction: column; gap: 3px; }
-.field label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-.field input {
-  height: 32px;
-  min-width: 150px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0 10px;
-  background: var(--input-bg);
-  color: var(--text);
-  font-size: 13px;
-}
-.field input:focus { outline: 0; border-color: var(--blue); }
-
+.pagebar .sub { color: var(--text-muted); font-size: 13.5px; margin-top: 2px; }
 .pagebar-spacer { flex: 1; }
 
+.search-projects {
+  height: 42px;
+  width: 250px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 13px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 14px;
+}
+.search-projects:focus { outline: 0; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(44, 123, 229, .18); }
+
 /* ── buttons ─────────────────────────────────────────────────────────────── */
+/* 42px tall, not 34 — these get tapped on touchscreen laptops with gloves on. */
 .btn {
-  height: 34px;
+  height: 42px;
   border: 0;
   border-radius: var(--radius);
-  padding: 0 16px;
-  font-size: 13px;
+  padding: 0 18px;
+  font-size: 14px;
   font-weight: 600;
+  font-family: inherit;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  justify-content: center;
+  gap: 8px;
   white-space: nowrap;
 }
 .btn-green { background: var(--green); color: #fff; }
 .btn-green:hover { background: #278653; }
 .btn-blue  { background: var(--blue);  color: #fff; }
 .btn-blue:hover { background: var(--blue-dark); }
+.btn-dark  { background: var(--header-bg); color: #fff; }
+.btn-dark:hover { background: #21374f; }
 .btn-ghost {
   background: var(--card-bg);
   color: var(--text);
   border: 1px solid var(--border);
 }
 .btn-ghost:hover { background: var(--row-hover); }
-
-.btn-icon {
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  justify-content: center;
-  font-size: 15px;
-}
-
-.btn-round {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--card-bg);
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 15px;
-}
-.btn-round:hover { color: var(--text); background: var(--row-hover); }
+.btn-lg { height: 48px; font-size: 15px; padding: 0 22px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
 
 /* ── KPI stat cards ──────────────────────────────────────────────────────── */
 .stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: 14px;
+  margin-bottom: 26px;
 }
 @media (max-width: 1100px) { .stats { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px)  { .stats { grid-template-columns: 1fr; } }
@@ -275,35 +217,206 @@ code, .mono {
   border-left: 4px solid var(--accent, var(--blue));
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
-  padding: 12px 16px;
+  padding: 15px 18px;
+}
+.stat .value {
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent, var(--blue));
+}
+.stat .label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 7px;
+}
+.stat.is-navy  { --accent: #2b4a6f; }
+.stat.is-green { --accent: var(--green); }
+.stat.is-amber { --accent: #c67f14; }
+.stat.is-blue  { --accent: var(--blue); }
+
+/* ── section head ────────────────────────────────────────────────────────── */
+.section-head {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
+  margin: 0 0 12px;
+  flex-wrap: wrap;
 }
-.stat .tile {
-  width: 42px;
-  height: 42px;
-  border-radius: var(--radius);
-  background: var(--accent, var(--blue));
-  color: #fff;
-  display: grid;
-  place-items: center;
-  font-size: 19px;
-  flex: none;
-}
-.stat .body { margin-left: auto; text-align: right; }
-.stat .value {
-  font-size: 21px;
+.section-head h2 {
+  font-size: 13px;
   font-weight: 700;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  margin: 0;
+  color: #465b73;
 }
-.stat .label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.section-head .spacer { flex: 1; }
+.count-badge {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  background: #e2e8ef;
+  border-radius: 10px;
+  padding: 2px 9px;
+}
 
-.stat.is-red   { --accent: #e05a47; }
-.stat.is-green { --accent: var(--green-light); }
-.stat.is-teal  { --accent: #35a58a; }
-.stat.is-blue  { --accent: #4a90d9; }
+/* ── project cards ───────────────────────────────────────────────────────── */
+.projects {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 14px;
+  margin-bottom: 30px;
+  align-items: stretch;
+}
+
+.pcard {
+  position: relative;
+  background: var(--card-bg);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 17px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+/* The active project — the one whose QR is on screen — carries the gold rule. */
+.pcard.is-active { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(233, 161, 59, .35), var(--shadow); }
+
+/* The project code, set in mono and large. On site this string is what people
+   read off the invoice and say out loud, so it is the card's headline. */
+.pcard .code {
+  font-family: var(--mono);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -.2px;
+  color: var(--header-bg);
+  word-break: break-all;
+}
+.pcard .pname {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  margin-top: 3px;
+}
+.pcard .site {
+  display: flex;
+  gap: 9px;
+  font-size: 13px;
+  color: #45566b;
+}
+.pcard .site .eyebrow { flex: none; padding-top: 2px; }
+
+/* Document tally — a measurement-book style strip, tabular so columns line up
+   across cards. */
+.tally {
+  display: flex;
+  gap: 18px;
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+  padding: 11px 0;
+  margin-top: auto;
+}
+.tally div { display: flex; flex-direction: column; gap: 2px; }
+.tally b {
+  font-family: var(--mono);
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.tally span { font-size: 10.5px; font-weight: 700; letter-spacing: .9px; text-transform: uppercase; color: var(--text-muted); }
+.tally .t-wait b { color: #c67f14; }
+
+/* ── Add Project tile ────────────────────────────────────────────────────── */
+/* Filled, not a dashed outline — a dashed box reads as a drop zone, and this is
+   a button. Navy rather than green keeps it under "+ Add invoice" in the
+   hierarchy: a site is registered monthly, an invoice arrives hourly. */
+.tile-add {
+  background: var(--header-bg);
+  border: 2px solid var(--header-bg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  min-height: 190px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 3px;
+  padding: 26px 22px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text-invert);
+  text-align: center;
+  transition: border-color .15s ease, transform .15s ease;
+}
+.tile-add:hover { border-color: var(--gold); transform: translateY(-1px); }
+.tile-add:active { transform: none; }
+
+.tile-add .plus {
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: var(--gold);
+  color: var(--header-bg);
+  font-size: 27px;
+  font-weight: 700;
+  line-height: 46px;
+  margin-bottom: 10px;
+}
+.tile-add .t { font-size: 17px; font-weight: 700; letter-spacing: -.1px; }
+.tile-add .d { font-size: 12.5px; line-height: 1.45; color: #9fb2c8; max-width: 25ch; }
+
+/* Sole occupant of an empty register — the invitation goes in the tile, not in
+   a separate box beside it. */
+.tile-add.is-only { grid-column: 1 / -1; min-height: 220px; }
+
+/* ── Add Invoice split control + menu ────────────────────────────────────── */
+.addinv { position: relative; }
+.addinv > .btn { width: 100%; }
+
+.menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.menu[hidden] { display: none; }
+.menu button {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  padding: 12px 14px;
+  cursor: pointer;
+  color: var(--text);
+}
+.menu button + button { border-top: 1px solid var(--border-soft); }
+.menu button:hover { background: var(--row-hover); }
+.menu .ico {
+  font-size: 18px;
+  line-height: 1.2;
+  width: 22px;
+  flex: none;
+  text-align: center;
+  color: var(--blue-dark);
+}
+.menu .t { font-size: 14px; font-weight: 600; display: block; }
+.menu .d { font-size: 12px; color: var(--text-muted); display: block; margin-top: 1px; }
 
 /* ── cards ───────────────────────────────────────────────────────────────── */
 .card {
@@ -313,15 +426,23 @@ code, .mono {
   overflow: hidden;
 }
 .card-head {
-  padding: 11px 16px;
+  padding: 13px 16px;
   border-bottom: 1px solid var(--border-soft);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
-.card-head h2 { font-size: 14px; font-weight: 600; margin: 0; }
+.card-head h2 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  margin: 0;
+  color: #465b73;
+}
 .card-head .spacer { flex: 1; }
-.card-body { padding: 16px; }
+.card-body { padding: 18px; }
 
 /* ── data table ──────────────────────────────────────────────────────────── */
 .table-scroll { overflow-x: auto; }
@@ -329,59 +450,64 @@ code, .mono {
 table.data {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 13.5px;
 }
 table.data thead th {
   background: var(--table-head);
   text-align: left;
-  font-weight: 600;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
   color: #33465c;
-  padding: 10px 12px;
+  padding: 11px 14px;
   border-bottom: 1px solid var(--border);
-  border-right: 1px solid #d3dce6;
   white-space: nowrap;
 }
-table.data thead th:last-child { border-right: 0; }
-
 table.data tr.filters th {
   background: var(--card-bg);
-  padding: 6px 8px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border);
+  text-transform: none;
+  letter-spacing: 0;
 }
 table.data tr.filters input {
   width: 100%;
-  height: 28px;
+  height: 34px;
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 0 8px;
-  font-size: 12px;
+  padding: 0 9px;
+  font-size: 13px;
+  font-family: inherit;
 }
 table.data tr.filters input:focus { outline: 0; border-color: var(--blue); }
 
 table.data tbody td {
-  padding: 10px 12px;
+  padding: 13px 14px;
   border-bottom: 1px solid var(--border-soft);
   vertical-align: middle;
 }
 table.data tbody tr:hover { background: var(--row-hover); }
-table.data td.num { text-align: right; font-variant-numeric: tabular-nums; }
-table.data .expand { color: var(--text-muted); width: 26px; text-align: center; cursor: pointer; }
+table.data td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+table.data td.mono { font-family: var(--mono); font-size: 12.5px; }
 
 .empty {
-  padding: 34px 16px;
+  padding: 40px 16px;
   text-align: center;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 /* ── pills ───────────────────────────────────────────────────────────────── */
 .pill {
   display: inline-block;
-  padding: 2px 9px;
+  padding: 3px 10px;
   border-radius: 11px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: .4px;
   line-height: 18px;
+  white-space: nowrap;
 }
 .pill-pending  { background: #fdf1dc; color: #96660f; }
 .pill-done     { background: #e2f4ea; color: #1d7245; }
@@ -390,51 +516,67 @@ table.data .expand { color: var(--text-muted); width: 26px; text-align: center; 
 .pill-po       { background: #ede8fa; color: #5533b8; }
 .pill-delivery { background: #e2f4ea; color: #1d7245; }
 .pill-unclassified { background: #eceff3; color: #64748b; }
+/* Works-contract / RA bills. Deliberately muted — they are classified so they
+   can be kept out of the material match path, not because anyone acts on them. */
+.pill-other    { background: #f3e8e4; color: #8a5a3b; }
+.pill-working  { background: #e7effb; color: #1a5fb4; }
 
-/* ── project picker ──────────────────────────────────────────────────────── */
-.project-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  background: #e7effb;
-  color: var(--blue-dark);
-  border-radius: 14px;
-  padding: 4px 13px;
-  font-size: 12.5px;
-  font-weight: 600;
+/* ── modal ───────────────────────────────────────────────────────────────── */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(22, 39, 59, .55);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  overflow: auto;
 }
+.backdrop[hidden] { display: none; }
 
-.picker { display: flex; flex-direction: column; gap: 10px; }
-.picker select,
-.picker input {
+.modal {
+  background: var(--card-bg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   width: 100%;
-  height: 36px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0 10px;
-  background: var(--input-bg);
-  color: var(--text);
-  font-size: 13px;
+  max-width: 440px;
 }
-.picker select:focus,
-.picker input:focus { outline: 0; border-color: var(--blue); }
-
-.picker-or {
+.modal-head {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  margin: 4px 0;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-soft);
 }
-.picker-or::before,
-.picker-or::after { content: ""; flex: 1; height: 1px; background: var(--border-soft); }
+.modal-head h2 { font-size: 17px; font-weight: 700; margin: 0; }
+.modal-head .for { font-family: var(--mono); font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+.modal-head .spacer { flex: 1; }
+.modal-body { padding: 18px; }
+.modal-foot {
+  display: flex;
+  gap: 10px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--border-soft);
+  background: #fafbfc;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.modal-foot .spacer { flex: 1; }
 
-.picker-note { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
-.picker-err { color: var(--red); font-size: 12.5px; min-height: 16px; }
+.close-x {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--card-bg);
+  color: var(--text-muted);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.close-x:hover { color: var(--text); background: var(--row-hover); }
 
-/* ── connection panel ────────────────────────────────────────────────────── */
+/* ── connection panel (inside the scan modal) ────────────────────────────── */
 .qr-frame {
   background: #fff;
   border: 1px solid var(--border);
@@ -444,338 +586,685 @@ table.data .expand { color: var(--text-muted); width: 26px; text-align: center; 
   place-items: center;
 }
 .qr-frame svg { width: 100%; height: auto; display: block; }
+.qr-missing { padding: 44px 10px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
 .steps {
-  margin: 14px 0 0;
-  padding-left: 18px;
-  font-size: 12.5px;
+  margin: 15px 0 0;
+  padding-left: 20px;
+  font-size: 13.5px;
   color: #45566b;
 }
-.steps li { margin-bottom: 5px; }
+.steps li { margin-bottom: 6px; }
 
 .kv {
-  margin-top: 14px;
+  margin-top: 15px;
   border-top: 1px solid var(--border-soft);
-  padding-top: 12px;
-  font-size: 12px;
+  padding-top: 13px;
+  font-size: 12.5px;
 }
-.kv div { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
+.kv div { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
 .kv span:first-child { color: var(--text-muted); }
-.kv span:last-child  { font-family: "Cascadia Mono", Consolas, monospace; text-align: right; word-break: break-all; }
+.kv span:last-child  { font-family: var(--mono); text-align: right; word-break: break-all; }
 
-.countdown { font-weight: 700; }
-.countdown.warn    { color: var(--gold); }
+.countdown { font-weight: 700; font-family: var(--mono); }
+.countdown.warn    { color: #c67f14; }
 .countdown.expired { color: var(--red); }
 
-.banner {
-  padding: 9px 14px;
+/* ── file upload panel ───────────────────────────────────────────────────── */
+.drop {
+  border: 2px dashed var(--border);
   border-radius: var(--radius);
-  font-size: 12.5px;
-  margin-bottom: 12px;
+  padding: 26px 18px;
+  text-align: center;
+  cursor: pointer;
+  background: #fafbfc;
+}
+.drop:hover, .drop.over { border-color: var(--blue); background: #f4f8fe; }
+.drop .ico { font-size: 26px; color: var(--blue-dark); }
+.drop .t { font-size: 14.5px; font-weight: 600; margin-top: 6px; }
+.drop .d { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+
+.filelist { list-style: none; margin: 14px 0 0; padding: 0; font-size: 13px; }
+.filelist li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.filelist .fname { flex: 1; word-break: break-all; }
+.filelist .fsize { font-family: var(--mono); font-size: 12px; color: var(--text-muted); }
+.filelist .drop-one {
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.filelist .drop-one:hover { color: var(--red); }
+
+/* ── banners ─────────────────────────────────────────────────────────────── */
+.banner {
+  padding: 11px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  margin-bottom: 14px;
 }
 .banner-warn { background: #fdf1dc; color: #7a5209; border: 1px solid #f0d9a8; }
+.banner-err  { background: #fbe4e1; color: #a5291b; border: 1px solid #f2c2bb; }
+.banner-ok   { background: #e2f4ea; color: #1d7245; border: 1px solid #b8e0c8; }
+.banner[hidden] { display: none; }
+
+/* ── form fields ─────────────────────────────────────────────────────────── */
+.form { display: flex; flex-direction: column; gap: 13px; }
+.form label { display: flex; flex-direction: column; gap: 5px; }
+.form label > span {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.form input {
+  height: 42px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 12px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 14.5px;
+  font-family: inherit;
+}
+.form input:focus { outline: 0; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(44, 123, 229, .18); }
+.form .hint { font-size: 12px; color: var(--text-muted); }
+
+/* ── print ───────────────────────────────────────────────────────────────── */
+/* The site office pins the day's intake list on the wall, so the register has
+   to survive a printer. Controls, chrome and anything mid-interaction go. */
+.print-head { display: none; }
+
+@media print {
+  body { background: #fff; }
+  .wrap { padding: 0; max-width: none; }
+
+  .appbar,
+  .search-projects,
+  .btn,
+  .close-x,
+  .addinv,
+  .tile-add,
+  .backdrop,
+  tr.filters,
+  #poll-note { display: none !important; }
+
+  .print-head {
+    display: block;
+    border-bottom: 2px solid var(--header-bg);
+    padding-bottom: 9px;
+    margin-bottom: 18px;
+  }
+  .print-head h1 { font-size: 19px; font-weight: 700; margin: 0; }
+  .print-head .when { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+
+  .pagebar { display: none; }
+  .stats { gap: 8px; margin-bottom: 18px; }
+  .stat, .pcard, .card { box-shadow: none; border: 1px solid var(--border); break-inside: avoid; }
+  .projects { gap: 8px; }
+
+  /* A table split mid-row is unreadable, and page 2 needs its own header. */
+  table.data thead { display: table-header-group; }
+  table.data tbody tr { break-inside: avoid; }
+}
 </style>
 </head>
 <body>
 
 <!-- ── app chrome ──────────────────────────────────────────────────────── -->
 <header class="appbar">
-  <button class="hamburger" title="Menu">&#9776;</button>
   <div class="brand">Purchase<em>Division</em></div>
-  <div class="search"><input type="search" placeholder="Search here..." aria-label="Search"></div>
   <div class="appbar-spacer"></div>
-  <nav class="appnav">
-    <div class="appnav-item"><span class="ico">&#9776;</span><span class="dot"></span>Activity</div>
-    <div class="appnav-item"><span class="ico">&#9998;</span>Ticket</div>
-    <div class="appnav-item"><span class="ico">&#128276;</span><span class="dot"></span>Notification</div>
-    <div class="appnav-item"><span class="ico">&#128172;</span>Message</div>
-    <div class="appnav-item"><span class="ico">&#9432;</span>Info</div>
-  </nav>
+  <span class="server-chip"><b>SERVER</b>{{SERVER_URL}}</span>
 </header>
 
 <div class="wrap">
 
+  <!-- Print only — a sheet with no title and no date is useless on a wall. -->
+  <div class="print-head">
+    <h1>Purchase Division — Project Register</h1>
+    <div class="when" id="print-when"></div>
+  </div>
+
   <!-- ── page title bar ───────────────────────────────────────────────── -->
   <div class="pagebar">
-    <h1>Purchase Document Scanner</h1>
-
-    <div class="field">
-      <label>Project</label>
-      <input id="project-label" type="text" readonly>
+    <div>
+      <h1>Project Register</h1>
+      <div class="sub">Pick a project, then add its invoices by phone scan or file upload.</div>
     </div>
-    <div class="field">
-      <label>Session started</label>
-      <input id="started" type="text" readonly>
-    </div>
-    <div class="field">
-      <label>QR expires in</label>
-      <input id="expires" type="text" readonly>
-    </div>
-
     <div class="pagebar-spacer"></div>
-
-    <button class="btn btn-ghost" id="btn-change">Change project</button>
-    <button class="btn btn-green" id="btn-refresh-qr">&#8635;&nbsp; Refresh QR</button>
-    <button class="btn-round" title="Print" onclick="window.print()">&#128424;</button>
+    <input class="search-projects" id="project-search" type="search"
+           placeholder="Search projects" aria-label="Search projects">
+    <button class="btn btn-ghost" onclick="window.print()">&#128424;&nbsp; Print</button>
   </div>
 
   <!-- ── KPI cards ────────────────────────────────────────────────────── -->
   <div class="stats">
-    <div class="stat is-red">
-      <div class="tile">&#9776;</div>
-      <div class="body"><div class="value" id="kpi-total">0</div><div class="label">Documents Received</div></div>
-    </div>
-    <div class="stat is-green">
-      <div class="tile">&#127991;</div>
-      <div class="body"><div class="value" id="kpi-classified">0</div><div class="label">Classified</div></div>
-    </div>
-    <div class="stat is-teal">
-      <div class="tile">&#8987;</div>
-      <div class="body"><div class="value" id="kpi-unclassified">0</div><div class="label">Awaiting Classification</div></div>
+    <div class="stat is-navy">
+      <div class="value" id="kpi-projects">0</div>
+      <div class="label">Projects</div>
     </div>
     <div class="stat is-blue">
-      <div class="tile">&#9636;</div>
-      <div class="body"><div class="value" id="kpi-pages">0</div><div class="label">Total Pages</div></div>
+      <div class="value" id="kpi-total">0</div>
+      <div class="label">Documents Received</div>
+    </div>
+    <div class="stat is-green">
+      <div class="value" id="kpi-classified">0</div>
+      <div class="label">Classified</div>
+    </div>
+    <div class="stat is-amber">
+      <div class="value" id="kpi-unclassified">0</div>
+      <div class="label">Awaiting Classification</div>
     </div>
   </div>
 
-  <div class="grid-2">
+  <!-- ── projects ─────────────────────────────────────────────────────── -->
+  <div class="section-head">
+    <h2>Projects</h2>
+    <span class="count-badge" id="project-count">—</span>
+  </div>
 
-    <!-- ── connect panel ──────────────────────────────────────────────── -->
-    <section class="card">
-      <div class="card-head">
-        <h2>Connect Mobile Scanner</h2>
-        <div class="spacer"></div>
-        <span class="project-tag" id="head-project" hidden></span>
+  <div class="projects" id="projects">
+    <div class="empty" style="grid-column:1/-1">Loading projects&hellip;</div>
+  </div>
+
+  <!-- ── received documents ───────────────────────────────────────────── -->
+  <section class="card">
+    <div class="card-head">
+      <h2>Documents Received</h2>
+      <span class="muted" id="poll-note"></span>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" id="btn-refresh">&#8635;&nbsp; Refresh</button>
+    </div>
+
+    <div class="table-scroll">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Document ID</th>
+            <th>Project</th>
+            <th>Type</th>
+            <th class="right">Pages</th>
+            <th>Status</th>
+            <th>Received</th>
+          </tr>
+          <tr class="filters">
+            <th><input data-col="0" placeholder="Filter ID"></th>
+            <th><input data-col="1" placeholder="Filter project"></th>
+            <th><input data-col="2" placeholder="Filter type"></th>
+            <th></th>
+            <th><input data-col="4" placeholder="Filter status"></th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr><td colspan="6" class="empty">No documents yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<!-- ── add project ────────────────────────────────────────────────────── -->
+<div class="backdrop" id="m-project" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-project-h">
+    <div class="modal-head">
+      <div><h2 id="m-project-h">Add project</h2></div>
+      <div class="spacer"></div>
+      <button class="close-x" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="banner banner-err" id="project-err" hidden></div>
+      <div class="form">
+        <label><span>Project code</span>
+          <input id="new-code" maxlength="40" placeholder="CHN-TOWER-1" autocomplete="off">
+          <span class="hint">Printed on the purchase orders. Used to match documents to this project.</span>
+        </label>
+        <label><span>Project name</span>
+          <input id="new-name" placeholder="Chennai Residential Tower" autocomplete="off">
+        </label>
+        <label><span>Site or location</span>
+          <input id="new-site" placeholder="Foundation Area" autocomplete="off">
+          <span class="hint">Optional.</span>
+        </label>
       </div>
+    </div>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" data-close>Cancel</button>
+      <button class="btn btn-green" id="btn-create">Add project</button>
+    </div>
+  </div>
+</div>
 
-      <!-- No project chosen yet: pick or add one. The phone has no such
-           screen — everything about a session is decided here. -->
-      <div class="card-body" id="pane-picker" hidden>
-        <div class="banner banner-warn">
-          Choose the construction project first. Every document the phone sends is
-          recorded against it.
-        </div>
-
-        <div class="picker">
-          <label class="field"><span>Existing project</span></label>
-          <select id="project-select"><option value="">Loading&hellip;</option></select>
-          <button class="btn btn-green" id="btn-use">Use this project &amp; show QR</button>
-
-          <div class="picker-or">OR ADD A NEW ONE</div>
-
-          <input id="new-code" placeholder="Project code — e.g. CHN-TOWER-1" maxlength="40">
-          <input id="new-name" placeholder="Project name — e.g. Chennai Residential Tower">
-          <input id="new-site" placeholder="Site / location (optional)">
-          <button class="btn btn-blue" id="btn-add">+ Add project</button>
-          <div class="picker-err" id="picker-err"></div>
-        </div>
+<!-- ── scan with phone ────────────────────────────────────────────────── -->
+<div class="backdrop" id="m-scan" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-scan-h">
+    <div class="modal-head">
+      <div>
+        <h2 id="m-scan-h">Scan with phone</h2>
+        <div class="for" id="scan-for"></div>
       </div>
+      <div class="spacer"></div>
+      <button class="close-x" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="qr-frame" id="qr-frame">{{QR_SVG}}</div>
 
-      <!-- Project chosen: the QR carries the server, the token and, through the
-           session, the project. -->
-      <div class="card-body" id="pane-qr" hidden>
-        <div class="qr-frame">{{QR_SVG}}</div>
+      <ol class="steps">
+        <li>Open the scanner app on the site phone.</li>
+        <li>Tap <strong>Scan QR to Connect</strong>.</li>
+        <li>Point it at this code &mdash; it carries the server, the session and the project.</li>
+        <li>Photograph the documents and tap <strong>Send All</strong>.</li>
+      </ol>
 
-        <ol class="steps">
-          <li>Open the scanner app on the site phone.</li>
-          <li>Tap <strong>Scan QR to Connect</strong>.</li>
-          <li>Point it at this code &mdash; it reads the server, the session and the project.</li>
-          <li>Scan the documents and tap <strong>Send All</strong>.</li>
-        </ol>
-
-        <div class="kv">
-          <div><span>Server</span><span>{{SERVER_URL}}</span></div>
-          <div><span>Project</span><span>{{PROJECT_LABEL}}</span></div>
-          <div><span>Session</span><span>{{SESSION_ID}}</span></div>
-        </div>
+      <div class="kv">
+        <div><span>Server</span><span>{{SERVER_URL}}</span></div>
+        <div><span>Project</span><span id="scan-project">—</span></div>
+        <div><span>Session</span><span>{{SESSION_ID}}</span></div>
+        <div><span>Code expires in</span><span class="countdown" id="expires">—</span></div>
       </div>
-    </section>
+    </div>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" data-close>Done</button>
+      <button class="btn btn-green" id="btn-refresh-qr">&#8635;&nbsp; New code</button>
+    </div>
+  </div>
+</div>
 
-    <!-- ── received documents ─────────────────────────────────────────── -->
-    <section class="card">
-      <div class="card-head">
-        <h2>Documents Received</h2>
-        <span class="muted" id="poll-note"></span>
-        <div class="spacer"></div>
-        <button class="btn btn-ghost" id="btn-refresh">Refresh</button>
-        <button class="btn btn-ghost" id="btn-all">Show all projects</button>
+<!-- ── upload files ───────────────────────────────────────────────────── -->
+<div class="backdrop" id="m-upload" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-upload-h">
+    <div class="modal-head">
+      <div>
+        <h2 id="m-upload-h">Upload files</h2>
+        <div class="for" id="upload-for"></div>
       </div>
+      <div class="spacer"></div>
+      <button class="close-x" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="banner banner-err" id="upload-err" hidden></div>
+      <div class="banner banner-ok"  id="upload-ok"  hidden></div>
 
-      <div class="table-scroll">
-        <table class="data">
-          <thead>
-            <tr>
-              <th style="width:26px"></th>
-              <th>Document ID</th>
-              <th>Project</th>
-              <th>Type</th>
-              <th class="right">Pages</th>
-              <th>Status</th>
-              <th>Received</th>
-            </tr>
-            <tr class="filters">
-              <th></th>
-              <th><input data-col="1" placeholder="Filter"></th>
-              <th><input data-col="2" placeholder="Filter"></th>
-              <th><input data-col="3" placeholder="Filter"></th>
-              <th></th>
-              <th><input data-col="5" placeholder="Filter"></th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="rows">
-            <tr><td colspan="7" class="empty">Waiting for the phone to send documents&hellip;</td></tr>
-          </tbody>
-        </table>
+      <div class="drop" id="drop" tabindex="0" role="button"
+           aria-label="Choose files to upload">
+        <div class="ico">&#11014;</div>
+        <div class="t">Choose files</div>
+        <div class="d">Photos or PDFs of invoices, purchase orders and delivery challans. Drag them here or click to browse.</div>
       </div>
-    </section>
+      <input id="file-input" type="file" multiple hidden
+             accept=".pdf,.jpg,.jpeg,.png,image/jpeg,image/png,application/pdf">
 
+      <ul class="filelist" id="filelist"></ul>
+    </div>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" data-close>Cancel</button>
+      <button class="btn btn-green" id="btn-send" disabled>Upload</button>
+    </div>
   </div>
 </div>
 
 <script>
+/* Injected by the backend on GET / — a session and QR exist only when the page
+   was opened with ?project=<id>, which is what "Scan with phone" does. */
 const SESSION_ID    = "{{SESSION_ID}}";
 const EXPIRES_AT    = "{{EXPIRES_AT}}";
 const PROJECT_ID    = "{{PROJECT_ID}}";
 const PROJECT_LABEL = "{{PROJECT_LABEL}}";
 
-const $ = id => document.getElementById(id);
+/* Scan and upload are two different intake paths with two different APIs.
+   Scan: the phone posts to /documents/batch-upload with a session token.
+   Upload: the browser posts here, with no session — there is no phone. */
+const UPLOAD_URL = "/api/v1/documents/upload";
 
+const $ = id => document.getElementById(id);
 const esc = t => String(t ?? "").replace(/[&<>"]/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-let scopeAll = false;
+let projects = [];
+let docs     = [];
 let filters  = {};
+let search   = "";
+let picked   = [];        // files chosen in the upload modal
+let uploadTo = null;      // project the upload modal is acting on
 
-/* ── project gate ─────────────────────────────────────────────────────── */
-/* The server issues a QR only for ?project=<id>, so with no project the page
-   shows the picker and nothing else. */
-const hasProject = !!PROJECT_ID;
+/* ── modals ───────────────────────────────────────────────────────────── */
+const openModal = id => {
+  $(id).hidden = false;
+  /* Land on the thing to fill in, not on the ✕ that happens to come first in
+     the markup. The scan modal has no field, so it falls back to Close. */
+  $(id).querySelector(".modal-body input, .modal-body .drop, [data-close]")?.focus();
+};
+const closeModal = id => { $(id).hidden = true; };
 
-$("pane-picker").hidden = hasProject;
-$("pane-qr").hidden     = !hasProject;
-$("btn-change").hidden  = !hasProject;
-$("btn-refresh-qr").hidden = !hasProject;
-$("project-label").value = hasProject ? PROJECT_LABEL : "— none selected —";
-
-if (hasProject) {
-  $("head-project").hidden = false;
-  $("head-project").textContent = PROJECT_LABEL;
-}
-
-$("btn-change").addEventListener("click", () => { location.href = "/"; });
-$("btn-refresh-qr").addEventListener("click", () => {
-  location.href = `/?project=${encodeURIComponent(PROJECT_ID)}`;
+document.querySelectorAll(".backdrop").forEach(back => {
+  back.addEventListener("click", e => {
+    if (e.target === back || e.target.closest("[data-close]")) closeModal(back.id);
+  });
+});
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  document.querySelectorAll(".backdrop:not([hidden])").forEach(b => closeModal(b.id));
+  closeMenus();
 });
 
-const openProject = id => { location.href = `/?project=${encodeURIComponent(id)}`; };
+/* ── project cards ────────────────────────────────────────────────────── */
+const tallyOf = id => {
+  const mine = docs.filter(d => d.project_id === id);
+  const wait = mine.filter(d => d.document_type === "UNCLASSIFIED").length;
+  return { total: mine.length, wait, pages: mine.reduce((n, d) => n + d.page_count, 0) };
+};
 
-async function loadProjects() {
-  const sel = $("project-select");
-  try {
-    const { projects } = await (await fetch("/api/v1/projects")).json();
-    sel.innerHTML = projects.length
-      ? projects.map(p => `<option value="${esc(p.id)}">${esc(p.code)} — ${esc(p.name)}</option>`).join("")
-      : `<option value="">No projects yet — add one below</option>`;
-  } catch {
-    sel.innerHTML = `<option value="">Could not load projects</option>`;
+function renderProjects() {
+  const host = $("projects");
+  const shown = projects.filter(p =>
+    !search || `${p.code} ${p.name} ${p.site ?? ""}`.toLowerCase().includes(search));
+
+  $("kpi-projects").textContent  = projects.length;
+  $("project-count").textContent = search
+    ? `${shown.length} of ${projects.length}`
+    : `${projects.length} total`;
+
+  /* The Add Project tile sits where the QR block used to — it is the only
+     always-present action on the register. */
+  const addTile = (only = false) => `
+    <button class="tile-add ${only ? "is-only" : ""}" id="tile-add">
+      <span class="plus">+</span>
+      <span class="t">Add project</span>
+      <span class="d">${only
+        ? "No sites registered yet. Add the first one and its documents will have somewhere to land."
+        : "Register a new site before its documents arrive."}</span>
+    </button>`;
+
+  if (!projects.length) {
+    host.innerHTML = addTile(true);
+  } else if (!shown.length) {
+    host.innerHTML = addTile() +
+      `<div class="empty" style="grid-column:span 2">No project matches “${esc(search)}”.</div>`;
+  } else {
+    host.innerHTML = shown.map(p => {
+      const t = tallyOf(p.id);
+      return `
+      <div class="pcard ${p.id === PROJECT_ID ? "is-active" : ""}">
+        <div>
+          <div class="code">${esc(p.code)}</div>
+          <div class="pname">${esc(p.name)}</div>
+        </div>
+        ${p.site ? `<div class="site"><span class="eyebrow">Site</span><span>${esc(p.site)}</span></div>` : ""}
+        <div class="tally">
+          <div><b>${t.total}</b><span>Documents</span></div>
+          <div><b>${t.pages}</b><span>Pages</span></div>
+          <div class="t-wait"><b>${t.wait}</b><span>Awaiting</span></div>
+        </div>
+        <div class="addinv">
+          <button class="btn btn-green" data-menu="${esc(p.id)}"
+                  aria-haspopup="true" aria-expanded="false">+ Add invoice &nbsp;&#9662;</button>
+          <div class="menu" id="menu-${esc(p.id)}" hidden>
+            <button data-scan="${esc(p.id)}">
+              <span class="ico">&#128241;</span>
+              <span><span class="t">Scan with phone</span>
+                    <span class="d">Show a QR code the site phone can scan</span></span>
+            </button>
+            <button data-upload="${esc(p.id)}">
+              <span class="ico">&#11014;</span>
+              <span><span class="t">Upload files</span>
+                    <span class="d">Choose photos or PDFs from this computer</span></span>
+            </button>
+          </div>
+        </div>
+      </div>`;
+    }).join("") + addTile();
   }
-}
 
-if (!hasProject) {
-  loadProjects();
-
-  $("btn-use").addEventListener("click", () => {
-    const id = $("project-select").value;
-    if (!id) { $("picker-err").textContent = "Add a project first."; return; }
-    openProject(id);
-  });
-
-  $("btn-add").addEventListener("click", async () => {
-    const body = {
-      code: $("new-code").value.trim(),
-      name: $("new-name").value.trim(),
-      site: $("new-site").value.trim(),
-    };
-    if (!body.code || !body.name) {
-      $("picker-err").textContent = "Project code and name are both required.";
-      return;
-    }
-    $("picker-err").textContent = "";
-    try {
-      const res = await fetch("/api/v1/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail ?? res.status);
-      openProject(data.id);   // straight to the QR — that is why you added it
-    } catch (err) {
-      $("picker-err").textContent = err.message;
-    }
+  $("tile-add").addEventListener("click", () => {
+    $("project-err").hidden = true;
+    openModal("m-project");
   });
 }
 
-/* ── expiry countdown ─────────────────────────────────────────────────── */
-if (hasProject) {
-  $("started").value = new Date().toLocaleTimeString();
+/* ── Add invoice menu ─────────────────────────────────────────────────── */
+const closeMenus = () => {
+  document.querySelectorAll(".menu").forEach(m => m.hidden = true);
+  document.querySelectorAll("[data-menu]").forEach(b => b.setAttribute("aria-expanded", "false"));
+};
 
-  const tickExpiry = () => {
+document.addEventListener("click", e => {
+  const toggle = e.target.closest("[data-menu]");
+  const scan   = e.target.closest("[data-scan]");
+  const upload = e.target.closest("[data-upload]");
+
+  if (toggle) {
+    const menu = $(`menu-${toggle.dataset.menu}`);
+    const wasOpen = !menu.hidden;
+    closeMenus();
+    menu.hidden = wasOpen;
+    toggle.setAttribute("aria-expanded", String(!wasOpen));
+    return;
+  }
+  if (scan) {
+    closeMenus();
+    /* The QR is server-rendered, so the session is minted by a page load. */
+    location.href = `/?project=${encodeURIComponent(scan.dataset.scan)}`;
+    return;
+  }
+  if (upload) {
+    closeMenus();
+    openUpload(upload.dataset.upload);
+    return;
+  }
+  if (!e.target.closest(".menu")) closeMenus();
+});
+
+/* ── add project ──────────────────────────────────────────────────────── */
+$("btn-create").addEventListener("click", async () => {
+  const body = {
+    code: $("new-code").value.trim(),
+    name: $("new-name").value.trim(),
+    site: $("new-site").value.trim(),
+  };
+  const err = $("project-err");
+  if (!body.code || !body.name) {
+    err.textContent = "Project code and project name are both required.";
+    err.hidden = false;
+    return;
+  }
+  err.hidden = true;
+  try {
+    const res  = await fetch("/api/v1/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail ?? `Server returned ${res.status}`);
+    closeModal("m-project");
+    ["new-code", "new-name", "new-site"].forEach(id => $(id).value = "");
+    await loadProjects();
+  } catch (e) {
+    err.textContent = `Could not add the project — ${e.message}`;
+    err.hidden = false;
+  }
+});
+
+/* ── scan with phone ──────────────────────────────────────────────────── */
+if (PROJECT_ID) {
+  $("scan-for").textContent = PROJECT_LABEL || PROJECT_ID;
+  $("scan-project").textContent = PROJECT_LABEL || "—";
+  $("btn-refresh-qr").addEventListener("click", () => {
+    location.href = `/?project=${encodeURIComponent(PROJECT_ID)}`;
+  });
+  /* Closing the QR clears the project from the URL, so a reload does not mint
+     a session nobody asked for. */
+  $("m-scan").addEventListener("click", e => {
+    if (e.target === $("m-scan") || e.target.closest("[data-close]")) {
+      history.replaceState(null, "", "/");
+    }
+  });
+
+  const tick = () => {
     const el = $("expires");
     const left = Math.floor((new Date(EXPIRES_AT) - Date.now()) / 1000);
     if (left <= 0) {
-      el.value = "Expired — click Refresh QR";
+      el.textContent = "Expired — tap New code";
       el.className = "countdown expired";
       return;
     }
-    const m = String(Math.floor(left / 60)).padStart(2, "0");
-    const s = String(left % 60).padStart(2, "0");
-    el.value = `${m}:${s}`;
+    el.textContent = `${String(Math.floor(left / 60)).padStart(2, "0")}:${String(left % 60).padStart(2, "0")}`;
     el.className = left < 120 ? "countdown warn" : "countdown";
   };
-  tickExpiry();
-  setInterval(tickExpiry, 1000);
-} else {
-  $("started").value = "—";
-  $("expires").value = "—";
+  tick();
+  setInterval(tick, 1000);
+
+  if (!$("qr-frame").querySelector("svg")) {
+    $("qr-frame").innerHTML = `<div class="qr-missing">No code was issued. Tap <strong>New code</strong>.</div>`;
+  }
+  openModal("m-scan");
 }
 
-/* ── document table ───────────────────────────────────────────────────── */
-const typePill = t => `<span class="pill pill-${t.toLowerCase()}">${esc(t)}</span>`;
-const statusPill = s => {
-  const cls = s === "DONE" ? "done" : s === "FAILED" ? "failed" : "pending";
-  return `<span class="pill pill-${cls}">${esc(s)}</span>`;
-};
+/* ── upload files ─────────────────────────────────────────────────────── */
+const ALLOWED = /\.(pdf|jpe?g|png)$/i;
+const kb = n => n < 1024 * 1024
+  ? `${Math.round(n / 1024)} KB`
+  : `${(n / 1048576).toFixed(1)} MB`;
 
+function openUpload(projectId) {
+  uploadTo = projects.find(p => p.id === projectId);
+  picked = [];
+  $("upload-for").textContent = uploadTo ? `${uploadTo.code} — ${uploadTo.name}` : "";
+  $("upload-err").hidden = true;
+  $("upload-ok").hidden  = true;
+  $("file-input").value  = "";
+  renderPicked();
+  openModal("m-upload");
+}
+
+function renderPicked() {
+  $("filelist").innerHTML = picked.map((f, i) => `
+    <li>
+      <span class="fname">${esc(f.name)}</span>
+      <span class="fsize">${kb(f.size)}</span>
+      <button class="drop-one" data-drop="${i}" aria-label="Remove ${esc(f.name)}">&times;</button>
+    </li>`).join("");
+  $("btn-send").disabled = !picked.length;
+  $("btn-send").textContent = picked.length > 1 ? `Upload ${picked.length} files` : "Upload";
+}
+
+function addFiles(list) {
+  const rejected = [];
+  for (const f of list) {
+    if (!ALLOWED.test(f.name)) { rejected.push(f.name); continue; }
+    if (!picked.some(p => p.name === f.name && p.size === f.size)) picked.push(f);
+  }
+  const err = $("upload-err");
+  if (rejected.length) {
+    err.textContent = `Skipped ${rejected.join(", ")} — only PDF, JPG and PNG files can be read.`;
+    err.hidden = false;
+  } else {
+    err.hidden = true;
+  }
+  renderPicked();
+}
+
+$("drop").addEventListener("click", () => $("file-input").click());
+$("drop").addEventListener("keydown", e => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("file-input").click(); }
+});
+$("file-input").addEventListener("change", e => addFiles(e.target.files));
+
+["dragenter", "dragover"].forEach(ev =>
+  $("drop").addEventListener(ev, e => { e.preventDefault(); $("drop").classList.add("over"); }));
+["dragleave", "drop"].forEach(ev =>
+  $("drop").addEventListener(ev, e => { e.preventDefault(); $("drop").classList.remove("over"); }));
+$("drop").addEventListener("drop", e => addFiles(e.dataTransfer.files));
+
+$("filelist").addEventListener("click", e => {
+  const btn = e.target.closest("[data-drop]");
+  if (!btn) return;
+  picked.splice(Number(btn.dataset.drop), 1);
+  renderPicked();
+});
+
+$("btn-send").addEventListener("click", async () => {
+  if (!picked.length || !uploadTo) return;
+  const err = $("upload-err"), ok = $("upload-ok"), btn = $("btn-send");
+  err.hidden = ok.hidden = true;
+  btn.disabled = true;
+  btn.textContent = "Uploading…";
+
+  const form = new FormData();
+  form.append("project_id", uploadTo.id);
+  /* One file, one document. A multi-page PDF stays one document; the page count
+     is the server's to work out, not the browser's. */
+  picked.forEach(f => form.append("files", f, f.name));
+
+  try {
+    const res = await fetch(UPLOAD_URL, { method: "POST", body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail ?? `Server returned ${res.status}`);
+    ok.textContent = `${picked.length} file${picked.length > 1 ? "s" : ""} uploaded to ${uploadTo.code}. Extraction starts automatically.`;
+    ok.hidden = false;
+    picked = [];
+    $("file-input").value = "";
+    renderPicked();
+    load();
+  } catch (e) {
+    err.textContent = `Upload failed — ${e.message}. Nothing was saved; try again.`;
+    err.hidden = false;
+  } finally {
+    btn.disabled = !picked.length;
+    btn.textContent = picked.length > 1 ? `Upload ${picked.length} files` : "Upload";
+  }
+});
+
+/* ── document table ───────────────────────────────────────────────────── */
+const typePill   = t => `<span class="pill pill-${String(t).toLowerCase()}">${esc(t)}</span>`;
+const STATUS_CLASS = {
+  PENDING:    "pending",
+  PROCESSING: "working",
+  EXTRACTED:  "done",
+  REVIEWED:   "done",
+  FAILED:     "failed",
+};
+const statusPill = s =>
+  `<span class="pill pill-${STATUS_CLASS[s] ?? "pending"}">${esc(s)}</span>`;
 const projectOf = d => d.project_code ? `${d.project_code} — ${d.project_name}` : "—";
 
-function render(docs) {
+function renderDocs() {
   const body = $("rows");
-
   const shown = docs.filter(d => {
-    const cells = { 1: d.document_id, 2: projectOf(d), 3: d.document_type, 5: d.status };
+    const cells = { 0: d.document_id, 1: projectOf(d), 2: d.document_type, 4: d.status };
     return Object.entries(filters).every(([col, term]) =>
       !term || String(cells[col] ?? "").toLowerCase().includes(term));
   });
 
-  const unclassified = docs.filter(d => d.document_type === "UNCLASSIFIED").length;
+  const wait = docs.filter(d => d.document_type === "UNCLASSIFIED").length;
   $("kpi-total").textContent        = docs.length;
-  $("kpi-classified").textContent   = docs.length - unclassified;
-  $("kpi-unclassified").textContent = unclassified;
-  $("kpi-pages").textContent        = docs.reduce((n, d) => n + d.page_count, 0);
+  $("kpi-classified").textContent   = docs.length - wait;
+  $("kpi-unclassified").textContent = wait;
 
   if (!shown.length) {
-    body.innerHTML = `<tr><td colspan="7" class="empty">${
-      docs.length ? "No documents match the filter." : "Waiting for the phone to send documents&hellip;"
+    body.innerHTML = `<tr><td colspan="6" class="empty">${
+      docs.length ? "No document matches the filter." : "No documents yet. Use Add invoice on a project to send some."
     }</td></tr>`;
     return;
   }
 
   body.innerHTML = shown.map(d => `
     <tr>
-      <td class="expand">&#9656;</td>
       <td class="mono">${esc(d.document_id.slice(0, 8))}</td>
       <td>${esc(projectOf(d))}</td>
       <td>${typePill(d.document_type)}</td>
@@ -785,43 +1274,49 @@ function render(docs) {
     </tr>`).join("");
 }
 
-let lastDocs = [];
+/* ── data ─────────────────────────────────────────────────────────────── */
+async function loadProjects() {
+  try {
+    projects = (await (await fetch("/api/v1/projects")).json()).projects;
+  } catch {
+    projects = [];
+  }
+  renderProjects();
+}
 
 async function load() {
-  /* Scoped to the project, not the session — the console should still show
-     this morning's scans after the QR has been refreshed. */
-  const url = scopeAll || !hasProject
-    ? "/api/v1/documents"
-    : `/api/v1/documents?project_id=${encodeURIComponent(PROJECT_ID)}`;
   const note = $("poll-note");
   try {
-    const res = await fetch(url);
+    const res = await fetch("/api/v1/documents");
     if (!res.ok) throw new Error(res.status);
-    lastDocs = (await res.json()).documents;
-    render(lastDocs);
-    note.textContent = `— updated ${new Date().toLocaleTimeString()}`;
+    docs = (await res.json()).documents;
+    renderDocs();
+    renderProjects();                       // the per-project tallies come from here
+    note.textContent = `updated ${new Date().toLocaleTimeString()}`;
   } catch {
-    note.textContent = "— refresh failed";
+    note.textContent = "could not reach the server";
   }
 }
 
 document.querySelectorAll("tr.filters input").forEach(input => {
   input.addEventListener("input", () => {
     filters[input.dataset.col] = input.value.trim().toLowerCase();
-    render(lastDocs);   // ponytail: filter locally, no server round-trip per keystroke
+    renderDocs();     // ponytail: filter locally, no server round-trip per keystroke
   });
+});
+
+$("project-search").addEventListener("input", e => {
+  search = e.target.value.trim().toLowerCase();
+  renderProjects();
 });
 
 $("btn-refresh").addEventListener("click", load);
 
-$("btn-all").addEventListener("click", e => {
-  scopeAll = !scopeAll;
-  e.target.textContent = scopeAll ? "Show this project" : "Show all projects";
-  load();
+window.addEventListener("beforeprint", () => {
+  $("print-when").textContent = `Printed ${new Date().toLocaleString()} · ${projects.length} projects · ${docs.length} documents`;
 });
-if (!hasProject) $("btn-all").hidden = true;   // already showing everything
 
-load();
+loadProjects().then(load);
 </script>
 </body>
 </html>

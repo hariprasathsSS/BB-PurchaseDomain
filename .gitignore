@@ -29,3 +29,4 @@ node_modules/
 *.log
 Sample/
 *.md
+!README.md
