@@ -19,7 +19,10 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 # the material three-way-match path.
 DOC_TYPES = {"UNCLASSIFIED", "INVOICE", "PO", "DELIVERY", "OTHER"}
 SOURCES = {"SCAN", "UPLOAD"}
-STATUSES = {"PENDING", "PROCESSING", "EXTRACTED", "REVIEWED", "FAILED"}
+# APPROVED/REJECTED are an accuracy gate on the OCR read, not a business
+# validation verdict — the 3-way match (Phase 6) doesn't exist yet. See
+# Deviation.md §1.
+STATUSES = {"PENDING", "PROCESSING", "EXTRACTED", "APPROVED", "REJECTED", "FAILED"}
 
 
 SCHEMA = """
@@ -99,7 +102,7 @@ CREATE TABLE IF NOT EXISTS documents (
   is_handwritten INTEGER NOT NULL DEFAULT 0,
 
   status         TEXT NOT NULL DEFAULT 'PENDING'
-                 CHECK (status IN ('PENDING','PROCESSING','EXTRACTED','REVIEWED','FAILED')),
+                 CHECK (status IN ('PENDING','PROCESSING','EXTRACTED','APPROVED','REJECTED','FAILED')),
   extracted_json TEXT,
   duplicate_of   TEXT REFERENCES documents(id),
   error          TEXT,
@@ -139,8 +142,9 @@ CREATE TABLE IF NOT EXISTS doc_headers (
   irn         TEXT,
   qr_verified INTEGER NOT NULL DEFAULT 0,
 
-  reviewed_by TEXT,
-  reviewed_at TEXT
+  reviewed_by       TEXT,
+  reviewed_at       TEXT,
+  rejection_reason  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS doc_lines (

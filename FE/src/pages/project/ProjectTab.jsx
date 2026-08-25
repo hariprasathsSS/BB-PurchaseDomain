@@ -1,0 +1,48 @@
+import { ProjectGrid } from "./ProjectGrid.jsx";
+import { ProjectDetail } from "./ProjectDetail.jsx";
+
+/* #/project shows the grid, #/project/<id> the detail page — so a project is
+   a real, linkable location with a working back button. */
+export function ProjectTab({
+  projectId, projects, docs, materials, search,
+  onOpenDocument, onAddProject, onAddDocument,
+}) {
+  if (!projectId) {
+    return (
+      <ProjectGrid
+        projects={projects}
+        docs={docs}
+        search={search}
+        onAddProject={onAddProject}
+        onAddDocument={onAddDocument}
+      />
+    );
+  }
+
+  const project = projects.find((p) => p.id === projectId);
+
+  /* A deep link can land before the project list has arrived — which is not
+     the same as an id that does not exist. */
+  if (!project) {
+    return (
+      <div className="band">
+        <div className="col">
+          <div className="empty">
+            {projects.length ? "That project no longer exists." : "Loading…"}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <ProjectDetail
+      key={project.id}
+      project={project}
+      docs={docs}
+      materials={materials}
+      onOpenDocument={onOpenDocument}
+      onAddDocument={onAddDocument}
+    />
+  );
+}

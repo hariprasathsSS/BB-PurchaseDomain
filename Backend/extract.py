@@ -19,12 +19,18 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+import media
 from db import BASE_DIR, DOC_TYPES, db, new_id
 
 try:
     import anthropic
 except ImportError:          # the rest of this module is engine-agnostic and
     anthropic = None         # stays importable — and testable — without the SDK.
+
+try:
+    import openai
+except ImportError:
+    openai = None
 
 
 class EngineNotConfigured(RuntimeError):
@@ -108,7 +114,7 @@ def is_valid_gstin(value: str | None) -> bool:
 
 # ── mapping ──────────────────────────────────────────────────────────────────
 
-def match_material(con: sqlite3.Connection, description: str | None) -> str | None:
+def match_material(con: sqlite3.Connection, description: str | None, unit: str | None = None) -> str | None:
     """Description to material_id via the alias table, creating one if needed.
 
     Line descriptions carry spec sub-lines — the samples show "Electric Drill
@@ -132,12 +138,14 @@ def match_material(con: sqlite3.Connection, description: str | None) -> str | No
             return row["material_id"]
 
     # Never block on a masters gap: create it unverified and let review confirm.
+    # The line's own unit wins when the document printed one; "Nos" is only a
+    # fallback for lines that carry no unit at all (a PO or RA bill line).
     material_id = new_id("MAT")
     label = str(description).splitlines()[0].strip()[:120]
     con.execute(
         "INSERT INTO materials (id, code, name, category, unit, verified)"
         " VALUES (?, NULL, ?, NULL, ?, 0)",
-        (material_id, label, "Nos"),
+        (material_id, label, (unit or "").strip() or "Nos"),
     )
     con.execute(
         "INSERT OR IGNORE INTO material_aliases (alias, material_id) VALUES (?, ?)",
@@ -224,12 +232,10 @@ def find_duplicate(
 # together. A separate classifier pass would read the same pixels twice to
 # answer a question the extraction already answers.
 
-MODEL = os.environ.get("EXTRACT_MODEL", "claude-opus-5")
+PROVIDER = os.environ.get("EXTRACT_PROVIDER", "anthropic").strip().lower()
+_DEFAULT_MODELS = {"anthropic": "claude-opus-5", "openai": "gpt-4o-mini"}
+MODEL = os.environ.get("EXTRACT_MODEL", _DEFAULT_MODELS.get(PROVIDER, "claude-opus-5"))
 
-_MEDIA_TYPES = {
-    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
-    ".pdf": "application/pdf",
-}
 
 
 class Line(BaseModel):
@@ -330,9 +336,7 @@ def _blocks(image_paths: list[str]) -> list[dict]:
         full = BASE_DIR / path
         if not full.exists():
             raise FileNotFoundError(f"page missing from disk: {path}")
-        media_type = _MEDIA_TYPES.get(full.suffix.lower())
-        if media_type is None:
-            raise ValueError(f"cannot read {full.suffix} as a document page")
+        media_type = media.media_type_for(full)
         data = base64.standard_b64encode(full.read_bytes()).decode()
         blocks.append({
             # A PDF page goes in as a document block, an image as an image block.
@@ -348,16 +352,10 @@ def run_engine(image_paths: list[str], document_type: str) -> dict:
     `document_type` is only the operator's hint; the model classifies the page
     itself and its answer wins. Someone filing a challan as an invoice on the
     phone must not make the extraction wrong.
+
+    Dispatches to whichever provider EXTRACT_PROVIDER names — both share this
+    schema and prompt, so switching providers doesn't change what gets stored.
     """
-    if anthropic is None:
-        raise EngineNotConfigured(
-            "The anthropic package is not installed — pip install -r requirements.txt"
-        )
-    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
-        raise EngineNotConfigured(
-            "No Claude credentials found. Set ANTHROPIC_API_KEY (or run `ant auth login`) "
-            "and restart the server."
-        )
     if not image_paths:
         raise ValueError("a document with no pages cannot be extracted")
 
@@ -370,6 +368,22 @@ def run_engine(image_paths: list[str], document_type: str) -> dict:
         f"{hint} Transcribe every field you can read. This is one document,"
         f" {len(image_paths)} page(s), in order."
     )
+
+    if PROVIDER == "openai":
+        return _run_openai(image_paths, prompt)
+    return _run_anthropic(image_paths, prompt)
+
+
+def _run_anthropic(image_paths: list[str], prompt: str) -> dict:
+    if anthropic is None:
+        raise EngineNotConfigured(
+            "The anthropic package is not installed — pip install -r requirements.txt"
+        )
+    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        raise EngineNotConfigured(
+            "No Claude credentials found. Set ANTHROPIC_API_KEY (or run `ant auth login`) "
+            "and restart the server."
+        )
 
     client = anthropic.Anthropic()
     # Streamed: a dense multi-page invoice at high effort can outrun the
@@ -392,6 +406,66 @@ def run_engine(image_paths: list[str], document_type: str) -> dict:
     if response.parsed_output is None:
         raise RuntimeError("the model returned no structured output")
     return response.parsed_output.model_dump()
+
+
+def _image_data_urls(image_paths: list[str]) -> list[dict]:
+    """Pages as OpenAI image_url content blocks.
+
+    ponytail: gpt-4o-mini's vision input takes images only, not the native PDF
+    blocks Claude reads — add PDF-to-image conversion if a document actually
+    needs the openai provider and arrives as a PDF.
+    """
+    blocks = []
+    for path in image_paths:
+        full = BASE_DIR / path
+        if not full.exists():
+            raise FileNotFoundError(f"page missing from disk: {path}")
+        media_type = media.media_type_for(full)
+        if media_type == "application/pdf":
+            # Unreachable for anything uploaded since PDFs started being
+            # rendered to pages at intake; rows stored before that still hold a
+            # .pdf path, and this says so honestly rather than pointing at a
+            # provider the deployment may have no key for.
+            raise RuntimeError(
+                "this document was stored as a PDF before pages were rendered at upload —"
+                " re-run the PDF backfill, or re-upload it"
+            )
+        data = base64.standard_b64encode(full.read_bytes()).decode()
+        blocks.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:{media_type};base64,{data}"},
+        })
+    return blocks
+
+
+def _run_openai(image_paths: list[str], prompt: str) -> dict:
+    if openai is None:
+        raise EngineNotConfigured(
+            "The openai package is not installed — pip install -r requirements.txt"
+        )
+    if not os.environ.get("OPENAI_API_KEY"):
+        raise EngineNotConfigured(
+            "No OpenAI credentials found. Set OPENAI_API_KEY and restart the server."
+        )
+
+    client = openai.OpenAI()
+    response = client.chat.completions.parse(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": SYSTEM},
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": prompt}, *_image_data_urls(image_paths)],
+            },
+        ],
+        response_format=Extraction,
+    )
+    message = response.choices[0].message
+    if message.refusal:
+        raise RuntimeError("the model declined to read this document")
+    if message.parsed is None:
+        raise RuntimeError("the model returned no structured output")
+    return message.parsed.model_dump()
 
 
 # ── persistence ──────────────────────────────────────────────────────────────
@@ -434,7 +508,7 @@ def save_extraction(con: sqlite3.Connection, document_id: str, data: dict) -> No
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 document_id, index, description,
-                match_material(con, description),
+                match_material(con, description, line.get("unit")),
                 line.get("hsn_code"), line.get("quantity"), line.get("unit"),
                 line.get("rate"), line.get("amount"), line.get("tax_rate"),
                 line.get("dc_number"), parse_date(line.get("dc_date_raw")),
@@ -454,14 +528,28 @@ def save_extraction(con: sqlite3.Connection, document_id: str, data: dict) -> No
 
 
 def process(document_id: str) -> None:
-    """Background task: PENDING -> PROCESSING -> EXTRACTED, or FAILED with a reason."""
+    """Background task: PENDING -> PROCESSING -> EXTRACTED, or FAILED with a reason.
+
+    The PROCESSING flip is conditioned in the UPDATE's WHERE clause, not just
+    checked beforehand: this is the one place every extraction (initial or a
+    manual re-extract) actually runs, so it is where a decision made between
+    the request and this task running must be protected — a document that is
+    already APPROVED/REJECTED must not be silently kicked back into the
+    extraction pipeline.
+    """
     with db() as con:
         row = con.execute(
             "SELECT file_paths, document_type FROM documents WHERE id = ?", (document_id,)
         ).fetchone()
         if row is None:
             return
-        con.execute("UPDATE documents SET status = 'PROCESSING' WHERE id = ?", (document_id,))
+        cur = con.execute(
+            "UPDATE documents SET status = 'PROCESSING'"
+            " WHERE id = ? AND status NOT IN ('APPROVED', 'REJECTED')",
+            (document_id,),
+        )
+        if cur.rowcount == 0:
+            return
         paths = json.loads(row["file_paths"])
         document_type = row["document_type"]
 
@@ -479,12 +567,104 @@ def process(document_id: str) -> None:
         save_extraction(con, document_id, data)
 
 
-def mark_reviewed(con: sqlite3.Connection, document_id: str, reviewed_by: str) -> None:
+# ── review: edit, approve, reject ───────────────────────────────────────────
+# Approve/reject here is an accuracy gate on the OCR read — "did this transcribe
+# correctly" — not a business validation verdict. The 3-way match against a PO
+# and delivery challan is a separate, later capability. See Deviation.md §1.
+
+EDITABLE_HEADER_FIELDS = (
+    "doc_kind", "doc_number", "po_number", "dc_number", "doc_date_raw",
+    "vendor_name_raw", "vendor_gstin", "buyer_gstin",
+    "place_of_supply", "delivery_address_raw",
+    "basic_value", "tax_type", "igst_amount", "cgst_amount", "sgst_amount",
+    "tcs_amount", "rounding_off", "total_value", "irn",
+)
+
+EDITABLE_LINE_FIELDS = (
+    "description_raw", "material_id", "hsn_code",
+    "quantity", "unit", "rate", "amount", "tax_rate", "dc_number", "dc_date",
+)
+
+
+def apply_edits(con: sqlite3.Connection, document_id: str, header: dict, lines: list[dict]) -> None:
+    """Persist reviewer corrections to already-extracted fields, before a decision."""
+    edits = {f: header[f] for f in header if f in EDITABLE_HEADER_FIELDS}
+    if "doc_date_raw" in edits:
+        con.execute(
+            "UPDATE doc_headers SET doc_date_raw = ?, doc_date = ? WHERE document_id = ?",
+            (edits.pop("doc_date_raw"), parse_date(header["doc_date_raw"]), document_id),
+        )
+    if edits:
+        assignments = ", ".join(f"{field} = ?" for field in edits)
+        con.execute(
+            f"UPDATE doc_headers SET {assignments} WHERE document_id = ?",
+            (*edits.values(), document_id),
+        )
+    if header.get("doc_kind") in DOC_TYPES:
+        con.execute(
+            "UPDATE documents SET document_type = ? WHERE id = ?",
+            (header["doc_kind"], document_id),
+        )
+
+    for line in lines:
+        line_no = line.get("line_no")
+        if not line_no:
+            raise ValueError("each line edit needs line_no")
+        line_edits = {f: line[f] for f in line if f in EDITABLE_LINE_FIELDS}
+        if not line_edits:
+            continue
+        if line_edits.get("material_id") and line.get("description_raw"):
+            learn_material_alias(con, line["description_raw"], line_edits["material_id"])
+        assignments = ", ".join(f"{field} = ?" for field in line_edits)
+        con.execute(
+            f"UPDATE doc_lines SET {assignments} WHERE document_id = ? AND line_no = ?",
+            (*line_edits.values(), document_id, line_no),
+        )
+
+
+def claim_for_edit(con: sqlite3.Connection, document_id: str) -> bool:
+    """Atomically confirms the document is still EXTRACTED right before
+    applying reviewer edits — a value-preserving UPDATE used purely to take
+    SQLite's write lock conditionally, so an edit can't land on a document a
+    concurrent request just approved or rejected."""
+    cur = con.execute(
+        "UPDATE documents SET status = 'EXTRACTED' WHERE id = ? AND status = 'EXTRACTED'",
+        (document_id,),
+    )
+    return cur.rowcount > 0
+
+
+def mark_approved(con: sqlite3.Connection, document_id: str, approved_by: str) -> bool:
+    """EXTRACTED -> APPROVED, atomically. False (no write at all) if the
+    document was not EXTRACTED — already decided, or not yet extracted."""
+    cur = con.execute(
+        "UPDATE documents SET status = 'APPROVED' WHERE id = ? AND status = 'EXTRACTED'",
+        (document_id,),
+    )
+    if cur.rowcount == 0:
+        return False
     con.execute(
         "UPDATE doc_headers SET reviewed_by = ?, reviewed_at = ? WHERE document_id = ?",
-        (reviewed_by, datetime.now(timezone.utc).isoformat(timespec="seconds"), document_id),
+        (approved_by, datetime.now(timezone.utc).isoformat(timespec="seconds"), document_id),
     )
-    con.execute("UPDATE documents SET status = 'REVIEWED' WHERE id = ?", (document_id,))
+    return True
+
+
+def mark_rejected(con: sqlite3.Connection, document_id: str, rejected_by: str, reason: str) -> bool:
+    """EXTRACTED -> REJECTED, atomically. False (no write at all) if the
+    document was not EXTRACTED — already decided, or not yet extracted."""
+    cur = con.execute(
+        "UPDATE documents SET status = 'REJECTED' WHERE id = ? AND status = 'EXTRACTED'",
+        (document_id,),
+    )
+    if cur.rowcount == 0:
+        return False
+    con.execute(
+        "UPDATE doc_headers SET reviewed_by = ?, reviewed_at = ?, rejection_reason = ?"
+        " WHERE document_id = ?",
+        (rejected_by, datetime.now(timezone.utc).isoformat(timespec="seconds"), reason, document_id),
+    )
+    return True
 
 
 # ── self-check ───────────────────────────────────────────────────────────────
@@ -533,6 +713,17 @@ if __name__ == "__main__":
         # And it is remembered.
         assert match_material(con, "Zircon Fibre Mesh 400gsm") == invented
 
+        # A newly created material takes the line's own unit when there is one...
+        with_unit = match_material(con, "Galvanised Roofing Sheet 0.5mm", "Sheets")
+        assert con.execute(
+            "SELECT unit FROM materials WHERE id = ?", (with_unit,)
+        ).fetchone()["unit"] == "Sheets"
+        # ...and only falls back to "Nos" when the line carries no unit at all.
+        no_unit = match_material(con, "Unlabelled Fitting")
+        assert con.execute(
+            "SELECT unit FROM materials WHERE id = ?", (no_unit,)
+        ).fetchone()["unit"] == "Nos"
+
         # A human correction re-points the alias.
         learn_material_alias(con, "Zircon Fibre Mesh 400gsm", "MAT-WALL-PUTTY")
         assert match_material(con, "Zircon Fibre Mesh 400gsm") == "MAT-WALL-PUTTY"
@@ -543,9 +734,123 @@ if __name__ == "__main__":
         assert first == again, "same GSTIN must resolve to one vendor"
         assert match_vendor(con, None, None) is None
 
-        con.execute("DELETE FROM material_aliases WHERE alias = ?", ("zircon fibre mesh 400gsm",))
+        con.execute(
+            "DELETE FROM material_aliases WHERE alias IN (?, ?, ?)",
+            ("zircon fibre mesh 400gsm", "galvanised roofing sheet 0.5mm", "unlabelled fitting"),
+        )
         con.execute("DELETE FROM materials WHERE verified = 0")
         con.execute("DELETE FROM vendors WHERE id = ?", (first,))
+
+        # apply_edits / mark_approved / mark_rejected against a synthetic document.
+        _doc_id, _prj_id = "DOC-selfcheck", "PRJ-selfcheck"
+        con.execute(
+            "INSERT INTO projects (id, code, name) VALUES (?, 'SELFCHECK', 'Self-check project')",
+            (_prj_id,),
+        )
+        con.execute(
+            "INSERT INTO documents (id, project_id, source, document_type, file_paths,"
+            " page_count, status) VALUES (?, ?, 'UPLOAD', 'INVOICE', '[]', 1, 'EXTRACTED')",
+            (_doc_id, _prj_id),
+        )
+        con.execute(
+            "INSERT INTO doc_headers (document_id, doc_kind, doc_number, total_value)"
+            " VALUES (?, 'INVOICE', 'INV-1', 100)",
+            (_doc_id,),
+        )
+        con.execute(
+            "INSERT INTO doc_lines (document_id, line_no, description_raw, quantity)"
+            " VALUES (?, 1, 'Old Description', 5)",
+            (_doc_id,),
+        )
+
+        apply_edits(
+            con, _doc_id,
+            {"doc_number": "INV-1-CORRECTED", "doc_date_raw": "05-Mar-2020", "not_a_real_field": "x"},
+            [{
+                "line_no": 1, "quantity": 6, "material_id": "MAT-OPC-CEMENT-53-GRADE",
+                "description_raw": "Old Description",
+            }],
+        )
+        header = con.execute(
+            "SELECT * FROM doc_headers WHERE document_id = ?", (_doc_id,)
+        ).fetchone()
+        assert header["doc_number"] == "INV-1-CORRECTED"
+        assert header["doc_date"] == "2020-03-05", "doc_date_raw edit must re-derive doc_date"
+        line = con.execute(
+            "SELECT * FROM doc_lines WHERE document_id = ? AND line_no = 1", (_doc_id,)
+        ).fetchone()
+        assert line["quantity"] == 6
+        assert line["material_id"] == "MAT-OPC-CEMENT-53-GRADE"
+        # A material correction on a line must be learned for next time too.
+        assert match_material(con, "Old Description") == "MAT-OPC-CEMENT-53-GRADE"
+
+        # Clearing a line's material (reviewer picks "unmatched") must not try
+        # to learn a NULL alias and crash the material_aliases NOT NULL column.
+        apply_edits(con, _doc_id, {}, [{"line_no": 1, "material_id": None, "description_raw": "Old Description"}])
+        assert con.execute(
+            "SELECT material_id FROM doc_lines WHERE document_id = ? AND line_no = 1", (_doc_id,)
+        ).fetchone()["material_id"] is None
+
+        try:
+            apply_edits(con, _doc_id, {}, [{"quantity": 1}])   # no line_no
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("a line edit with no line_no must be rejected")
+
+        assert claim_for_edit(con, _doc_id) is True, "an EXTRACTED doc must be claimable for edit"
+
+        assert mark_approved(con, _doc_id, "selfcheck") is True
+        assert con.execute(
+            "SELECT status FROM documents WHERE id = ?", (_doc_id,)
+        ).fetchone()["status"] == "APPROVED"
+
+        # Once decided, none of these may act again — each must be a no-op
+        # that reports failure, not a second write that undoes the decision.
+        assert claim_for_edit(con, _doc_id) is False, "an APPROVED doc must not be editable"
+        assert mark_approved(con, _doc_id, "someone-else") is False, "cannot approve twice"
+        reviewed_at_1 = con.execute(
+            "SELECT reviewed_by, reviewed_at FROM doc_headers WHERE document_id = ?", (_doc_id,)
+        ).fetchone()
+        assert reviewed_at_1["reviewed_by"] == "selfcheck", "a second approve must not overwrite the first"
+
+        assert mark_rejected(con, _doc_id, "selfcheck", "wrong vendor") is False, \
+            "an already-APPROVED document must not be rejectable out from under itself"
+        row = con.execute(
+            "SELECT d.status, h.rejection_reason FROM documents d"
+            " JOIN doc_headers h ON h.document_id = d.id WHERE d.id = ?", (_doc_id,)
+        ).fetchone()
+        assert row["status"] == "APPROVED", "a failed reject must not have changed the status"
+        assert row["rejection_reason"] is None
+
+        # Re-queuing extraction on an already-decided document must be a
+        # silent no-op, not a network call and not a status change — this is
+        # process()'s own guard, exercised directly with no credentials
+        # needed since it returns before run_engine is ever reached.
+        process(_doc_id)
+        assert con.execute(
+            "SELECT status FROM documents WHERE id = ?", (_doc_id,)
+        ).fetchone()["status"] == "APPROVED", "process() must refuse to re-run on an APPROVED doc"
+
+        # The direct EXTRACTED -> REJECTED path, tested independently of approve.
+        _doc_id_2 = "DOC-selfcheck-2"
+        con.execute(
+            "INSERT INTO documents (id, project_id, source, document_type, file_paths,"
+            " page_count, status) VALUES (?, ?, 'UPLOAD', 'INVOICE', '[]', 1, 'EXTRACTED')",
+            (_doc_id_2, _prj_id),
+        )
+        con.execute("INSERT INTO doc_headers (document_id) VALUES (?)", (_doc_id_2,))
+        assert mark_rejected(con, _doc_id_2, "selfcheck", "wrong vendor") is True
+        row = con.execute(
+            "SELECT d.status, h.rejection_reason FROM documents d"
+            " JOIN doc_headers h ON h.document_id = d.id WHERE d.id = ?", (_doc_id_2,)
+        ).fetchone()
+        assert row["status"] == "REJECTED"
+        assert row["rejection_reason"] == "wrong vendor"
+
+        con.execute("DELETE FROM material_aliases WHERE alias = 'old description'")
+        con.execute("DELETE FROM documents WHERE id IN (?, ?)", (_doc_id, _doc_id_2))
+        con.execute("DELETE FROM projects WHERE id = ?", (_prj_id,))
 
     # A classified kind files the document; anything unexpected stays
     # UNCLASSIFIED rather than tripping the CHECK constraint.

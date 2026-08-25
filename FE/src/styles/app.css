@@ -1,0 +1,710 @@
+/* ============================================================================
+   Component styles. Tokens in tokens.css, element defaults in base.css.
+   ========================================================================= */
+
+/* ── shell + floating nav ─────────────────────────────────────────────────
+   The nav docks below the top of the viewport, never flush against it. That
+   gap is what makes the cream read as paper rather than as chrome. */
+.shell { min-height: 100%; padding-bottom: var(--s12); }
+
+.nav-rail { position: sticky; top: 0; z-index: 40; padding: var(--s3) var(--s3) 0; background: var(--canvas); }
+.nav {
+  max-width: var(--col);
+  margin: 0 auto;
+  min-height: 64px;
+  padding: 9px 10px 9px 30px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: var(--surface);
+  border-radius: var(--r-pill);
+  box-shadow: var(--lift-1);
+}
+.nav .spacer { flex: 1; }
+
+.brand { font-size: 21px; font-weight: 600; letter-spacing: var(--tight); white-space: nowrap; }
+.brand i { font-style: normal; color: var(--clay); }
+
+.nav-links { display: flex; gap: 4px; }
+.nav-links button {
+  display: inline-flex; align-items: center; gap: 9px;
+  border: 0;
+  background: none;
+  font-size: 15.5px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: var(--slate);
+  padding: 10px 18px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.nav-links button:hover { color: var(--ink); background: var(--canvas); }
+.nav-links button[aria-current="page"] { background: var(--ink); color: var(--text-invert); }
+
+/* Search carries its shortcut so people learn there is one. */
+.nav-find {
+  display: flex; align-items: center; gap: 10px;
+  flex: 0 1 246px; min-width: 150px;
+  min-height: 44px; padding: 0 8px 0 18px;
+  border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--canvas);
+  cursor: text;
+}
+.nav-find:focus-within { border-color: var(--ink); background: var(--surface); }
+.nav-find input {
+  flex: 1; min-width: 0;
+  border: 0; background: none; outline: none;
+  font-family: inherit; font-size: 15px; color: var(--ink);
+}
+.nav-find kbd {
+  font-family: var(--mono); font-size: 11px; color: var(--slate);
+  background: var(--surface); border: 1px solid var(--hair);
+  border-radius: var(--r-chip); padding: 3px 7px; white-space: nowrap;
+}
+
+@media (max-width: 1080px) {
+  .nav { flex-wrap: wrap; border-radius: var(--r-stad); padding: 14px 16px; }
+  .nav .spacer { display: none; }
+  .nav-find { flex: 1 1 100%; order: 5; }
+}
+
+.band { padding: 0 var(--s3); }
+.col { max-width: var(--col); margin: 0 auto; }
+
+.section { margin-top: var(--s8); }
+.section-head { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; margin-bottom: var(--s3); }
+.section-head .spacer { flex: 1; }
+
+/* A named section earns a rule and a darker label. At 13px slate the eyebrow
+   was the lightest thing on the page while doing the heaviest job — saying
+   where one part ends and the next begins. The rule is a typographic device,
+   not a box: it draws the boundary without adding another container to a
+   layout that deliberately avoids them.
+
+   :has() so it only applies where there is a label to sit above — a
+   section-head carrying nothing but count tags gets no stray line. */
+.section-head:has(.eyebrow) {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--hair);
+  margin-bottom: var(--s3);
+}
+.section-head .eyebrow {
+  font-size: 14px;
+  color: var(--ink);
+  letter-spacing: 0.06em;
+}
+.section-head .eyebrow::before { width: 7px; height: 7px; }
+.tag {
+  font-family: var(--mono); font-size: 12.5px; color: var(--slate);
+  border: 1px solid var(--hair); border-radius: var(--r-pill); padding: 4px 14px;
+}
+
+.pagetitle { display: flex; align-items: flex-end; gap: var(--s3); flex-wrap: wrap; margin: var(--s6) 0 0; }
+.pagetitle .spacer { flex: 1; }
+.pagetitle .lede { margin-top: 12px; font-size: 17.5px; color: var(--slate); max-width: 46ch; }
+
+/* ── controls ─────────────────────────────────────────────────────────────
+   44px floor: these get tapped on site, on a touchscreen laptop, with gloves
+   on. That outranks the reference spec's tighter button padding. */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 46px; padding: 0 26px;
+  border: 1.5px solid transparent; border-radius: var(--r-btn);
+  font-size: 16px; font-weight: 500; letter-spacing: var(--tight);
+  cursor: pointer; white-space: nowrap;
+}
+.btn-ink { background: var(--ink); border-color: var(--ink); color: var(--text-invert); }
+.btn-ink:hover { background: var(--charcoal); }
+.btn-out { background: var(--surface); border-color: var(--ink); color: var(--ink); font-weight: 450; }
+.btn-out:hover { background: var(--canvas); }
+.btn-quiet { background: transparent; border-color: var(--line); color: var(--ink); font-weight: 450; }
+.btn-quiet:hover { background: var(--surface); }
+/* Reserved for the half of a decision that cannot be taken back. */
+.btn-signal { background: var(--signal); border-color: var(--signal); color: #fff; }
+.btn-signal:hover { background: var(--clay); }
+.btn-sm { min-height: 44px; padding: 0 20px; font-size: 15px; }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.btn-wide { width: 100%; }
+
+.btn-link {
+  border: 0; background: none; padding: 0;
+  font: inherit; font-size: 14px; font-weight: 500;
+  color: var(--clay); cursor: pointer;
+}
+.btn-link:hover { text-decoration: underline; }
+
+.back {
+  display: inline-flex; align-items: center; gap: var(--s1);
+  border: 0; background: none; padding: 0;
+  font: inherit; font-size: 14px; font-weight: 500;
+  color: var(--slate); cursor: pointer;
+}
+.back:hover { color: var(--ink); }
+
+.input, select.input {
+  min-height: 46px; padding: 0 22px;
+  border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--surface); color: var(--ink);
+  font-family: inherit; font-size: 15.5px;
+}
+select.input { border-radius: var(--r-btn); padding: 0 14px; }
+.input:focus { outline: 0; border-color: var(--ink); }
+.input-search { min-width: 240px; flex: 1; max-width: 420px; }
+
+/* Toolbar-scale controls: squarer, so they read as instrumentation rather
+   than as more content. */
+.ctl {
+  min-height: 40px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: var(--r-btn);
+  background: var(--surface); color: var(--ink);
+  font-family: inherit; font-size: 14px;
+}
+.ctl:focus { outline: 0; border-color: var(--ink); }
+.ctl-search { min-width: 170px; flex: 0 1 240px; padding: 0 16px; }
+
+/* Circular open-affordance. Sits inside its card, aligned with the actions —
+   docked half-outside a corner reads as a stray dot on a rectangle. */
+.open-round {
+  width: 46px; height: 46px; flex: none;
+  display: grid; place-items: center;
+  background: var(--canvas); color: var(--ink);
+  border: 1.5px solid var(--line); border-radius: 50%;
+  cursor: pointer;
+  transition: background .14s ease, color .14s ease;
+}
+.open-round:hover { background: var(--ink); border-color: var(--ink); color: var(--text-invert); }
+
+.open-sm {
+  width: 38px; height: 38px; flex: none;
+  display: grid; place-items: center;
+  background: var(--canvas); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 50%;
+}
+
+/* ── status: filled = state, outlined = kind ──────────────────────────────
+   Colour belongs to status alone, because status is what you scan a list
+   for. Document type is metadata and stays quiet. */
+.pill {
+  display: inline-flex; align-items: center;
+  border-radius: var(--r-pill); padding: 4px 13px;
+  font-size: 11.5px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; white-space: nowrap;
+}
+.pill-type { background: transparent; border: 1px solid var(--line); color: var(--slate); }
+.s-pending  { background: var(--warn-bg); color: var(--warn-fg); }
+.s-working  { background: var(--info-bg); color: var(--info-fg); }
+.s-approved { background: var(--ok-bg);   color: var(--ok-fg); }
+.s-rejected { background: var(--bad-bg);  color: var(--bad-fg); }
+.s-failed   { background: var(--sunken);  color: var(--clay); }
+
+/* Status discs, same four hues as the pills. */
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.d-hot  { background: var(--accent); }
+.d-mute { background: var(--dust); }
+.d-ink  { background: var(--info-fg); }
+.d-ok   { background: var(--ok-fg); }
+.d-no   { background: var(--bad-fg); }
+
+/* ══ home ═════════════════════════════════════════════════════════════════
+   Five zones, and only two of them are cards — what needs doing, and the
+   portfolio. The rest sits on the cream so the page does not read as a
+   stack of floating boxes. */
+#tab-home .section { margin-top: var(--s6); }
+
+/* The pitch on the left, the state of the desk on the right. One panel, not
+   a hero snapshot plus a separate stat row: they carry the same numbers. */
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1.1fr .9fr;
+  gap: 44px;
+  align-items: start;
+  margin-top: 44px;
+}
+@media (max-width: 1000px) { .hero-grid { grid-template-columns: 1fr; gap: var(--s4); } }
+
+.hero-copy h1 { margin-top: var(--s2); }
+.hero-copy .lede { margin-top: var(--s2); font-size: 17px; color: var(--slate); max-width: 46ch; }
+.hero-cta { display: flex; gap: 10px; margin-top: var(--s4); flex-wrap: wrap; }
+
+/* Actions outrank metrics: the one thing with a decision waiting on it gets
+   the numeral, the sentence and the button. The rest are quiet rows. */
+.attn {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: var(--r-stad);
+  overflow: hidden;
+}
+.attn-top { padding: 20px 24px 22px; }
+.attn-lead { display: flex; align-items: flex-start; gap: 18px; margin-top: var(--s2); }
+.attn-lead .n {
+  font-family: var(--mono); font-size: 46px; font-weight: 500;
+  line-height: .86; letter-spacing: -0.04em; color: var(--clay);
+  font-variant-numeric: tabular-nums;
+}
+.attn-lead .n.calm { color: var(--ok-fg); }
+.attn-lead .t { font-size: 16.5px; font-weight: 500; }
+.attn-lead .d { font-size: 13.5px; color: var(--slate); margin-top: 4px; }
+.attn-act { margin-top: var(--s2); }
+
+.attn-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 24px;
+  border-top: 1px solid var(--hair);
+  font-size: 14.5px;
+}
+.attn-row .spacer { flex: 1; }
+.attn-row b {
+  font-family: var(--mono); font-weight: 500; font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── project tiles ────────────────────────────────────────────────────────── */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(336px, 1fr)); gap: var(--s3); }
+
+.tile {
+  display: flex; flex-direction: column; gap: 18px;
+  padding: var(--s4);
+  background: var(--surface);
+  border: 1.5px solid transparent;
+  border-radius: var(--r-stad);
+  transition: transform .16s ease, border-color .16s ease;
+}
+.tile:hover { transform: translateY(-2px); border-color: var(--line); }
+/* The one project with a person waiting on it gets a whole-surface wash — a
+   coloured rail down the side of a rounded card is a tell, not a design. */
+.tile.is-hot { background: var(--warn-tint); }
+
+/* The code is what people read off the paper and say out loud, so it leads. */
+.tile .code { font-family: var(--mono); font-size: 19px; font-weight: 500; letter-spacing: -0.02em; word-break: break-all; }
+.tile .name { font-size: 17px; font-weight: 500; margin-top: 6px; }
+.tile .where { font-size: 15px; color: var(--slate); }
+
+/* Cards stop being interchangeable: this says whether the project needs you,
+   so a portfolio can be scanned without opening anything. */
+.tile-status {
+  display: inline-flex; align-items: center;
+  padding: 4px 12px; margin-bottom: 12px;
+  border-radius: var(--r-pill);
+  font-size: 10.5px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase;
+}
+.st-action { background: var(--warn-bg); color: var(--warn-fg); }
+.st-track  { background: var(--ok-bg);   color: var(--ok-fg); }
+.st-proc   { background: var(--info-bg); color: var(--info-fg); }
+.st-none   { background: var(--sunken);  color: var(--slate); }
+
+.tally { display: flex; gap: var(--s4); margin-top: auto; padding-top: 20px; border-top: 1px solid var(--hair); }
+.tally div { display: flex; flex-direction: column; gap: 4px; }
+.tally b {
+  font-family: var(--mono); font-size: 21px; font-weight: 500; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.tally span { font-size: 10.5px; font-weight: 700; letter-spacing: var(--wide); text-transform: uppercase; color: var(--slate); }
+.tally .hot b { color: var(--clay); }
+
+.tile-actions { display: flex; align-items: center; gap: 12px; }
+.tile-actions .spacer { flex: 1; }
+
+/* Add tile: outlined, not a filled slab. A big dark block outweighs the
+   projects beside it — a site is registered monthly, an invoice hourly. */
+.tile-add {
+  display: grid; place-content: center; justify-items: center; gap: 6px;
+  min-height: 250px; padding: var(--s4);
+  background: transparent;
+  border: 1.5px solid var(--line); border-radius: var(--r-stad);
+  text-align: center; color: inherit; font: inherit; cursor: pointer;
+}
+.tile-add:hover { border-color: var(--ink); }
+.tile-add .ring {
+  width: 58px; height: 58px; margin-bottom: 14px;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--ink); border-radius: 50%;
+}
+.tile-add:hover .ring { background: var(--ink); color: var(--text-invert); }
+.tile-add .t { font-size: 19px; font-weight: 500; letter-spacing: var(--tight); }
+.tile-add .d { font-size: 14.5px; color: var(--slate); max-width: 27ch; }
+.tile-add.is-only { grid-column: 1 / -1; }
+
+/* Add-document dropdown, anchored to the card's action row. */
+.menu {
+  position: absolute; z-index: 20;
+  top: calc(100% + 8px); left: 0; right: 0;
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--r-btn);
+  box-shadow: var(--lift-2);
+  overflow: hidden;
+}
+.menu button {
+  display: flex; gap: 12px;
+  width: 100%; padding: 14px 18px;
+  border: 0; background: none;
+  text-align: left; color: var(--text); cursor: pointer;
+}
+.menu button + button { border-top: 1px solid var(--hair); }
+.menu button:hover { background: var(--hover); }
+.menu .ico { flex: none; color: var(--clay); padding-top: 2px; }
+.menu .t { font-size: 15px; font-weight: 500; display: block; }
+.menu .d { font-size: 13px; color: var(--slate); display: block; }
+
+/* ── recent activity ──────────────────────────────────────────────────────── */
+.activity {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: var(--r-stad);
+  overflow: hidden;
+}
+.act-row {
+  display: grid;
+  grid-template-columns: 10px minmax(150px, 1.1fr) minmax(190px, 1.5fr) 156px 62px;
+  gap: var(--s2); align-items: center;
+  width: 100%; padding: 14px 26px;
+  border: 0; border-top: 1px solid var(--hair);
+  background: none; text-align: left; font: inherit; color: inherit;
+  cursor: pointer;
+}
+.act-row:first-child { border-top: 0; }
+.act-row:hover { background: var(--hover); }
+.act-vend { font-size: 15px; font-weight: 500; }
+.act-what { font-size: 14px; color: var(--slate); }
+.act-proj { font-family: var(--mono); font-size: 12.5px; color: var(--slate); }
+.act-when { font-family: var(--mono); font-size: 12.5px; color: var(--slate); text-align: right; }
+@media (max-width: 920px) {
+  .act-row { grid-template-columns: 10px 1fr auto; }
+  .act-proj { display: none; }
+}
+
+/* ══ project detail ═══════════════════════════════════════════════════════
+   Recomposed around the workflow rather than the components: identity, then
+   one panel that does all the narrowing-down, then the answers. */
+#tab-project .section { margin-top: 28px; }
+#tab-project .section.spaced { margin-top: var(--s8); }
+#tab-project .section-head { margin-bottom: 18px; }
+
+.phead {
+  margin-top: var(--s4);
+  padding: 22px 30px 0;
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: var(--r-stad);
+}
+.phead-main { display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap; margin-top: 14px; }
+.phead-main .spacer { flex: 1; }
+.phead .code {
+  font-family: var(--mono); font-size: 32px; font-weight: 500;
+  letter-spacing: -0.03em; line-height: 1.05; word-break: break-all;
+}
+.phead .pname { font-size: 16.5px; color: var(--slate); margin-top: 5px; }
+.phead-actions { display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap; }
+
+/* The project's own numbers inline on a hairline — a stat strip here would be
+   four more boxes on a page whose problem was boxes. */
+.phead-meta {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 20px; padding: 14px 0;
+  border-top: 1px solid var(--hair);
+  font-size: 14px; color: var(--slate);
+}
+.phead-meta b { font-family: var(--mono); font-weight: 500; color: var(--ink); }
+.phead-meta .sep { color: var(--dust); }
+.phead-meta .warn b { color: var(--clay); }
+
+/* Site tabs, filters and results in one panel: they are three steps of a
+   single act, and three separate cards made them look like three subjects. */
+.explorer {
+  margin-top: var(--s2);
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: var(--r-stad);
+  overflow: hidden;
+}
+.explorer-bar { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; padding: 18px 26px; }
+.explorer-bar .spacer { flex: 1; }
+.explorer-count { font-family: var(--mono); font-size: 13px; color: var(--slate); }
+.explorer-count b { color: var(--ink); font-weight: 500; }
+
+/* One track, so switching site reads as switching a view rather than as
+   picking from a row of loose chips. */
+.seg { display: inline-flex; gap: 4px; padding: 4px; background: var(--canvas); border-radius: var(--r-pill); flex-wrap: wrap; }
+.seg button {
+  display: inline-flex; align-items: center; gap: var(--s1);
+  min-height: 38px; padding: 0 18px;
+  border: 0; border-radius: var(--r-pill);
+  background: none; color: var(--slate);
+  font-size: 14.5px; font-weight: 500;
+  cursor: pointer; white-space: nowrap;
+}
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--text-invert); }
+.seg .n { font-family: var(--mono); font-size: 12.5px; opacity: .75; }
+
+.toolbar {
+  display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap;
+  padding: 12px 26px;
+  border-top: 1px solid var(--hair);
+  background: var(--sunken);
+}
+.toolbar .spacer { flex: 1; }
+.toolbar .lbl { font-size: 12.5px; color: var(--slate); }
+.toolbar .clear {
+  border: 0; background: none; padding: 0 4px;
+  font: inherit; font-size: 13.5px; color: var(--clay); cursor: pointer;
+}
+.toolbar .clear:hover { text-decoration: underline; }
+
+/* Columns, not cards: the point of a document list is comparing the same
+   field down the page, which floating cards actively prevent. */
+.dgrid { --cols: 88px 104px minmax(132px, 1.5fr) 112px 100px 126px 86px 60px 40px; }
+.dhead, .drow { display: grid; grid-template-columns: var(--cols); gap: 14px; align-items: center; }
+.dhead {
+  padding: 11px 26px;
+  border-top: 1px solid var(--hair);
+  background: var(--sunken);
+  font-size: 10.5px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate);
+}
+.dhead .r, .drow .c-amt { text-align: right; }
+.drow {
+  width: 100%; padding: 13px 26px;
+  border: 0; border-top: 1px solid var(--hair);
+  background: none; text-align: left; color: inherit; font: inherit;
+  cursor: pointer;
+}
+.drow:hover { background: var(--hover); }
+.drow:hover .open-sm { background: var(--ink); border-color: var(--ink); color: var(--text-invert); }
+.c-id   { font-family: var(--mono); font-size: 13px; color: var(--slate); }
+.c-vend { font-size: 15.5px; font-weight: 500; }
+.c-site { font-size: 14px; color: var(--slate); }
+.c-ref  { font-family: var(--mono); font-size: 13px; color: var(--slate); }
+.c-amt  { font-family: var(--mono); font-size: 15px; font-variant-numeric: tabular-nums; }
+.c-amt.pending { font-size: 13px; color: var(--dust); }
+.c-date { font-family: var(--mono); font-size: 12.5px; color: var(--slate); }
+
+/* Below the width nine columns need, the row folds onto two lines rather
+   than scrolling sideways. The amount stays hard right either way. */
+@media (max-width: 1180px) {
+  .dhead { display: none; }
+  .drow { display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 16px 22px; }
+  .drow .c-vend { order: -1; flex: 1 1 100%; }
+  .drow .c-amt { margin-left: auto; }
+}
+
+/* ── document register ────────────────────────────────────────────────────
+   The same row as a project's document list, plus the two columns a
+   cross-project view needs — a page thumbnail and the project code. */
+.dgrid.reg {
+  --cols: 34px 88px 104px minmax(132px, 1.4fr) 132px 100px 112px 96px 74px 118px 40px;
+}
+
+/* Rectangular, not circular: a document is a rectangle, and the crop has to
+   leave enough of the page to tell a dense invoice from a one-line challan. */
+.c-thumb {
+  width: 34px; height: 42px;
+  border-radius: 3px; overflow: hidden;
+  background: var(--sunken);
+  border: 1px solid var(--hair);
+  display: grid; place-items: center;
+  color: var(--dust);
+}
+.c-thumb img {
+  width: 100%; height: 100%;
+  object-fit: cover; object-position: top center;  /* the letterhead identifies it */
+  display: block;
+}
+.c-proj { font-family: var(--mono); font-size: 12.5px; color: var(--slate); }
+
+@media (max-width: 1180px) {
+  .drow .c-thumb { order: -2; }
+  .drow .c-proj { font-size: 12px; }
+}
+
+.caption { margin-top: 20px; max-width: 244px; }
+.caption .eyebrow { margin-bottom: 9px; }
+.caption h3 { font-size: 21px; line-height: 1.2; }
+.caption .meta { margin-top: 8px; font-size: 14.5px; color: var(--slate); }
+.caption .stamp { margin-top: 12px; display: flex; gap: 14px; align-items: center; font-family: var(--mono); font-size: 12.5px; color: var(--slate); }
+
+/* ── filter bar (materials) ───────────────────────────────────────────────── */
+.filter-bar { display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap; margin-bottom: var(--s4); }
+.filter-bar label { display: inline-flex; align-items: center; gap: var(--s1); font-size: 13px; color: var(--slate); }
+
+/* ── tables: kept where numbers are meant to be compared down a column ────── */
+.card { background: var(--surface); border: 1px solid var(--hair); border-radius: var(--r-stad); overflow: hidden; }
+.table-wrap { overflow-x: auto; }
+table.data { width: 100%; border-collapse: collapse; font-size: 15.5px; }
+table.data thead th {
+  text-align: left; padding: 12px 20px;
+  background: var(--sunken);
+  font-size: 10.5px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate); white-space: nowrap;
+}
+table.data tbody td { padding: 16px 20px; border-top: 1px solid var(--hair); vertical-align: middle; }
+table.data tbody tr:hover { background: var(--hover); }
+table.data td.num, table.data th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+table.data td.mono { font-family: var(--mono); font-size: 13px; }
+table.data th:first-child, table.data td:first-child { padding-left: 26px; }
+table.data th:last-child,  table.data td:last-child  { padding-right: 26px; }
+
+/* ── materials rollup ─────────────────────────────────────────────────────
+   A comparison table, so it is tuned for reading down a column rather than
+   across a row: fixed numeric widths, tighter rows than the document list,
+   and a header that survives scrolling. */
+table.data.rollup { table-layout: fixed; font-size: 15px; }
+table.data.rollup tbody td { padding-top: 13px; padding-bottom: 13px; }
+
+.rollup .c-mat {
+  font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rollup .c-unit {
+  font-size: 12.5px; font-weight: 600;
+  letter-spacing: var(--wide); text-transform: uppercase;
+  color: var(--slate);
+}
+.rollup .num.strong { font-size: 15.5px; font-weight: 600; color: var(--ink); }
+
+/* Zebra only past the point where a row can be lost mid-scan — on three rows
+   it is decoration, on thirty it is what keeps your eye on the line. */
+.rollup tbody tr:nth-child(even) { background: color-mix(in srgb, var(--sunken) 45%, transparent); }
+.rollup tbody tr:hover { background: var(--hover); }
+
+.rollup-wrap.is-tall { max-height: 30rem; overflow-y: auto; }
+.rollup-wrap.is-tall thead th { position: sticky; top: 0; z-index: 1; }
+
+@media (max-width: 640px) {
+  table.data.rollup { table-layout: auto; }
+  .rollup .c-mat { white-space: normal; }
+}
+
+.empty { padding: var(--s6) var(--s3); text-align: center; color: var(--dust); font-size: 15px; }
+
+/* ── modal ────────────────────────────────────────────────────────────────── */
+.backdrop {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(20, 20, 19, .45);
+  display: grid; place-items: center;
+  padding: var(--s3); overflow: auto;
+}
+.modal {
+  width: 100%; max-width: 480px;
+  background: var(--surface);
+  border-radius: var(--r-stad);
+  box-shadow: var(--lift-2);
+}
+.modal-lg { max-width: 1000px; }
+.modal-head { display: flex; align-items: flex-start; gap: var(--s2); padding: var(--s4) var(--s4) var(--s3); }
+.modal-head h2 { font-size: 22px; }
+.modal-head .for { font-family: var(--mono); font-size: 13px; color: var(--slate); margin-top: 4px; }
+.modal-head .spacer { flex: 1; }
+.modal-body { padding: 0 var(--s4) var(--s4); }
+.modal-lg .modal-body { max-height: 70vh; overflow-y: auto; }
+.modal-foot { display: flex; gap: var(--s1); padding: var(--s3) var(--s4) var(--s4); }
+.modal-foot .spacer { flex: 1; }
+
+.close-x {
+  flex: none; width: 44px; height: 44px;
+  border: 1px solid var(--line); border-radius: 50%;
+  background: var(--surface); color: var(--slate);
+  display: grid; place-items: center;
+  cursor: pointer;
+}
+.close-x:hover { background: var(--canvas); color: var(--ink); }
+
+/* ── forms ────────────────────────────────────────────────────────────────── */
+.form { display: flex; flex-direction: column; gap: var(--s3); }
+.form label { display: flex; flex-direction: column; gap: 6px; }
+.form label > span,
+.field-grid label > span {
+  font-size: 11.5px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate);
+}
+.form .hint { font-size: 13px; color: var(--slate); }
+.row { display: flex; gap: var(--s1); }
+
+.banner { padding: var(--s2) var(--s3); border-radius: var(--r-btn); font-size: 14px; margin-bottom: var(--s3); }
+.banner-err  { background: var(--bad-bg);  color: var(--bad-fg); }
+.banner-ok   { background: var(--ok-bg);   color: var(--ok-fg); }
+.banner-wait { background: var(--info-bg); color: var(--info-fg); }
+
+/* ── upload ───────────────────────────────────────────────────────────────── */
+.drop {
+  padding: var(--s6) var(--s3);
+  border: 1.5px dashed var(--line); border-radius: var(--r-stad);
+  background: var(--canvas);
+  text-align: center; cursor: pointer;
+}
+.drop:hover, .drop.over { border-color: var(--ink); background: var(--sunken); }
+.drop .t { font-size: 16px; font-weight: 500; margin-top: var(--s1); }
+.drop .d { font-size: 13.5px; color: var(--slate); margin-top: 4px; }
+
+.filelist { list-style: none; margin: var(--s3) 0 0; padding: 0; font-size: 14px; }
+.filelist li { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) 0; border-bottom: 1px solid var(--hair); }
+.filelist .fname { flex: 1; word-break: break-all; }
+.filelist .fsize { font-family: var(--mono); font-size: 12.5px; color: var(--slate); }
+.drop-one { border: 0; background: none; color: var(--slate); font-size: 18px; line-height: 1; padding: 0 4px; cursor: pointer; }
+.drop-one:hover { color: var(--signal); }
+
+/* ── scan / QR ────────────────────────────────────────────────────────────── */
+.qr-frame {
+  background: #fff;
+  border: 1px solid var(--hair); border-radius: var(--r-stad);
+  padding: var(--s3);
+  display: grid; place-items: center;
+}
+.qr-frame svg { width: 100%; height: auto; display: block; max-width: 280px; }
+.steps { margin: var(--s3) 0 0; padding-left: var(--s3); font-size: 14px; color: var(--slate); }
+.steps li { margin-bottom: 6px; }
+.kv { margin-top: var(--s3); border-top: 1px solid var(--hair); padding-top: var(--s2); font-size: 13px; }
+.kv div { display: flex; justify-content: space-between; gap: var(--s2); padding: 4px 0; }
+.kv span:first-child { color: var(--slate); }
+.kv span:last-child { font-family: var(--mono); text-align: right; word-break: break-all; }
+.countdown { font-weight: 700; font-family: var(--mono); }
+.countdown.warn { color: var(--clay); }
+.countdown.expired { color: var(--signal); }
+
+/* ── review ───────────────────────────────────────────────────────────────── */
+.doc-pages { display: flex; gap: var(--s1); flex-wrap: wrap; margin-bottom: var(--s3); }
+.doc-pages img {
+  width: 92px; height: 118px; object-fit: cover;
+  border-radius: var(--r-btn); border: 1px solid var(--hair); display: block;
+}
+.field-section + .field-section { margin-top: var(--s4); }
+.field-section h3 {
+  font-size: 12px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate); margin-bottom: var(--s2);
+}
+.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--s2); }
+.field-grid label { display: flex; flex-direction: column; gap: 5px; }
+.field-grid .display { font-family: var(--mono); font-size: 14px; padding: 10px 0 2px; }
+
+table.lines { font-size: 13px; }
+table.lines thead th { padding: 10px var(--s1); }
+table.lines tbody td { padding: 6px var(--s1); }
+table.lines th:first-child, table.lines td:first-child { padding-left: var(--s1); }
+table.lines th:last-child,  table.lines td:last-child  { padding-right: var(--s1); }
+table.lines .input { min-height: 36px; font-size: 13px; border-radius: var(--r-chip); width: 100%; padding: 0 8px; }
+
+.reviewer-row { display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap; }
+.reviewer-row .input { flex: 1; min-width: 180px; max-width: 280px; }
+.reject-panel { display: flex; flex-direction: column; gap: var(--s1); margin-top: var(--s2); max-width: 520px; }
+.reject-panel textarea {
+  border: 1px solid var(--line); border-radius: var(--r-btn); padding: var(--s2);
+  font-family: inherit; font-size: 14.5px; resize: vertical; min-height: 72px;
+}
+
+/* ── print ────────────────────────────────────────────────────────────────
+   The site office pins the day's intake on a wall, so the register has to
+   survive a printer: chrome, controls and anything mid-interaction go. */
+@media print {
+  body { background: #fff; }
+  .nav-rail, .btn, .close-x, .tile-actions, .tile-add, .backdrop,
+  .toolbar, .filter-bar, .input, .open-round, .open-sm { display: none !important; }
+  .band { padding: 0; }
+  .tile, .card, .attn, .phead, .explorer, .activity {
+    box-shadow: none; border: 1px solid var(--line); break-inside: avoid;
+  }
+  table.data thead { display: table-header-group; }
+  table.data tbody tr { break-inside: avoid; }
+}

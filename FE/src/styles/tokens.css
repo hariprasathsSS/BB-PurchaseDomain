@@ -1,0 +1,82 @@
+/* ============================================================================
+   Purchase Division — design tokens
+   Warm putty cream ground, ink pills, oversized radii. One committed visual
+   world; no dark variant, so every colour is painted explicitly.
+
+   Three rules the whole look rests on, all easy to undo by accident:
+     · Cream is the ground. White is only for lifted things — nav, panels.
+     · Radii are 6, 20, 40 or full pill. The usual 8–12 is absent on purpose.
+     · Signal orange is a compliance colour, not a brand colour: it marks the
+       one action that cannot be taken back. Ordinary CTAs are ink.
+
+   Contrast was measured, not eyeballed. Every text/ground pair in use clears
+   4.5:1 — see the ratios beside each text token.
+   ========================================================================= */
+
+:root {
+  /* ── surfaces: canvas cream -> white -> sunken ──────────────────────────── */
+  --canvas:    #f3f0ee;   /* the page. warm putty, never white */
+  --surface:   #ffffff;   /* nav, panels, cards */
+  --ink:       #141413;   /* warm near-black: primary CTAs, headlines */
+  --charcoal:  #262627;
+  /* A panel needs a ground *darker* than itself to show a toolbar or a table
+     head. A lighter "lifted" tone disappears on white — this is the fix. */
+  --sunken:    #ebe6e1;
+  --hover:     #f7f3f0;
+
+  /* ── text ──────────────────────────────────────────────────────────────── */
+  --text:      #141413;   /* 16.3:1 on cream */
+  --slate:     #575450;   /*  6.6:1 on cream — warm grey, biased to the ground */
+  --dust:      #6f6a62;   /*  4.7:1 on cream — quiet, still readable */
+  --text-invert: #f3f0ee; /* on ink: cream, not white */
+
+  /* ── accents ───────────────────────────────────────────────────────────── */
+  --signal:    #cf4500;   /* destructive only. always a background, never text */
+  --accent:    #f37338;   /* attention cue: eyebrow dots, focus ring */
+  --clay:      #9a3a0a;   /* links and quiet actions — 6.2:1 on cream */
+
+  /* ── semantic set ──────────────────────────────────────────────────────
+     Four states that must be told apart in a glance down a column, so they
+     are properly saturated rather than four shades of the same beige. Each
+     pair clears 5:1. The same hues drive pills, dots and status labels, so a
+     dot in a feed and a pill in a table mean the same thing. */
+  --ok-bg:     #daeee2;  --ok-fg:    #16663f;   /* approved */
+  --info-bg:   #dbe6fa;  --info-fg:  #1b52ac;   /* processing */
+  --warn-bg:   #fce9c9;  --warn-fg:  #8f5405;   /* awaiting a person */
+  --bad-bg:    #fbdcd2;  --bad-fg:   #ab3016;   /* rejected / failed */
+  --warn-tint: #fdf6ec;  /* whole-surface wash for the card that needs someone */
+
+  /* ── lines: they carry the partitioning, so they have to be visible ────── */
+  --line:      rgba(20, 20, 19, .20);
+  --hair:      rgba(20, 20, 19, .13);
+
+  /* ── radii ─────────────────────────────────────────────────────────────── */
+  --r-chip:    6px;
+  --r-btn:     20px;
+  --r-stad:    40px;
+  --r-pill:    999px;
+
+  /* ── elevation: atmospheric cushioning, never a hard drop ──────────────── */
+  --lift-1:    0 4px 24px rgba(0, 0, 0, .04);
+  --lift-2:    0 24px 48px rgba(0, 0, 0, .08);
+
+  /* ── spacing: 8px base ─────────────────────────────────────────────────── */
+  --s1: 8px;  --s2: 16px; --s3: 24px; --s4: 32px;
+  --s6: 48px; --s8: 64px; --s12: 96px;
+
+  /* ── type ──────────────────────────────────────────────────────────────
+     No web fonts and no CDN: this runs on a site LAN with no guaranteed
+     internet, so the stack is local-first. Sofia Sans is the reference face
+     and is used where a machine happens to have it; otherwise the system UI
+     face carries it. The identity survives in the weights and the tracking
+     below, not in the family — which is why 450 and -2% are not negotiable.
+     To close the gap properly, self-host Sofia Sans as a @font-face here. */
+  --sans: "Sofia Sans", "Segoe UI Variable Text", "Segoe UI", Inter, system-ui,
+          Roboto, Arial, sans-serif;
+  --mono: "DM Mono", "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+
+  --tight: -0.02em;   /* every headline */
+  --wide:   0.04em;   /* eyebrows and column labels only */
+
+  --col: 1180px;      /* content column */
+}

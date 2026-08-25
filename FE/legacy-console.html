@@ -1,0 +1,2389 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Purchase Division — Project Register</title>
+<style>
+/* ============================================================================
+   Purchase Division — design system
+   Palette inherited from the Build Superfast (BSF) internal UI so the POC sits
+   visually alongside the tools the purchase team already uses.
+   No web fonts, no CDN — this runs on a site LAN with no guaranteed internet,
+   so weight, size, casing and the mono face carry the personality instead.
+   ========================================================================= */
+
+/* ── tokens ──────────────────────────────────────────────────────────────── */
+:root {
+  /* surfaces */
+  --page-bg:      #eef1f5;
+  --card-bg:      #ffffff;
+  --header-bg:    #16273b;
+  --table-head:   #e4ebf2;
+  --row-hover:    #f5f8fb;
+  --input-bg:     #ffffff;
+
+  /* lines */
+  --border:       #d7dee7;
+  --border-soft:  #e8edf3;
+
+  /* text */
+  --text:         #1f2d3d;
+  --text-muted:   #7b8794;
+  --text-invert:  #ffffff;
+
+  /* brand + status */
+  --gold:         #e9a13b;
+  --blue:         #2c7be5;
+  --blue-dark:    #1a5fb4;
+  --green:        #2f9e63;
+  --green-light:  #5cb85c;
+  --red:          #e34a3a;
+  --amber:        #e9a13b;
+
+  /* metrics */
+  --radius:       6px;
+  --radius-lg:    10px;
+  --shadow:       0 1px 3px rgba(22, 39, 59, .08);
+  --shadow-lg:    0 8px 28px rgba(22, 39, 59, .18);
+  --header-h:     60px;
+
+  /* type */
+  --mono: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+}
+
+/* ── base ────────────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--page-bg);
+  color: var(--text);
+  font: 14.5px/1.5 "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--blue); }
+
+code, .mono { font-family: var(--mono); }
+
+.muted { color: var(--text-muted); }
+.right { text-align: right; }
+
+/* Site laptops get dusty screens and daylight glare. Focus has to be loud. */
+:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* Section labels. Wide-tracked uppercase, the register-book register. */
+.eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ── app chrome: top bar ─────────────────────────────────────────────────── */
+.appbar {
+  height: var(--header-h);
+  background: var(--header-bg);
+  color: var(--text-invert);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.brand {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: .2px;
+  white-space: nowrap;
+}
+.brand em {
+  color: var(--gold);
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 400;
+  margin-left: 1px;
+}
+
+.appbar-spacer { flex: 1; }
+
+/* The address the phone has to reach. The one fact worth pinning to the bar. */
+.server-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: #cfd8e3;
+  background: rgba(255, 255, 255, .08);
+  border-radius: 15px;
+  padding: 6px 14px;
+}
+.server-chip b {
+  font-family: "Segoe UI", sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  color: #8fa3bb;
+}
+@media (max-width: 720px) { .server-chip { display: none; } }
+
+/* ── layout ──────────────────────────────────────────────────────────────── */
+.wrap { padding: 18px 20px 40px; max-width: 1560px; margin: 0 auto; }
+
+/* ── app shell: sidebar + tab content ────────────────────────────────────── */
+.app-shell { display: flex; align-items: flex-start; }
+
+.sidenav {
+  flex: none;
+  width: 208px;
+  min-height: calc(100vh - var(--header-h));
+  background: var(--header-bg);
+  position: sticky;
+  top: var(--header-h);
+  padding: 12px 0;
+}
+.sidenav-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: #9fb2c8;
+  padding: 12px 19px;
+  cursor: pointer;
+  text-align: left;
+}
+.sidenav-item .ico { font-size: 16px; width: 20px; flex: none; text-align: center; }
+.sidenav-item:hover { background: rgba(255, 255, 255, .06); color: #fff; }
+.sidenav-item.is-active { background: rgba(255, 255, 255, .08); color: #fff; border-left-color: var(--gold); }
+
+.app-content { flex: 1; min-width: 0; }
+
+@media (max-width: 860px) {
+  .sidenav { position: static; width: 100%; min-height: 0; display: flex; padding: 0; }
+  .sidenav-item { flex: 1; justify-content: center; border-left: 0; border-bottom: 3px solid transparent; padding: 12px 8px; }
+  .sidenav-item.is-active { border-left-color: transparent; border-bottom-color: var(--gold); }
+}
+
+/* ── filter bar (Project / Material tabs) ────────────────────────────────── */
+.filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.filter-bar select, .filter-bar input[type="search"], .filter-bar input[type="date"] {
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 12px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 13.5px;
+  font-family: inherit;
+}
+.filter-bar input[type="search"] { min-width: 220px; flex: 1; }
+.filter-bar label { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-muted); }
+.filter-bar select:focus, .filter-bar input:focus {
+  outline: 0; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(44, 123, 229, .18);
+}
+
+/* ── project tab: grid + detail ───────────────────────────────────────────── */
+button.pcard { border: 1px solid var(--border-soft); cursor: pointer; font: inherit; text-align: left; color: inherit; }
+button.pcard:hover { border-color: var(--blue); }
+
+.site-strip { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+.site-chip {
+  border: 1px solid var(--border-soft);
+  border-radius: 20px;
+  padding: 8px 16px;
+  background: var(--card-bg);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--text);
+}
+.site-chip:hover { border-color: var(--blue); }
+.site-chip.is-active { border-color: var(--gold); background: #fff8ec; }
+
+.pane {
+  background: var(--card-bg);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.pane-body { max-height: 460px; overflow-y: auto; }
+
+.doc-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  padding: 12px 14px;
+  cursor: pointer;
+  color: var(--text);
+}
+.doc-row + .doc-row { border-top: 1px solid var(--border-soft); }
+.doc-row:hover { background: var(--row-hover); }
+.doc-row .id { font-family: var(--mono); font-size: 12.5px; flex: none; width: 84px; }
+.doc-row .meta { flex: 1; min-width: 0; }
+.doc-row .meta .t { font-size: 13.5px; font-weight: 600; }
+.doc-row .meta .d { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+/* ── material tab: document gallery ──────────────────────────────────────── */
+.material-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+.material-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+.material-card:hover { border-color: var(--blue); }
+.material-card .thumb {
+  height: 140px;
+  background: var(--table-head);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.material-card .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.material-card .thumb .ico { font-size: 30px; }
+.material-card .info { padding: 12px 13px; display: flex; flex-direction: column; gap: 6px; }
+.material-card .proj { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--header-bg); }
+.material-card .site { font-size: 12px; color: var(--text-muted); }
+.material-card .pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.material-card .meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+.material-card .meta-row .doc-id { font-family: var(--mono); flex: none; }
+
+/* ── page title bar ──────────────────────────────────────────────────────── */
+.pagebar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.pagebar h1 {
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -.3px;
+  margin: 0;
+}
+.pagebar .sub { color: var(--text-muted); font-size: 13.5px; margin-top: 2px; }
+.pagebar-spacer { flex: 1; }
+
+.search-projects {
+  height: 42px;
+  width: 250px;
+  border: 1px solid var(--border);
+  border-radius: 21px;
+  padding: 0 16px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 14px;
+}
+.search-projects:focus { outline: 0; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(44, 123, 229, .18); }
+
+/* ── buttons ─────────────────────────────────────────────────────────────── */
+/* 42px tall, not 34 — these get tapped on touchscreen laptops with gloves on. */
+.btn {
+  height: 42px;
+  border: 0;
+  border-radius: var(--radius);
+  padding: 0 18px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.btn-green { background: var(--green); color: #fff; }
+.btn-green:hover { background: #278653; }
+.btn-blue  { background: var(--blue);  color: #fff; }
+.btn-blue:hover { background: var(--blue-dark); }
+.btn-dark  { background: var(--header-bg); color: #fff; }
+.btn-dark:hover { background: #21374f; }
+.btn-ghost {
+  background: var(--card-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover { background: var(--row-hover); }
+.btn-lg { height: 48px; font-size: 15px; padding: 0 22px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── KPI stat cards ──────────────────────────────────────────────────────── */
+/* Icon-square pattern lifted from the BSF Work Order Register reference —
+   a colored icon chip beside the number, instead of a left accent border. */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+  margin-bottom: 26px;
+}
+@media (max-width: 560px) { .stats { grid-template-columns: 1fr; } }
+
+.stat {
+  background: var(--card-bg);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 15px 16px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+.stat .icon {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 19px;
+  background: var(--accent, var(--blue));
+  color: #fff;
+}
+.stat .value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -.4px;
+  font-variant-numeric: tabular-nums;
+}
+.stat .label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+.stat.is-navy  { --accent: #2b4a6f; }
+.stat.is-green { --accent: var(--green); }
+.stat.is-amber { --accent: #c67f14; }
+.stat.is-blue  { --accent: var(--blue); }
+.stat.is-red   { --accent: var(--red); }
+
+/* ── section head ────────────────────────────────────────────────────────── */
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px;
+  flex-wrap: wrap;
+}
+.section-head h2 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  margin: 0;
+  color: #465b73;
+}
+.section-head .spacer { flex: 1; }
+.count-badge {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  background: #e2e8ef;
+  border-radius: 10px;
+  padding: 2px 9px;
+}
+/* ── project cards ───────────────────────────────────────────────────────── */
+.projects {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 14px;
+  margin-bottom: 30px;
+  align-items: stretch;
+}
+
+.pcard {
+  position: relative;
+  background: var(--card-bg);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 17px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+/* The active project — the one whose QR is on screen — carries the gold rule. */
+.pcard.is-active { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(233, 161, 59, .35), var(--shadow); }
+
+/* The project code, set in mono and large. On site this string is what people
+   read off the invoice and say out loud, so it is the card's headline. */
+.pcard .code {
+  font-family: var(--mono);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -.2px;
+  color: var(--header-bg);
+  word-break: break-all;
+}
+.pcard .pname {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  margin-top: 3px;
+}
+.pcard .site {
+  display: flex;
+  gap: 9px;
+  font-size: 13px;
+  color: #45566b;
+}
+.pcard .site .eyebrow { flex: none; padding-top: 2px; }
+
+.link-details {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--blue);
+  text-decoration: underline;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: none;
+}
+.link-details:hover { color: var(--blue-dark); }
+
+/* Document tally — a measurement-book style strip, tabular so columns line up
+   across cards. */
+.tally {
+  display: flex;
+  gap: 18px;
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+  padding: 11px 0;
+  margin-top: auto;
+}
+.tally div { display: flex; flex-direction: column; gap: 2px; }
+.tally b {
+  font-family: var(--mono);
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.tally span { font-size: 10.5px; font-weight: 700; letter-spacing: .9px; text-transform: uppercase; color: var(--text-muted); }
+.tally .t-wait b { color: #c67f14; }
+
+/* ── Add Project tile ────────────────────────────────────────────────────── */
+/* Filled, not a dashed outline — a dashed box reads as a drop zone, and this is
+   a button. Navy rather than green keeps it under "+ Add invoice" in the
+   hierarchy: a site is registered monthly, an invoice arrives hourly. */
+.tile-add {
+  background: var(--header-bg);
+  border: 2px solid var(--header-bg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  min-height: 190px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 3px;
+  padding: 26px 22px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text-invert);
+  text-align: center;
+  transition: border-color .15s ease, transform .15s ease;
+}
+.tile-add:hover { border-color: var(--gold); transform: translateY(-1px); }
+.tile-add:active { transform: none; }
+
+.tile-add .plus {
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: var(--gold);
+  color: var(--header-bg);
+  font-size: 27px;
+  font-weight: 700;
+  line-height: 46px;
+  margin-bottom: 10px;
+}
+.tile-add .t { font-size: 17px; font-weight: 700; letter-spacing: -.1px; }
+.tile-add .d { font-size: 12.5px; line-height: 1.45; color: #9fb2c8; max-width: 25ch; }
+
+/* Sole occupant of an empty register — the invitation goes in the tile, not in
+   a separate box beside it. */
+.tile-add.is-only { grid-column: 1 / -1; min-height: 220px; }
+
+/* ── Add Invoice split control + menu ────────────────────────────────────── */
+.addinv { position: relative; }
+.addinv > .btn { width: 100%; }
+
+.menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.menu[hidden] { display: none; }
+.menu button {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  padding: 12px 14px;
+  cursor: pointer;
+  color: var(--text);
+}
+.menu button + button { border-top: 1px solid var(--border-soft); }
+.menu button:hover { background: var(--row-hover); }
+.menu .ico {
+  font-size: 18px;
+  line-height: 1.2;
+  width: 22px;
+  flex: none;
+  text-align: center;
+  color: var(--blue-dark);
+}
+.menu .t { font-size: 14px; font-weight: 600; display: block; }
+.menu .d { font-size: 12px; color: var(--text-muted); display: block; margin-top: 1px; }
+
+/* ── cards ───────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--card-bg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.card-head {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border-soft);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.card-head h2 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  margin: 0;
+  color: #465b73;
+}
+.card-head .spacer { flex: 1; }
+.card-body { padding: 18px; }
+
+/* ── data table ──────────────────────────────────────────────────────────── */
+.table-scroll { overflow-x: auto; }
+
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+table.data thead th {
+  background: var(--table-head);
+  text-align: left;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #33465c;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+table.data tr.filters th {
+  background: var(--card-bg);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-transform: none;
+  letter-spacing: 0;
+}
+table.data tr.filters input {
+  width: 100%;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 9px;
+  font-size: 13px;
+  font-family: inherit;
+}
+table.data tr.filters input:focus { outline: 0; border-color: var(--blue); }
+
+table.data tbody td {
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  vertical-align: middle;
+}
+table.data tbody tr:hover { background: var(--row-hover); }
+table.data td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+table.data td.mono { font-family: var(--mono); font-size: 12.5px; }
+
+.empty {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* ── pills ───────────────────────────────────────────────────────────────── */
+.pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 11px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.pill-pending  { background: #fdf1dc; color: #96660f; }
+.pill-done     { background: #e2f4ea; color: #1d7245; }
+.pill-failed   { background: #fbe4e1; color: #a5291b; }
+.pill-invoice  { background: #e7effb; color: #1a5fb4; }
+.pill-po       { background: #ede8fa; color: #5533b8; }
+.pill-delivery { background: #e2f4ea; color: #1d7245; }
+.pill-unclassified { background: #eceff3; color: #64748b; }
+/* Works-contract / RA bills. Deliberately muted — they are classified so they
+   can be kept out of the material match path, not because anyone acts on them. */
+.pill-other    { background: #f3e8e4; color: #8a5a3b; }
+.pill-working  { background: #e7effb; color: #1a5fb4; }
+.pill-approved { background: #e2f4ea; color: #1d7245; }
+.pill-rejected { background: #fbe4e1; color: #a5291b; }
+
+/* ── modal ───────────────────────────────────────────────────────────────── */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(22, 39, 59, .55);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  overflow: auto;
+}
+.backdrop[hidden] { display: none; }
+
+.site-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  padding: 12px 4px;
+  cursor: pointer;
+  color: var(--text);
+}
+.site-row + .site-row { border-top: 1px solid var(--border-soft); }
+.site-row:hover { background: var(--row-hover); }
+.site-row .t { font-size: 14px; font-weight: 600; }
+.site-row .d { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+
+.modal {
+  background: var(--card-bg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 440px;
+}
+.modal-lg { max-width: 960px; }
+.modal-lg .modal-body { max-height: 72vh; overflow-y: auto; }
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.modal-head h2 { font-size: 17px; font-weight: 700; margin: 0; }
+.modal-head .for { font-family: var(--mono); font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+.modal-head .spacer { flex: 1; }
+.modal-body { padding: 18px; }
+.modal-foot {
+  display: flex;
+  gap: 10px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--border-soft);
+  background: #fafbfc;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.modal-foot .spacer { flex: 1; }
+
+.close-x {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--card-bg);
+  color: var(--text-muted);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.close-x:hover { color: var(--text); background: var(--row-hover); }
+
+/* ── connection panel (inside the scan modal) ────────────────────────────── */
+.qr-frame {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  display: grid;
+  place-items: center;
+}
+.qr-frame svg { width: 100%; height: auto; display: block; }
+.qr-missing { padding: 44px 10px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+.steps {
+  margin: 15px 0 0;
+  padding-left: 20px;
+  font-size: 13.5px;
+  color: #45566b;
+}
+.steps li { margin-bottom: 6px; }
+
+.kv {
+  margin-top: 15px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 13px;
+  font-size: 12.5px;
+}
+.kv div { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
+.kv span:first-child { color: var(--text-muted); }
+.kv span:last-child  { font-family: var(--mono); text-align: right; word-break: break-all; }
+
+.countdown { font-weight: 700; font-family: var(--mono); }
+.countdown.warn    { color: #c67f14; }
+.countdown.expired { color: var(--red); }
+
+/* ── file upload panel ───────────────────────────────────────────────────── */
+.drop {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 26px 18px;
+  text-align: center;
+  cursor: pointer;
+  background: #fafbfc;
+}
+.drop:hover, .drop.over { border-color: var(--blue); background: #f4f8fe; }
+.drop .ico { font-size: 26px; color: var(--blue-dark); }
+.drop .t { font-size: 14.5px; font-weight: 600; margin-top: 6px; }
+.drop .d { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+
+/* ── document review ─────────────────────────────────────────────────────── */
+.doc-pages { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.doc-pages img {
+  width: 84px; height: 108px; object-fit: cover;
+  border: 1px solid var(--border); border-radius: var(--radius); display: block;
+}
+.field-section + .field-section { margin-top: 22px; }
+.field-section h3 {
+  font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+  color: #465b73; margin: 0 0 10px;
+}
+.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.field-grid label { display: flex; flex-direction: column; gap: 4px; }
+.field-grid label > span {
+  font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.field-grid input, .field-grid select {
+  height: 38px; border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0 10px; font-size: 13.5px; font-family: inherit; background: var(--input-bg);
+}
+.field-grid input:focus, .field-grid select:focus {
+  outline: 0; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(44, 123, 229, .18);
+}
+.field-grid .display { padding: 8px 0 2px; font-size: 13.5px; }
+
+table.lines input, table.lines select {
+  width: 100%; height: 32px; border: 1px solid var(--border); border-radius: 4px;
+  padding: 0 6px; font-size: 12.5px; font-family: inherit;
+}
+table.lines td { padding: 6px 8px; }
+
+.doc-status-banner { padding: 10px 14px; border-radius: var(--radius); font-size: 13px; margin-bottom: 16px; }
+.doc-status-banner.wait     { background: #e7effb; color: #1a5fb4; }
+.doc-status-banner.approved { background: #e2f4ea; color: #1d7245; }
+.doc-status-banner.rejected { background: #fbe4e1; color: #a5291b; }
+
+.reviewer-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.reviewer-row input { height: 40px; flex: 1; min-width: 180px; max-width: 280px; }
+.reject-btn { color: var(--red); border-color: #f2c2bb; }
+
+.reject-panel { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; max-width: 480px; }
+.reject-panel textarea {
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px;
+  font-family: inherit; font-size: 13.5px; resize: vertical; min-height: 60px;
+}
+
+table.data tbody tr.clickable { cursor: pointer; }
+
+.filelist { list-style: none; margin: 14px 0 0; padding: 0; font-size: 13px; }
+.filelist li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.filelist .fname { flex: 1; word-break: break-all; }
+.filelist .fsize { font-family: var(--mono); font-size: 12px; color: var(--text-muted); }
+.filelist .drop-one {
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.filelist .drop-one:hover { color: var(--red); }
+
+/* ── banners ─────────────────────────────────────────────────────────────── */
+.banner {
+  padding: 11px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.banner-warn { background: #fdf1dc; color: #7a5209; border: 1px solid #f0d9a8; }
+.banner-err  { background: #fbe4e1; color: #a5291b; border: 1px solid #f2c2bb; }
+.banner-ok   { background: #e2f4ea; color: #1d7245; border: 1px solid #b8e0c8; }
+.banner[hidden] { display: none; }
+
+/* ── form fields ─────────────────────────────────────────────────────────── */
+.form { display: flex; flex-direction: column; gap: 13px; }
+.form label { display: flex; flex-direction: column; gap: 5px; }
+.form label > span {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.form input, .form select {
+  height: 42px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 12px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 14.5px;
+  font-family: inherit;
+}
+.form input:focus, .form select:focus { outline: 0; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(44, 123, 229, .18); }
+.form .hint { font-size: 12px; color: var(--text-muted); }
+
+/* ── print ───────────────────────────────────────────────────────────────── */
+/* The site office pins the day's intake list on the wall, so the register has
+   to survive a printer. Controls, chrome and anything mid-interaction go. */
+.print-head { display: none; }
+
+@media print {
+  body { background: #fff; }
+  .wrap { padding: 0; max-width: none; }
+
+  .appbar,
+  .sidenav,
+  .search-projects,
+  .btn,
+  .close-x,
+  .addinv,
+  .tile-add,
+  .backdrop,
+  tr.filters,
+  #poll-note { display: none !important; }
+
+  .print-head {
+    display: block;
+    border-bottom: 2px solid var(--header-bg);
+    padding-bottom: 9px;
+    margin-bottom: 18px;
+  }
+  .print-head h1 { font-size: 19px; font-weight: 700; margin: 0; }
+  .print-head .when { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+
+  .pagebar { display: none; }
+  .stats { gap: 8px; margin-bottom: 18px; }
+  .stat, .pcard, .card { box-shadow: none; border: 1px solid var(--border); break-inside: avoid; }
+  .projects { gap: 8px; }
+
+  /* A table split mid-row is unreadable, and page 2 needs its own header. */
+  table.data thead { display: table-header-group; }
+  table.data tbody tr { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── app chrome ──────────────────────────────────────────────────────── -->
+<header class="appbar">
+  <div class="brand">Purchase<em>Division</em></div>
+  <div class="appbar-spacer"></div>
+  <span class="server-chip"><b>SERVER</b>{{SERVER_URL}}</span>
+</header>
+
+<div class="app-shell">
+  <nav class="sidenav" id="sidenav">
+    <button class="sidenav-item" data-tab="upload"><span class="ico">&#11014;</span>Upload</button>
+    <button class="sidenav-item" data-tab="project"><span class="ico">&#128193;</span>Project</button>
+    <button class="sidenav-item" data-tab="material"><span class="ico">&#128444;</span>Material</button>
+  </nav>
+
+  <div class="app-content">
+
+<div class="wrap" id="tab-upload">
+
+  <!-- Print only — a sheet with no title and no date is useless on a wall. -->
+  <div class="print-head">
+    <h1>Purchase Division — Project Register</h1>
+    <div class="when" id="print-when"></div>
+  </div>
+
+  <!-- ── page title bar ───────────────────────────────────────────────── -->
+  <div class="pagebar">
+    <div>
+      <h1>Project Register</h1>
+      <div class="sub">Pick a project, then add its invoices by phone scan or file upload.</div>
+    </div>
+    <div class="pagebar-spacer"></div>
+    <input class="search-projects" id="project-search" type="search"
+           placeholder="Search projects" aria-label="Search projects">
+    <button class="btn btn-ghost" onclick="window.print()">&#128424;&nbsp; Print</button>
+  </div>
+
+  <!-- ── KPI cards ────────────────────────────────────────────────────── -->
+  <div class="stats">
+    <div class="stat is-navy">
+      <div class="icon">&#128193;</div>
+      <div><div class="value" id="kpi-projects">0</div><div class="label">Projects</div></div>
+    </div>
+    <div class="stat is-blue">
+      <div class="icon">&#128196;</div>
+      <div><div class="value" id="kpi-total">0</div><div class="label">Documents Received</div></div>
+    </div>
+    <div class="stat is-amber">
+      <div class="icon">&#8987;</div>
+      <div><div class="value" id="kpi-pending-review">0</div><div class="label">Pending Review</div></div>
+    </div>
+    <div class="stat is-green">
+      <div class="icon">&#10003;</div>
+      <div><div class="value" id="kpi-approved">0</div><div class="label">Approved</div></div>
+    </div>
+    <div class="stat is-red">
+      <div class="icon">&#10007;</div>
+      <div><div class="value" id="kpi-rejected">0</div><div class="label">Rejected</div></div>
+    </div>
+  </div>
+
+  <!-- ── projects ─────────────────────────────────────────────────────── -->
+  <div class="section-head">
+    <h2>Projects</h2>
+    <span class="count-badge" id="project-count">—</span>
+  </div>
+
+  <div class="projects" id="projects">
+    <div class="empty" style="grid-column:1/-1">Loading projects&hellip;</div>
+  </div>
+
+  <!-- ── received documents ───────────────────────────────────────────── -->
+  <section class="card">
+    <div class="card-head">
+      <h2>Documents Received</h2>
+      <span class="muted" id="poll-note"></span>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" id="btn-refresh">&#8635;&nbsp; Refresh</button>
+    </div>
+
+    <div class="table-scroll">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Document ID</th>
+            <th>Project</th>
+            <th>Type</th>
+            <th class="right">Pages</th>
+            <th>Status</th>
+            <th>Received</th>
+            <th></th>
+          </tr>
+          <tr class="filters">
+            <th><input data-col="0" placeholder="Filter ID"></th>
+            <th><input data-col="1" placeholder="Filter project"></th>
+            <th><input data-col="2" placeholder="Filter type"></th>
+            <th></th>
+            <th><input data-col="4" placeholder="Filter status"></th>
+            <th></th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr><td colspan="7" class="empty">No documents yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<!-- ── project tab ──────────────────────────────────────────────────── -->
+<div class="wrap" id="tab-project" hidden>
+
+  <!-- project grid (list view) -->
+  <div id="ptab-list">
+    <div class="pagebar">
+      <div>
+        <h1>Project Explorer</h1>
+        <div class="sub">Pick a project to see its sites, documents and materials.</div>
+      </div>
+      <div class="pagebar-spacer"></div>
+      <input class="search-projects" id="ptab-list-search" type="search"
+             placeholder="Search projects" aria-label="Search projects">
+    </div>
+
+    <div class="projects" id="ptab-grid"></div>
+  </div>
+
+  <!-- project detail -->
+  <div id="ptab-detail" hidden>
+    <div class="pagebar">
+      <div>
+        <button class="link-details" id="ptab-back">&lsaquo; All projects</button>
+        <h1 id="ptab-detail-title">—</h1>
+        <div class="sub" id="ptab-detail-sub"></div>
+      </div>
+      <div class="pagebar-spacer"></div>
+      <button class="btn btn-ghost" id="btn-export-project">&#8681;&nbsp; Export to Excel</button>
+    </div>
+
+    <div class="section-head"><h2>Sites</h2></div>
+    <div class="site-strip" id="ptab-detail-sites"></div>
+
+    <div class="filter-bar">
+      <input type="search" id="ptab-search" placeholder="Search vendor, doc ID&hellip;">
+      <select id="ptab-type">
+        <option value="">All types</option>
+        <option value="INVOICE">Invoice</option>
+        <option value="PO">PO</option>
+        <option value="DELIVERY">Delivery</option>
+        <option value="OTHER">Other</option>
+        <option value="UNCLASSIFIED">Unclassified</option>
+      </select>
+      <select id="ptab-status">
+        <option value="">All statuses</option>
+        <option value="PENDING">Pending</option>
+        <option value="PROCESSING">Processing</option>
+        <option value="EXTRACTED">Extracted</option>
+        <option value="APPROVED">Approved</option>
+        <option value="REJECTED">Rejected</option>
+        <option value="FAILED">Failed</option>
+      </select>
+      <label>From <input type="date" id="ptab-date-from"></label>
+      <label>To <input type="date" id="ptab-date-to"></label>
+    </div>
+
+    <div class="section-head"><h2>Documents</h2><span class="count-badge" id="ptab-doc-count">—</span></div>
+    <div class="pane" style="margin-bottom:26px;">
+      <div class="pane-body" id="ptab-docs"></div>
+    </div>
+
+    <div class="section-head"><h2>Materials</h2></div>
+    <div class="pane">
+      <div class="pane-body" id="ptab-materials"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── material tab ─────────────────────────────────────────────────── -->
+<div class="wrap" id="tab-material" hidden>
+  <div class="pagebar">
+    <div>
+      <h1>Material Library</h1>
+      <div class="sub">Every uploaded document and photo, in one place.</div>
+    </div>
+    <div class="pagebar-spacer"></div>
+  </div>
+
+  <div class="filter-bar">
+    <input type="search" id="mtab-search" placeholder="Search doc ID or project&hellip;">
+    <select id="mtab-project"><option value="">All projects</option></select>
+    <select id="mtab-site"><option value="">All sites</option></select>
+    <select id="mtab-type">
+      <option value="">All types</option>
+      <option value="INVOICE">Invoice</option>
+      <option value="PO">PO</option>
+      <option value="DELIVERY">Delivery</option>
+      <option value="OTHER">Other</option>
+      <option value="UNCLASSIFIED">Unclassified</option>
+    </select>
+    <select id="mtab-status">
+      <option value="">All statuses</option>
+      <option value="PENDING">Pending</option>
+      <option value="PROCESSING">Processing</option>
+      <option value="EXTRACTED">Extracted</option>
+      <option value="APPROVED">Approved</option>
+      <option value="REJECTED">Rejected</option>
+      <option value="FAILED">Failed</option>
+    </select>
+  </div>
+
+  <div class="material-grid" id="mtab-grid"></div>
+</div>
+
+  </div><!-- /app-content -->
+</div><!-- /app-shell -->
+
+<!-- ── add project ────────────────────────────────────────────────────── -->
+<div class="backdrop" id="m-project" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-project-h">
+    <div class="modal-head">
+      <div><h2 id="m-project-h">Add project</h2></div>
+      <div class="spacer"></div>
+      <button class="close-x" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="banner banner-err" id="project-err" hidden></div>
+      <div class="form">
+        <label><span>Project name</span>
+          <input id="new-name" placeholder="Chennai Residential Tower" autocomplete="off">
+        </label>
+        <label><span>Sites</span>
+          <div style="display:flex; gap:8px;">
+            <input id="new-site-input" placeholder="Foundation Area" autocomplete="off" style="flex:1;">
+            <button class="btn btn-ghost" type="button" id="btn-add-site">Add</button>
+          </div>
+          <span class="hint">Optional — add one or more sites for this project.</span>
+        </label>
+        <ul class="filelist" id="site-list"></ul>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" data-close>Cancel</button>
+      <button class="btn btn-green" id="btn-create">Add project</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── scan with phone ────────────────────────────────────────────────── -->
+<div class="backdrop" id="m-scan" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-scan-h">
+    <div class="modal-head">
+      <div>
+        <h2 id="m-scan-h">Scan with phone</h2>
+        <div class="for" id="scan-for"></div>
+      </div>
+      <div class="spacer"></div>
+      <button class="close-x" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="qr-frame" id="qr-frame">{{QR_SVG}}</div>
+
+      <ol class="steps">
+        <li>Open the scanner app on the site phone.</li>
+        <li>Tap <strong>Scan QR to Connect</strong>.</li>
+        <li>Point it at this code &mdash; it carries the server, the session and the project.</li>
+        <li>Photograph the documents and tap <strong>Send All</strong>.</li>
+      </ol>
+
+      <div class="kv">
+        <div><span>Server</span><span>{{SERVER_URL}}</span></div>
+        <div><span>Project</span><span id="scan-project">—</span></div>
+        <div><span>Session</span><span>{{SESSION_ID}}</span></div>
+        <div><span>Code expires in</span><span class="countdown" id="expires">—</span></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" data-close>Done</button>
+      <button class="btn btn-green" id="btn-refresh-qr">&#8635;&nbsp; New code</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── upload files ───────────────────────────────────────────────────── -->
+<div class="backdrop" id="m-upload" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-upload-h">
+    <div class="modal-head">
+      <div>
+        <h2 id="m-upload-h">Upload files</h2>
+        <div class="for" id="upload-for"></div>
+      </div>
+      <div class="spacer"></div>
+      <button class="close-x" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="banner banner-err" id="upload-err" hidden></div>
+      <div class="banner banner-ok"  id="upload-ok"  hidden></div>
+
+      <div class="form" id="upload-site-wrap" hidden style="margin-bottom:13px;">
+        <label><span>Site</span>
+          <select id="upload-site"></select>
+        </label>
+      </div>
+
+      <div class="drop" id="drop" tabindex="0" role="button"
+           aria-label="Choose files to upload">
+        <div class="ico">&#11014;</div>
+        <div class="t">Choose files</div>
+        <div class="d">Photos or PDFs of invoices, purchase orders and delivery challans. Drag them here or click to browse.</div>
+      </div>
+      <input id="file-input" type="file" multiple hidden
+             accept=".pdf,.jpg,.jpeg,.png,image/jpeg,image/png,application/pdf">
+
+      <ul class="filelist" id="filelist"></ul>
+    </div>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" data-close>Cancel</button>
+      <button class="btn btn-green" id="btn-send" disabled>Upload</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── document review ────────────────────────────────────────────────── -->
+<div class="backdrop" id="m-doc" hidden>
+  <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="m-doc-h">
+    <div class="modal-head">
+      <div>
+        <h2 id="m-doc-h">Review document</h2>
+        <div class="for" id="doc-for"></div>
+      </div>
+      <div class="spacer"></div>
+      <button class="close-x" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" id="doc-body">
+      <div class="empty">Loading&hellip;</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* Injected by the backend on GET / — a session and QR exist only when the page
+   was opened with ?project=<id>, which is what "Scan with phone" does. */
+const SESSION_ID    = "{{SESSION_ID}}";
+const EXPIRES_AT    = "{{EXPIRES_AT}}";
+const PROJECT_ID    = "{{PROJECT_ID}}";
+const PROJECT_LABEL = "{{PROJECT_LABEL}}";
+
+/* Scan and upload are two different intake paths with two different APIs.
+   Scan: the phone posts to /documents/batch-upload with a session token.
+   Upload: the browser posts here, with no session — there is no phone. */
+const UPLOAD_URL = "/api/v1/documents/upload";
+
+const $ = id => document.getElementById(id);
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+let projects = [];
+let docs     = [];
+let filters  = {};
+let search   = "";
+let picked   = [];        // files chosen in the upload modal
+let uploadTo = null;      // project the upload modal is acting on
+
+/* ── modals ───────────────────────────────────────────────────────────── */
+const openModal = id => {
+  $(id).hidden = false;
+  /* Land on the thing to fill in, not on the ✕ that happens to come first in
+     the markup. The scan modal has no field, so it falls back to Close. */
+  $(id).querySelector(".modal-body input, .modal-body .drop, [data-close]")?.focus();
+};
+const closeModal = id => { $(id).hidden = true; };
+
+document.querySelectorAll(".backdrop").forEach(back => {
+  back.addEventListener("click", e => {
+    if (e.target === back || e.target.closest("[data-close]")) closeModal(back.id);
+  });
+});
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  document.querySelectorAll(".backdrop:not([hidden])").forEach(b => closeModal(b.id));
+  closeMenus();
+});
+
+/* ── project cards ────────────────────────────────────────────────────── */
+const tallyOf = id => {
+  const mine = docs.filter(d => d.project_id === id);
+  const wait = mine.filter(d => d.status === "EXTRACTED").length;
+  return { total: mine.length, wait, pages: mine.reduce((n, d) => n + d.page_count, 0) };
+};
+
+function renderProjects() {
+  const host = $("projects");
+  const shown = projects.filter(p =>
+    !search || `${p.code} ${p.name} ${(p.sites || []).map(s => s.name).join(" ")}`.toLowerCase().includes(search));
+
+  $("kpi-projects").textContent  = projects.length;
+  $("project-count").textContent = search
+    ? `${shown.length} of ${projects.length}`
+    : `${projects.length} total`;
+
+  /* The Add Project tile sits where the QR block used to — it is the only
+     always-present action on the register. */
+  const addTile = (only = false) => `
+    <button class="tile-add ${only ? "is-only" : ""}" id="tile-add">
+      <span class="plus">+</span>
+      <span class="t">Add project</span>
+      <span class="d">${only
+        ? "No sites registered yet. Add the first one and its documents will have somewhere to land."
+        : "Register a new site before its documents arrive."}</span>
+    </button>`;
+
+  if (!projects.length) {
+    host.innerHTML = addTile(true);
+  } else if (!shown.length) {
+    host.innerHTML = addTile() +
+      `<div class="empty" style="grid-column:span 2">No project matches “${esc(search)}”.</div>`;
+  } else {
+    host.innerHTML = shown.map(p => {
+      const t = tallyOf(p.id);
+      return `
+      <div class="pcard ${p.id === PROJECT_ID ? "is-active" : ""}">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+          <div>
+            <div class="code">${esc(p.code)}</div>
+            <div class="pname">${esc(p.name)}</div>
+          </div>
+          <button class="link-details" data-details="${esc(p.id)}">View details</button>
+        </div>
+        ${(p.sites || []).length ? `<div class="site"><span class="eyebrow">Sites</span><span>${esc(p.sites.map(s => s.name).join(", "))}</span></div>` : ""}
+        <div class="tally">
+          <div><b>${t.total}</b><span>Documents</span></div>
+          <div><b>${t.pages}</b><span>Pages</span></div>
+          <div class="t-wait"><b>${t.wait}</b><span>Awaiting</span></div>
+        </div>
+        <div class="addinv">
+          <button class="btn btn-green" data-menu="${esc(p.id)}"
+                  aria-haspopup="true" aria-expanded="false">+ Add invoice &nbsp;&#9662;</button>
+          <div class="menu" id="menu-${esc(p.id)}" hidden>
+            <button data-scan="${esc(p.id)}">
+              <span class="ico">&#128241;</span>
+              <span><span class="t">Scan with phone</span>
+                    <span class="d">Show a QR code the site phone can scan</span></span>
+            </button>
+            <button data-upload="${esc(p.id)}">
+              <span class="ico">&#11014;</span>
+              <span><span class="t">Upload files</span>
+                    <span class="d">Choose photos or PDFs from this computer</span></span>
+            </button>
+          </div>
+        </div>
+      </div>`;
+    }).join("") + addTile();
+  }
+
+  $("tile-add").addEventListener("click", () => {
+    $("project-err").hidden = true;
+    $("new-name").value = "";
+    $("new-site-input").value = "";
+    newSites = [];
+    renderNewSites();
+    openModal("m-project");
+  });
+}
+
+/* ── Add invoice menu ─────────────────────────────────────────────────── */
+const closeMenus = () => {
+  document.querySelectorAll(".menu").forEach(m => m.hidden = true);
+  document.querySelectorAll("[data-menu]").forEach(b => b.setAttribute("aria-expanded", "false"));
+};
+
+document.addEventListener("click", e => {
+  const toggle  = e.target.closest("[data-menu]");
+  const scan    = e.target.closest("[data-scan]");
+  const upload  = e.target.closest("[data-upload]");
+  const details = e.target.closest("[data-details]");
+
+  if (details) {
+    goToProjectTab(details.dataset.details);
+    return;
+  }
+  if (toggle) {
+    const menu = $(`menu-${toggle.dataset.menu}`);
+    const wasOpen = !menu.hidden;
+    closeMenus();
+    menu.hidden = wasOpen;
+    toggle.setAttribute("aria-expanded", String(!wasOpen));
+    return;
+  }
+  if (scan) {
+    closeMenus();
+    /* The QR is server-rendered, so the session is minted by a page load. */
+    location.href = `/?project=${encodeURIComponent(scan.dataset.scan)}`;
+    return;
+  }
+  if (upload) {
+    closeMenus();
+    openUpload(upload.dataset.upload);
+    return;
+  }
+  if (!e.target.closest(".menu")) closeMenus();
+});
+
+/* ── add project ──────────────────────────────────────────────────────── */
+let newSites = [];
+
+function renderNewSites() {
+  $("site-list").innerHTML = newSites.map((name, i) => `
+    <li>
+      <span class="fname">${esc(name)}</span>
+      <button class="drop-one" data-drop-site="${i}" aria-label="Remove ${esc(name)}">&times;</button>
+    </li>`).join("");
+}
+
+function addSiteInput() {
+  const input = $("new-site-input");
+  const name = input.value.trim();
+  if (name) newSites.push(name);
+  input.value = "";
+  renderNewSites();
+  input.focus();
+}
+
+$("btn-add-site").addEventListener("click", addSiteInput);
+$("new-site-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") { e.preventDefault(); addSiteInput(); }
+});
+$("site-list").addEventListener("click", e => {
+  const btn = e.target.closest("[data-drop-site]");
+  if (!btn) return;
+  newSites.splice(Number(btn.dataset.dropSite), 1);
+  renderNewSites();
+});
+
+$("btn-create").addEventListener("click", async () => {
+  const body = { name: $("new-name").value.trim(), sites: newSites };
+  const err = $("project-err");
+  if (!body.name) {
+    err.textContent = "Project name is required.";
+    err.hidden = false;
+    return;
+  }
+  err.hidden = true;
+  try {
+    const res  = await fetch("/api/v1/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail ?? `Server returned ${res.status}`);
+    closeModal("m-project");
+    $("new-name").value = "";
+    $("new-site-input").value = "";
+    newSites = [];
+    renderNewSites();
+    await loadProjects();
+  } catch (e) {
+    err.textContent = `Could not add the project — ${e.message}`;
+    err.hidden = false;
+  }
+});
+
+/* ── scan with phone ──────────────────────────────────────────────────── */
+if (PROJECT_ID) {
+  $("scan-for").textContent = PROJECT_LABEL || PROJECT_ID;
+  $("scan-project").textContent = PROJECT_LABEL || "—";
+  $("btn-refresh-qr").addEventListener("click", () => {
+    location.href = `/?project=${encodeURIComponent(PROJECT_ID)}`;
+  });
+  /* Closing the QR clears the project from the URL, so a reload does not mint
+     a session nobody asked for. */
+  $("m-scan").addEventListener("click", e => {
+    if (e.target === $("m-scan") || e.target.closest("[data-close]")) {
+      history.replaceState(null, "", "/");
+    }
+  });
+
+  const tick = () => {
+    const el = $("expires");
+    const left = Math.floor((new Date(EXPIRES_AT) - Date.now()) / 1000);
+    if (left <= 0) {
+      el.textContent = "Expired — tap New code";
+      el.className = "countdown expired";
+      return;
+    }
+    el.textContent = `${String(Math.floor(left / 60)).padStart(2, "0")}:${String(left % 60).padStart(2, "0")}`;
+    el.className = left < 120 ? "countdown warn" : "countdown";
+  };
+  tick();
+  setInterval(tick, 1000);
+
+  if (!$("qr-frame").querySelector("svg")) {
+    $("qr-frame").innerHTML = `<div class="qr-missing">No code was issued. Tap <strong>New code</strong>.</div>`;
+  }
+  openModal("m-scan");
+}
+
+/* ── upload files ─────────────────────────────────────────────────────── */
+const ALLOWED = /\.(pdf|jpe?g|png)$/i;
+const kb = n => n < 1024 * 1024
+  ? `${Math.round(n / 1024)} KB`
+  : `${(n / 1048576).toFixed(1)} MB`;
+
+function openUpload(projectId) {
+  uploadTo = projects.find(p => p.id === projectId);
+  picked = [];
+  $("upload-for").textContent = uploadTo ? `${uploadTo.code} — ${uploadTo.name}` : "";
+  $("upload-err").hidden = true;
+  $("upload-ok").hidden  = true;
+  $("file-input").value  = "";
+
+  const sites = uploadTo?.sites || [];
+  $("upload-site-wrap").hidden = !sites.length;
+  $("upload-site").innerHTML = sites.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
+
+  renderPicked();
+  openModal("m-upload");
+}
+
+function renderPicked() {
+  $("filelist").innerHTML = picked.map((f, i) => `
+    <li>
+      <span class="fname">${esc(f.name)}</span>
+      <span class="fsize">${kb(f.size)}</span>
+      <button class="drop-one" data-drop="${i}" aria-label="Remove ${esc(f.name)}">&times;</button>
+    </li>`).join("");
+  $("btn-send").disabled = !picked.length;
+  $("btn-send").textContent = picked.length > 1 ? `Upload ${picked.length} files` : "Upload";
+}
+
+function addFiles(list) {
+  const rejected = [];
+  for (const f of list) {
+    if (!ALLOWED.test(f.name)) { rejected.push(f.name); continue; }
+    if (!picked.some(p => p.name === f.name && p.size === f.size)) picked.push(f);
+  }
+  const err = $("upload-err");
+  if (rejected.length) {
+    err.textContent = `Skipped ${rejected.join(", ")} — only PDF, JPG and PNG files can be read.`;
+    err.hidden = false;
+  } else {
+    err.hidden = true;
+  }
+  renderPicked();
+}
+
+$("drop").addEventListener("click", () => $("file-input").click());
+$("drop").addEventListener("keydown", e => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("file-input").click(); }
+});
+$("file-input").addEventListener("change", e => addFiles(e.target.files));
+
+["dragenter", "dragover"].forEach(ev =>
+  $("drop").addEventListener(ev, e => { e.preventDefault(); $("drop").classList.add("over"); }));
+["dragleave", "drop"].forEach(ev =>
+  $("drop").addEventListener(ev, e => { e.preventDefault(); $("drop").classList.remove("over"); }));
+$("drop").addEventListener("drop", e => addFiles(e.dataTransfer.files));
+
+$("filelist").addEventListener("click", e => {
+  const btn = e.target.closest("[data-drop]");
+  if (!btn) return;
+  picked.splice(Number(btn.dataset.drop), 1);
+  renderPicked();
+});
+
+$("btn-send").addEventListener("click", async () => {
+  if (!picked.length || !uploadTo) return;
+  const err = $("upload-err"), ok = $("upload-ok"), btn = $("btn-send");
+  err.hidden = ok.hidden = true;
+  btn.disabled = true;
+  btn.textContent = "Uploading…";
+
+  const form = new FormData();
+  form.append("project_id", uploadTo.id);
+  if (!$("upload-site-wrap").hidden) form.append("site_id", $("upload-site").value);
+  /* One file, one document. A multi-page PDF stays one document; the page count
+     is the server's to work out, not the browser's. */
+  picked.forEach(f => form.append("files", f, f.name));
+
+  try {
+    const res = await fetch(UPLOAD_URL, { method: "POST", body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail ?? `Server returned ${res.status}`);
+    ok.textContent = `${picked.length} file${picked.length > 1 ? "s" : ""} uploaded to ${uploadTo.code}. Extraction starts automatically.`;
+    ok.hidden = false;
+    picked = [];
+    $("file-input").value = "";
+    renderPicked();
+    load();
+  } catch (e) {
+    err.textContent = `Upload failed — ${e.message}. Nothing was saved; try again.`;
+    err.hidden = false;
+  } finally {
+    btn.disabled = !picked.length;
+    btn.textContent = picked.length > 1 ? `Upload ${picked.length} files` : "Upload";
+  }
+});
+
+/* ── document table ───────────────────────────────────────────────────── */
+const typePill   = t => `<span class="pill pill-${String(t).toLowerCase()}">${esc(t)}</span>`;
+const STATUS_CLASS = {
+  PENDING:    "pending",
+  PROCESSING: "working",
+  EXTRACTED:  "pending",   // extracted but not yet reviewed — still needs action
+  APPROVED:   "approved",
+  REJECTED:   "rejected",
+  FAILED:     "failed",
+};
+const statusPill = s =>
+  `<span class="pill pill-${STATUS_CLASS[s] ?? "pending"}">${esc(s)}</span>`;
+const projectOf = d => d.project_code ? `${d.project_code} — ${d.project_name}` : "—";
+
+function renderDocs() {
+  const body = $("rows");
+  const shown = docs.filter(d => {
+    const cells = { 0: d.document_id, 1: projectOf(d), 2: d.document_type, 4: d.status };
+    return Object.entries(filters).every(([col, term]) =>
+      !term || String(cells[col] ?? "").toLowerCase().includes(term));
+  });
+
+  $("kpi-total").textContent          = docs.length;
+  $("kpi-pending-review").textContent = docs.filter(d => d.status === "EXTRACTED").length;
+  $("kpi-approved").textContent       = docs.filter(d => d.status === "APPROVED").length;
+  $("kpi-rejected").textContent       = docs.filter(d => d.status === "REJECTED").length;
+
+  if (!shown.length) {
+    body.innerHTML = `<tr><td colspan="7" class="empty">${
+      docs.length ? "No document matches the filter." : "No documents yet. Use Add invoice on a project to send some."
+    }</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = shown.map(d => `
+    <tr class="clickable" data-id="${esc(d.document_id)}">
+      <td class="mono">${esc(d.document_id.slice(0, 8))}</td>
+      <td>${esc(projectOf(d))}</td>
+      <td>${typePill(d.document_type)}</td>
+      <td class="num">${d.page_count}</td>
+      <td>${statusPill(d.status)}</td>
+      <td class="muted">${esc(d.uploaded_at)}</td>
+      <td class="muted">${d.status === "EXTRACTED" ? "Review &rsaquo;" : "&rsaquo;"}</td>
+    </tr>`).join("");
+}
+
+$("rows").addEventListener("click", e => {
+  const tr = e.target.closest("tr[data-id]");
+  if (tr) openDocument(tr.dataset.id);
+});
+
+/* ── data ─────────────────────────────────────────────────────────────── */
+async function loadProjects() {
+  try {
+    projects = (await (await fetch("/api/v1/projects")).json()).projects;
+  } catch {
+    projects = [];
+  }
+  renderProjects();
+}
+
+async function load() {
+  const note = $("poll-note");
+  try {
+    const res = await fetch("/api/v1/documents");
+    if (!res.ok) throw new Error(res.status);
+    docs = (await res.json()).documents;
+    renderDocs();
+    renderProjects();                       // the per-project tallies come from here
+    renderProjectTab();
+    renderMaterialTab();
+    note.textContent = `updated ${new Date().toLocaleTimeString()}`;
+  } catch {
+    note.textContent = "could not reach the server";
+  }
+}
+
+/* ── sidebar tabs + routing ────────────────────────────────────────────── */
+/* Hash shape: #/<tab> or #/project/<projectId> for the project detail view. */
+const TABS = ["upload", "project", "material"];
+function parseRoute() {
+  const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+  const tab = TABS.includes(parts[0]) ? parts[0] : "upload";
+  return { tab, projectId: tab === "project" ? (parts[1] || null) : null };
+}
+
+function applyRoute() {
+  const { tab, projectId } = parseRoute();
+  TABS.forEach(t => { $(`tab-${t}`).hidden = t !== tab; });
+  document.querySelectorAll(".sidenav-item").forEach(b =>
+    b.classList.toggle("is-active", b.dataset.tab === tab));
+
+  if (tab === "project") {
+    if (projectTabState.projectId !== projectId) projectTabState.siteId = null;
+    projectTabState.projectId = projectId;
+    renderProjectTab();
+  }
+  if (tab === "material") renderMaterialTab();
+}
+
+document.querySelectorAll(".sidenav-item").forEach(b => {
+  b.addEventListener("click", () => { location.hash = `/${b.dataset.tab}`; });
+});
+window.addEventListener("hashchange", applyRoute);
+
+/* "View details" on a project card (Upload tab) jumps to its detail page. */
+function goToProjectTab(projectId) {
+  location.hash = `/project/${projectId}`;
+}
+
+/* ── project tab: grid → detail (sites, documents, materials) ────────── */
+const projectTabState = { projectId: null, siteId: null };
+const projectTabFilter = { q: "", type: "", status: "", dateFrom: "", dateTo: "" };
+let projectListSearch = "";
+const docDetailCache = {};
+
+function docMatchesFilter(d, f) {
+  if (f.type && d.document_type !== f.type) return false;
+  if (f.status && d.status !== f.status) return false;
+  if (f.dateFrom && d.uploaded_at.slice(0, 10) < f.dateFrom) return false;
+  if (f.dateTo && d.uploaded_at.slice(0, 10) > f.dateTo) return false;
+  if (f.q) {
+    const hay = `${d.document_id} ${projectOf(d)}`.toLowerCase();
+    if (!hay.includes(f.q)) return false;
+  }
+  return true;
+}
+
+function renderProjectTab() {
+  const showDetail = !!projectTabState.projectId;
+  $("ptab-list").hidden = showDetail;
+  $("ptab-detail").hidden = !showDetail;
+  if (showDetail) renderProjectDetail(); else renderProjectList();
+}
+
+function renderProjectList() {
+  const q = projectListSearch;
+  const shown = !q ? projects : projects.filter(p => `${p.code} ${p.name}`.toLowerCase().includes(q));
+
+  $("ptab-grid").innerHTML = shown.length
+    ? shown.map(p => {
+        const count = docs.filter(d => d.project_id === p.id).length;
+        const siteCount = (p.sites || []).length;
+        return `
+        <button class="pcard" data-open-project="${esc(p.id)}">
+          <div>
+            <div class="code">${esc(p.code)}</div>
+            <div class="pname">${esc(p.name)}</div>
+          </div>
+          ${siteCount ? `<div class="site"><span class="eyebrow">Sites</span><span>${esc(p.sites.map(s => s.name).join(", "))}</span></div>` : ""}
+          <div class="tally">
+            <div><b>${count}</b><span>Documents</span></div>
+            <div><b>${siteCount}</b><span>Sites</span></div>
+          </div>
+        </button>`;
+      }).join("")
+    : `<div class="empty" style="grid-column:1/-1">No project matches.</div>`;
+}
+
+function renderProjectDetail() {
+  const p = projects.find(x => x.id === projectTabState.projectId);
+  if (!p) {
+    if (projects.length) {
+      // data has loaded and this id genuinely doesn't exist — back to the grid
+      projectTabState.projectId = null;
+      renderProjectTab();
+    } else {
+      // data hasn't loaded yet (e.g. a deep link on first paint) — hold the route
+      $("ptab-detail-title").textContent = "Loading…";
+      $("ptab-detail-sub").textContent = "";
+      $("ptab-detail-sites").innerHTML = "";
+      $("ptab-docs").innerHTML = "";
+      $("ptab-materials").innerHTML = "";
+    }
+    return;
+  }
+
+  $("ptab-detail-title").textContent = p.code;
+  $("ptab-detail-sub").textContent = p.name;
+
+  const sites = p.sites || [];
+  if (projectTabState.siteId && !sites.some(s => s.id === projectTabState.siteId)) {
+    projectTabState.siteId = null;
+  }
+
+  $("ptab-detail-sites").innerHTML =
+    `<button class="site-chip ${!projectTabState.siteId ? "is-active" : ""}" data-site="">All sites</button>` +
+    sites.map(s => `
+      <button class="site-chip ${s.id === projectTabState.siteId ? "is-active" : ""}" data-site="${esc(s.id)}">${esc(s.name)}</button>
+    `).join("");
+
+  const projectDocs = docs.filter(d => d.project_id === p.id);
+  const siteDocs = projectTabState.siteId
+    ? projectDocs.filter(d => d.site_id === projectTabState.siteId)
+    : projectDocs;
+  const filtered = siteDocs.filter(d => docMatchesFilter(d, projectTabFilter));
+
+  $("ptab-doc-count").textContent = `${filtered.length} of ${projectDocs.length}`;
+  $("ptab-docs").innerHTML = filtered.length
+    ? filtered.map(d => `
+      <button class="doc-row" data-doc="${esc(d.document_id)}">
+        <span class="id">${esc(d.document_id.slice(0, 8))}</span>
+        <span class="meta">
+          <span class="t">${typePill(d.document_type)} ${statusPill(d.status)}</span>
+          <span class="d">${esc(d.uploaded_at)}</span>
+        </span>
+      </button>`).join("")
+    : `<div class="empty">No documents match.</div>`;
+
+  $("ptab-materials").innerHTML = `<div class="empty">Loading materials&hellip;</div>`;
+  loadProjectMaterials(p.id, filtered);
+}
+
+/* Line-item rollup: fetches full detail (incl. extracted lines) per document,
+   lazily and once — cheap at POC scale, and reuses the same endpoint the
+   review modal already calls. */
+async function ensureDocDetails(ids) {
+  const missing = ids.filter(id => !docDetailCache[id]);
+  if (!missing.length) return;
+  const fetched = await Promise.all(missing.map(id => fetchDocument(id).catch(() => null)));
+  fetched.forEach((d, i) => { if (d) docDetailCache[missing[i]] = d; });
+}
+
+const materialLabel = line => materials.find(m => m.id === line.material_id)?.name || line.description_raw || "Unclassified";
+
+function aggregateMaterials(docsList) {
+  const rows = new Map();
+  for (const doc of docsList) {
+    const detail = docDetailCache[doc.document_id];
+    for (const line of detail?.lines || []) {
+      const key = `${materialLabel(line)}__${line.unit || ""}`;
+      const row = rows.get(key) || { label: materialLabel(line), unit: line.unit || "—", qty: 0, docs: new Set() };
+      row.qty += Number(line.quantity) || 0;
+      row.docs.add(doc.document_id);
+      rows.set(key, row);
+    }
+  }
+  return [...rows.values()].sort((a, b) => b.qty - a.qty);
+}
+
+async function loadProjectMaterials(projectId, filteredDocs) {
+  if (!materials.length) await loadMaterials();
+  await ensureDocDetails(filteredDocs.map(d => d.document_id));
+  if (projectTabState.projectId !== projectId) return;   // navigated away while fetching
+
+  const rows = aggregateMaterials(filteredDocs);
+  $("ptab-materials").innerHTML = rows.length
+    ? `<table class="data">
+        <thead><tr><th>Material</th><th class="right">Quantity</th><th>Unit</th><th class="right">Docs</th></tr></thead>
+        <tbody>${rows.map(r => `
+          <tr>
+            <td>${esc(r.label)}</td>
+            <td class="num">${r.qty.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+            <td>${esc(r.unit)}</td>
+            <td class="num">${r.docs.size}</td>
+          </tr>`).join("")}</tbody>
+      </table>`
+    : `<div class="empty">No line items extracted yet for these documents.</div>`;
+}
+
+$("ptab-grid").addEventListener("click", e => {
+  const card = e.target.closest("[data-open-project]");
+  if (card) location.hash = `/project/${card.dataset.openProject}`;
+});
+$("ptab-list-search").addEventListener("input", e => {
+  projectListSearch = e.target.value.trim().toLowerCase();
+  renderProjectList();
+});
+$("ptab-back").addEventListener("click", () => { location.hash = "/project"; });
+$("btn-export-project").addEventListener("click", () => {
+  window.open(`/api/v1/projects/${projectTabState.projectId}/export`, "_blank");
+});
+$("ptab-detail-sites").addEventListener("click", e => {
+  const chip = e.target.closest("[data-site]");
+  if (!chip) return;
+  projectTabState.siteId = chip.dataset.site || null;
+  renderProjectDetail();
+});
+$("ptab-docs").addEventListener("click", e => {
+  const row = e.target.closest("[data-doc]");
+  if (row) openDocument(row.dataset.doc);
+});
+$("ptab-search").addEventListener("input", e => {
+  projectTabFilter.q = e.target.value.trim().toLowerCase();
+  renderProjectDetail();
+});
+$("ptab-type").addEventListener("change", e => {
+  projectTabFilter.type = e.target.value;
+  renderProjectDetail();
+});
+$("ptab-status").addEventListener("change", e => {
+  projectTabFilter.status = e.target.value;
+  renderProjectDetail();
+});
+$("ptab-date-from").addEventListener("change", e => {
+  projectTabFilter.dateFrom = e.target.value;
+  renderProjectDetail();
+});
+$("ptab-date-to").addEventListener("change", e => {
+  projectTabFilter.dateTo = e.target.value;
+  renderProjectDetail();
+});
+
+/* ── material tab: gallery of every uploaded document ────────────────── */
+const materialFilter = { q: "", project: "", site: "", type: "", status: "" };
+
+function siteNameOf(d) {
+  const p = projects.find(p => p.id === d.project_id);
+  const s = p?.sites?.find(s => s.id === d.site_id);
+  return s ? s.name : "—";
+}
+
+function populateMaterialProjectFilter() {
+  const sel = $("mtab-project");
+  const current = sel.value;
+  sel.innerHTML = `<option value="">All projects</option>` +
+    projects.map(p => `<option value="${esc(p.id)}">${esc(p.code)}</option>`).join("");
+  sel.value = projects.some(p => p.id === current) ? current : "";
+}
+
+function populateMaterialSiteFilter() {
+  const sel = $("mtab-site");
+  const current = sel.value;
+  const p = projects.find(p => p.id === materialFilter.project);
+  const sites = p ? (p.sites || []) : projects.flatMap(p => p.sites || []);
+  sel.innerHTML = `<option value="">All sites</option>` +
+    sites.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
+  sel.value = sites.some(s => s.id === current) ? current : "";
+}
+
+function renderMaterialTab() {
+  populateMaterialProjectFilter();
+  populateMaterialSiteFilter();
+
+  const shown = docs.filter(d => {
+    if (materialFilter.project && d.project_id !== materialFilter.project) return false;
+    if (materialFilter.site && d.site_id !== materialFilter.site) return false;
+    if (!docMatchesFilter(d, materialFilter)) return false;
+    return true;
+  });
+
+  $("mtab-grid").innerHTML = shown.length
+    ? shown.map(d => {
+        const file = d.file_paths?.[0];
+        const isImage = file && /\.(png|jpe?g|gif|webp)$/i.test(file);
+        const thumb = isImage
+          ? `<img src="/${esc(file)}" alt="">`
+          : `<span class="ico">&#128196;</span>`;
+        return `
+        <button class="material-card" data-doc="${esc(d.document_id)}">
+          <div class="thumb">${thumb}</div>
+          <div class="info">
+            <div class="proj">${esc(d.project_code || "—")}</div>
+            <div class="site">${esc(siteNameOf(d))}</div>
+            <div class="pills">${typePill(d.document_type)} ${statusPill(d.status)}</div>
+            <div class="meta-row">
+              <span class="doc-id">${esc(d.document_id.slice(0, 8))}</span>
+              <span>${d.source === "SCAN" ? "Scanned" : "Uploaded"} &middot; ${esc(d.uploaded_at)}</span>
+            </div>
+          </div>
+        </button>`;
+      }).join("")
+    : `<div class="empty" style="grid-column:1/-1">No documents match.</div>`;
+}
+
+$("mtab-grid").addEventListener("click", e => {
+  const card = e.target.closest("[data-doc]");
+  if (card) openDocument(card.dataset.doc);
+});
+$("mtab-search").addEventListener("input", e => {
+  materialFilter.q = e.target.value.trim().toLowerCase();
+  renderMaterialTab();
+});
+$("mtab-project").addEventListener("change", e => {
+  materialFilter.project = e.target.value;
+  materialFilter.site = "";
+  renderMaterialTab();
+});
+$("mtab-site").addEventListener("change", e => {
+  materialFilter.site = e.target.value;
+  renderMaterialTab();
+});
+$("mtab-type").addEventListener("change", e => {
+  materialFilter.type = e.target.value;
+  renderMaterialTab();
+});
+$("mtab-status").addEventListener("change", e => {
+  materialFilter.status = e.target.value;
+  renderMaterialTab();
+});
+
+/* ── document review ──────────────────────────────────────────────────── */
+let materials = [];
+let docPollTimer = null;
+let currentDocId = null;
+
+const inr = n => (n == null || n === "")
+  ? "—"
+  : Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+async function loadMaterials() {
+  try {
+    materials = (await (await fetch("/api/v1/materials")).json()).materials;
+  } catch {
+    materials = [];
+  }
+}
+
+// [key, label, input type, select options] — mirrors the Extraction schema
+// in Backend/extract.py, grouped the way a reviewer reads a document.
+const HEADER_SECTIONS = [
+  { title: "Classification", fields: [
+    ["doc_kind", "Document type", "select", ["UNCLASSIFIED", "INVOICE", "PO", "DELIVERY", "OTHER"]],
+  ]},
+  { title: "Document numbers", fields: [
+    ["doc_number", "Document no."], ["po_number", "PO no."], ["dc_number", "DC no."],
+  ]},
+  { title: "Dates", fields: [
+    ["doc_date_raw", "Document date (as printed)"],
+  ]},
+  { title: "Vendor", fields: [
+    ["vendor_name_raw", "Vendor name"], ["vendor_gstin", "Vendor GSTIN"], ["buyer_gstin", "Buyer GSTIN"],
+  ]},
+  { title: "Delivery", fields: [
+    ["place_of_supply", "Place of supply"], ["delivery_address_raw", "Delivery address"],
+  ]},
+  { title: "Tax and amounts", fields: [
+    ["basic_value", "Basic value", "number"],
+    ["tax_type", "Tax type", "select", ["IGST", "CGST_SGST"]],
+    ["igst_amount", "IGST", "number"], ["cgst_amount", "CGST", "number"], ["sgst_amount", "SGST", "number"],
+    ["tcs_amount", "TCS", "number"], ["rounding_off", "Rounding off", "number"],
+    ["total_value", "Total value", "number"],
+  ]},
+  { title: "Other", fields: [["irn", "IRN"]] },
+];
+
+function fieldInput([key, label, type, options], header) {
+  const value = header?.[key] ?? "";
+  if (type === "select") {
+    const opts = options.map(o =>
+      `<option value="${esc(o)}" ${o === value ? "selected" : ""}>${esc(o)}</option>`).join("");
+    return `<label><span>${esc(label)}</span>
+      <select data-header="${key}"><option value="">—</option>${opts}</select></label>`;
+  }
+  return `<label><span>${esc(label)}</span>
+    <input data-header="${key}" type="${type === "number" ? "number" : "text"}" step="any" value="${esc(value)}"></label>`;
+}
+
+function fieldDisplay([key, label, type], header) {
+  const value = header?.[key];
+  const display = type === "number" ? inr(value) : (value || "—");
+  return `<label><span>${esc(label)}</span><div class="mono display">${esc(display)}</div></label>`;
+}
+
+function lineRow(line, locked) {
+  const field = (key, type = "text") => locked
+    ? `<span class="mono">${esc(type === "number" ? inr(line[key]) : (line[key] ?? "—"))}</span>`
+    : `<input data-line="${line.line_no}" data-field="${key}" type="${type}" step="any" value="${esc(line[key] ?? "")}">`;
+  const material = locked
+    ? esc(materials.find(m => m.id === line.material_id)?.name || "— unmatched —")
+    : `<select data-line="${line.line_no}" data-field="material_id">
+         <option value="">— unmatched —</option>
+         ${materials.map(m =>
+           `<option value="${esc(m.id)}" ${m.id === line.material_id ? "selected" : ""}>${esc(m.name)}</option>`
+         ).join("")}
+       </select>`;
+  return `<tr>
+    <td class="num">${line.line_no}</td>
+    <td>${field("description_raw")}</td>
+    <td>${material}</td>
+    <td>${field("hsn_code")}</td>
+    <td>${field("quantity", "number")}</td>
+    <td>${field("unit")}</td>
+    <td>${field("rate", "number")}</td>
+    <td>${field("amount", "number")}</td>
+    <td>${field("tax_rate", "number")}</td>
+  </tr>`;
+}
+
+function renderDocBody(doc) {
+  const locked  = doc.status === "APPROVED" || doc.status === "REJECTED";
+  const waiting = doc.status === "PENDING" || doc.status === "PROCESSING";
+
+  const pages = `<div class="doc-pages">${doc.file_paths.map(p =>
+    `<a href="/${esc(p)}" target="_blank" rel="noopener"><img src="/${esc(p)}" alt="scanned page"></a>`
+  ).join("")}</div>`;
+
+  let statusBanner = "";
+  if (waiting) {
+    statusBanner = `<div class="doc-status-banner wait">Extraction in progress&hellip; this updates automatically.</div>`;
+  } else if (doc.status === "FAILED") {
+    statusBanner = `<div class="doc-status-banner rejected">Extraction failed — ${esc(doc.error || "unknown error")}.
+      <div style="margin-top:8px;"><button class="btn btn-ghost" id="btn-retry-extract">Retry extraction</button></div></div>`;
+  } else if (doc.status === "APPROVED") {
+    statusBanner = `<div class="doc-status-banner approved">Approved by ${esc(doc.header?.reviewed_by)} on ${esc(doc.header?.reviewed_at)}.</div>`;
+  } else if (doc.status === "REJECTED") {
+    statusBanner = `<div class="doc-status-banner rejected">Rejected by ${esc(doc.header?.reviewed_by)} on ${esc(doc.header?.reviewed_at)}
+      — ${esc(doc.header?.rejection_reason)}</div>`;
+  }
+
+  if (waiting || doc.status === "FAILED") {
+    $("doc-body").innerHTML = pages + statusBanner;
+    if (doc.status === "FAILED") {
+      $("btn-retry-extract").addEventListener("click", () => retryExtraction(doc.document_id));
+    }
+    return;
+  }
+
+  const header = doc.header || {};
+  const sections = HEADER_SECTIONS.map(section => `
+    <div class="field-section">
+      <h3>${esc(section.title)}</h3>
+      <div class="field-grid">${
+        section.fields.map(f => locked ? fieldDisplay(f, header) : fieldInput(f, header)).join("")
+      }</div>
+    </div>`).join("");
+
+  const lines = (doc.lines || []).map(l => lineRow(l, locked)).join("")
+    || `<tr><td colspan="9" class="empty">No line items.</td></tr>`;
+
+  $("doc-body").innerHTML = `
+    ${pages}
+    ${statusBanner}
+    ${sections}
+    <div class="field-section">
+      <h3>Line items</h3>
+      <div class="table-scroll">
+        <table class="data lines">
+          <thead><tr>
+            <th>#</th><th>Description</th><th>Material</th><th>HSN</th>
+            <th>Qty</th><th>Unit</th><th>Rate</th><th>Amount</th><th>Tax %</th>
+          </tr></thead>
+          <tbody>${lines}</tbody>
+        </table>
+      </div>
+    </div>
+    ${locked ? "" : `
+    <div class="field-section">
+      <h3>Decision</h3>
+      <div class="reviewer-row">
+        <input id="reviewer-name" placeholder="Your name">
+        <button class="btn btn-ghost" id="btn-save-doc">Save changes</button>
+        <button class="btn btn-green" id="btn-approve-doc">Approve</button>
+        <button class="btn btn-ghost reject-btn" id="btn-reject-doc">Reject</button>
+      </div>
+      <div class="reject-panel" id="reject-panel" hidden>
+        <textarea id="reject-reason" placeholder="Why is this being rejected?"></textarea>
+        <button class="btn btn-dark" id="btn-confirm-reject" style="width:fit-content;">Confirm reject</button>
+      </div>
+      <div class="banner banner-err" id="doc-action-err" hidden></div>
+    </div>`}
+  `;
+
+  if (locked) return;
+
+  $("reviewer-name").value = localStorage.getItem("reviewerName") || "";
+  $("btn-save-doc").addEventListener("click", () => saveDocEdits(doc.document_id));
+  $("btn-approve-doc").addEventListener("click", () => approveDoc(doc.document_id));
+  $("btn-reject-doc").addEventListener("click", () => { $("reject-panel").hidden = false; });
+  $("btn-confirm-reject").addEventListener("click", () => rejectDoc(doc.document_id));
+}
+
+function collectEdits() {
+  const header = {};
+  document.querySelectorAll("#doc-body [data-header]").forEach(el => {
+    header[el.dataset.header] = el.value.trim() === "" ? null : el.value.trim();
+  });
+  const byLine = {};
+  document.querySelectorAll("#doc-body [data-line]").forEach(el => {
+    const lineNo = Number(el.dataset.line);
+    (byLine[lineNo] ??= { line_no: lineNo })[el.dataset.field] = el.value.trim() === "" ? null : el.value.trim();
+  });
+  return { header, lines: Object.values(byLine) };
+}
+
+function reviewerName() {
+  const name = $("reviewer-name").value.trim();
+  if (name) localStorage.setItem("reviewerName", name);
+  return name;
+}
+
+async function saveDocEdits(id, { silent = false } = {}) {
+  const err = $("doc-action-err");
+  err.hidden = true;
+  try {
+    const res = await fetch(`/api/v1/documents/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(collectEdits()),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail ?? `Server returned ${res.status}`);
+    if (!silent) renderDocBody(data);
+    return data;
+  } catch (e) {
+    err.textContent = `Could not save — ${e.message}`;
+    err.hidden = false;
+    return null;
+  }
+}
+
+async function approveDoc(id) {
+  const name = reviewerName();
+  const err = $("doc-action-err");
+  if (!name) { err.textContent = "Enter your name first."; err.hidden = false; return; }
+  const saved = await saveDocEdits(id, { silent: true });
+  if (!saved) return;
+  try {
+    const res = await fetch(`/api/v1/documents/${id}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approved_by: name }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail ?? `Server returned ${res.status}`);
+    renderDocBody(data);
+    load();
+  } catch (e) {
+    err.textContent = `Could not approve — ${e.message}`;
+    err.hidden = false;
+  }
+}
+
+async function rejectDoc(id) {
+  const name = reviewerName();
+  const reason = $("reject-reason").value.trim();
+  const err = $("doc-action-err");
+  if (!name)   { err.textContent = "Enter your name first.";           err.hidden = false; return; }
+  if (!reason) { err.textContent = "A rejection reason is required.";  err.hidden = false; return; }
+  const saved = await saveDocEdits(id, { silent: true });
+  if (!saved) return;
+  try {
+    const res = await fetch(`/api/v1/documents/${id}/reject`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rejected_by: name, reason }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail ?? `Server returned ${res.status}`);
+    renderDocBody(data);
+    load();
+  } catch (e) {
+    err.textContent = `Could not reject — ${e.message}`;
+    err.hidden = false;
+  }
+}
+
+async function retryExtraction(id) {
+  await fetch(`/api/v1/documents/${id}/extract`, { method: "POST" });
+  openDocument(id);
+}
+
+function stopDocPoll() {
+  clearInterval(docPollTimer);
+  docPollTimer = null;
+  currentDocId = null;
+}
+
+async function fetchDocument(id) {
+  const res = await fetch(`/api/v1/documents/${id}`);
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return res.json();
+}
+
+async function openDocument(id) {
+  stopDocPoll();
+  currentDocId = id;
+  if (!materials.length) await loadMaterials();
+
+  const doc = await fetchDocument(id).catch(() => null);
+  if (!doc) return;
+  $("doc-for").textContent = `${doc.document_id} — ${projectOf(doc)}`;
+  renderDocBody(doc);
+  openModal("m-doc");
+
+  if (doc.status === "PENDING" || doc.status === "PROCESSING") {
+    docPollTimer = setInterval(async () => {
+      const fresh = await fetchDocument(id).catch(() => null);
+      if (!fresh || fresh.document_id !== currentDocId) return;
+      if (fresh.status !== "PENDING" && fresh.status !== "PROCESSING") stopDocPoll();
+      renderDocBody(fresh);
+      load();
+    }, 3000);
+  }
+}
+
+$("m-doc").addEventListener("click", e => {
+  if (e.target === $("m-doc") || e.target.closest("[data-close]")) stopDocPoll();
+});
+
+document.querySelectorAll("tr.filters input").forEach(input => {
+  input.addEventListener("input", () => {
+    filters[input.dataset.col] = input.value.trim().toLowerCase();
+    renderDocs();     // ponytail: filter locally, no server round-trip per keystroke
+  });
+});
+
+$("project-search").addEventListener("input", e => {
+  search = e.target.value.trim().toLowerCase();
+  renderProjects();
+});
+
+$("btn-refresh").addEventListener("click", load);
+
+window.addEventListener("beforeprint", () => {
+  $("print-when").textContent = `Printed ${new Date().toLocaleString()} · ${projects.length} projects · ${docs.length} documents`;
+});
+
+applyRoute();
+loadProjects().then(load);
+</script>
+</body>
+</html>

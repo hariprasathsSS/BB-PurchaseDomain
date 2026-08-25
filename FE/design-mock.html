@@ -1,0 +1,1436 @@
+<title>Purchase Division Console</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sofia+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap">
+
+<style>
+/* ============================================================================
+   Purchase Division — console, design mock
+
+   One committed visual world: warm putty cream, ink pills, oversized radii.
+   No dark variant by design — every colour is painted explicitly so the page
+   holds on any host ground.
+
+   Two rules the whole look rests on:
+     · Cream is the ground. White is only for lifted things — nav, cards.
+     · Radii are 6, 20, 40 or full pill. The usual 8–12 is absent on purpose.
+   ========================================================================= */
+
+:root {
+  --canvas:   #f3f0ee;
+  --surface:  #ffffff;
+  --ink:      #141413;
+  --charcoal: #262627;
+  --slate:    #575450;   /* 6.6:1 on cream. #696969 only just cleared AA */
+  --dust:     #6f6a62;   /* quiet, but still readable: 4.7:1 on cream */
+  --signal:   #cf4500;   /* destructive + consent. nothing else */
+  --accent:   #f37338;   /* attention cue, eyebrow dots */
+  --clay:     #9a3a0a;
+
+  /* Recessed tone and hover. A white panel needs a ground *darker* than
+     itself to show a toolbar or a table head — the old lifted cream was
+     lighter than the canvas, so those partitions were invisible on white. */
+  --sunken:   #ebe6e1;
+  --hover:    #f7f3f0;
+
+  /* Lines carry the partitioning in this system, so they have to be visible:
+     the previous 9% hairline vanished on white at anything under 125% zoom. */
+  --line:     rgba(20, 20, 19, .20);
+  --hair:     rgba(20, 20, 19, .13);
+
+  /* ── semantic set ───────────────────────────────────────────────────────
+     Four states that must be told apart in a glance down a column. The old
+     washes were all so desaturated they read as one beige, which defeated
+     the point of colour-coding them at all. Deeper text, cleaner grounds. */
+  --ok-bg:    #daeee2;  --ok-fg:    #16663f;
+  --info-bg:  #dbe6fa;  --info-fg:  #1b52ac;
+  --warn-bg:  #fce9c9;  --warn-fg:  #8f5405;
+  --bad-bg:   #fbdcd2;  --bad-fg:   #ab3016;
+  /* A whole-surface wash, for the one card that needs a person. */
+  --warn-tint: #fdf6ec;
+
+  --r-btn:    20px;
+  --r-stad:   40px;
+  --r-pill:   999px;
+
+  --lift-1:   0 4px 24px rgba(0, 0, 0, .04);
+  --lift-2:   0 24px 48px rgba(0, 0, 0, .08);
+
+  --sans: "Sofia Sans", "Segoe UI", system-ui, Arial, sans-serif;
+  --mono: "DM Mono", "Cascadia Mono", Consolas, monospace;
+  --tight: -0.02em;
+  --wide:  0.04em;
+
+  --col: 1180px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 17px;
+  font-weight: 450;      /* the half-step the system is built on: 400 reads thin */
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { margin: 0; font-weight: 500; letter-spacing: var(--tight); text-wrap: balance; }
+
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* ── eyebrow: the dot is the identity, not decoration ─────────────────────── */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: var(--wide);
+  text-transform: uppercase;
+  color: var(--slate);
+}
+.eyebrow::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+
+/* ── floating nav pill ────────────────────────────────────────────────────
+   Docks below the top of the viewport, never flush against it. Carries the
+   two things wanted from anywhere: find a project, add a project. */
+.nav-rail { position: sticky; top: 0; z-index: 40; padding: 24px 24px 0; background: var(--canvas); }
+.nav {
+  max-width: var(--col);
+  margin: 0 auto;
+  min-height: 64px;
+  padding: 9px 10px 9px 30px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: var(--surface);
+  border-radius: var(--r-pill);
+  box-shadow: var(--lift-1);
+}
+.brand { font-size: 21px; font-weight: 600; letter-spacing: var(--tight); white-space: nowrap; }
+.brand i { font-style: normal; color: var(--clay); }
+
+.nav-links { display: flex; gap: 4px; }
+.nav-links button {
+  display: inline-flex; align-items: center; gap: 9px;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: 15.5px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: var(--slate);
+  padding: 10px 18px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.nav-links button:hover { color: var(--ink); background: var(--canvas); }
+.nav-links button[aria-current="page"] { background: var(--ink); color: var(--canvas); }
+
+.nav .spacer { flex: 1; }
+
+/* Search rides in the nav so it is reachable from every screen, and carries
+   its shortcut so people learn there is one. */
+.nav-find {
+  display: flex; align-items: center; gap: 10px;
+  flex: 0 1 246px; min-width: 160px;
+  min-height: 44px; padding: 0 8px 0 18px;
+  border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--canvas);
+  cursor: text;
+}
+.nav-find:focus-within { border-color: var(--ink); background: var(--surface); }
+.nav-find input {
+  flex: 1; min-width: 0;
+  border: 0; background: none; outline: none;
+  font-family: inherit; font-size: 15px; color: var(--ink);
+}
+.nav-find kbd {
+  font-family: var(--mono); font-size: 11px; color: var(--slate);
+  background: var(--surface); border: 1px solid var(--hair);
+  border-radius: 6px; padding: 3px 7px; white-space: nowrap;
+}
+
+@media (max-width: 1080px) {
+  .nav { flex-wrap: wrap; border-radius: var(--r-stad); padding: 14px 16px; }
+  .nav .spacer { display: none; }
+  .nav-find { flex: 1 1 100%; order: 5; }
+}
+
+/* ── controls ─────────────────────────────────────────────────────────────
+   44px floor: these get tapped on site, on a touchscreen laptop, with gloves
+   on — that outranks the reference spec's tighter button padding. */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 46px; padding: 0 26px;
+  border: 1.5px solid transparent; border-radius: var(--r-btn);
+  font-family: inherit; font-size: 16px; font-weight: 500; letter-spacing: var(--tight);
+  cursor: pointer; white-space: nowrap;
+}
+.btn-ink { background: var(--ink); border-color: var(--ink); color: var(--canvas); }
+.btn-ink:hover { background: var(--charcoal); }
+.btn-out { background: var(--surface); border-color: var(--ink); color: var(--ink); font-weight: 400; }
+.btn-out:hover { background: var(--canvas); }
+.btn-signal { background: var(--signal); border-color: var(--signal); color: #fff; }
+.btn-sm { min-height: 44px; padding: 0 20px; font-size: 15px; }
+.btn:active { transform: translateY(1px); }
+
+.field {
+  min-height: 46px; padding: 0 22px;
+  border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--surface); color: var(--ink);
+  font-family: inherit; font-size: 15.5px;
+}
+.field:focus { outline: 0; border-color: var(--ink); }
+select.field { border-radius: var(--r-btn); padding: 0 14px; }
+
+/* Circular open-affordance. Sits inside its card, aligned with the actions —
+   docked half-outside the corner read as a stray dot on a rectangle. */
+.open-round {
+  width: 46px; height: 46px; flex: none;
+  display: grid; place-items: center;
+  background: var(--canvas); color: var(--ink);
+  border: 1.5px solid var(--line); border-radius: 50%;
+  cursor: pointer;
+}
+.open-round:hover { background: var(--ink); border-color: var(--ink); color: var(--canvas); }
+
+/* ── layout ───────────────────────────────────────────────────────────────── */
+.screen { display: none; }
+.screen.on { display: block; }
+
+.band { padding: 0 24px; }
+.col { max-width: var(--col); margin: 0 auto; }
+
+.section { margin-top: 96px; }
+.section:first-child { margin-top: 56px; }
+.section-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 30px; }
+.section-head .spacer { flex: 1; }
+.tag {
+  font-family: var(--mono); font-size: 12.5px; color: var(--slate);
+  border: 1px solid var(--hair); border-radius: var(--r-pill); padding: 4px 14px;
+}
+
+.pagetitle { display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap; margin: 56px 0 0; }
+.pagetitle h1 { font-size: clamp(34px, 4.4vw, 48px); line-height: 1.05; }
+.pagetitle .spacer { flex: 1; }
+.pagetitle .lede { margin-top: 12px; font-size: 17.5px; color: var(--slate); max-width: 46ch; }
+
+/* ══ project detail ═══════════════════════════════════════════════════════
+   Recomposed around the workflow rather than the components: identity, then
+   one panel that does all the narrowing-down, then the answers. The browse
+   screens keep the editorial 96px rhythm; this one is a workspace and gets
+   partitioning instead of air. */
+#s-detail .section { margin-top: 28px; }
+#s-detail .section.spaced { margin-top: 64px; }
+#s-detail .section-head { margin-bottom: 18px; }
+
+/* ── container 1: project identity ────────────────────────────────────────── */
+.phead {
+  margin-top: 32px;
+  padding: 22px 30px 0;
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: var(--r-stad);
+}
+.back {
+  display: inline-flex; align-items: center; gap: 8px;
+  border: 0; background: none; padding: 0;
+  font: inherit; font-size: 14px; font-weight: 500;
+  color: var(--slate); cursor: pointer;
+}
+.back:hover { color: var(--ink); }
+
+.phead-main {
+  display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap;
+  margin-top: 14px;
+}
+.phead-main .spacer { flex: 1; }
+.phead .code {
+  font-family: var(--mono); font-size: 32px; font-weight: 500;
+  letter-spacing: -0.03em; line-height: 1.05;
+}
+.phead .pname { font-size: 16.5px; color: var(--slate); margin-top: 5px; }
+.phead-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* The project's own numbers, inline on a hairline — a stat strip here would be
+   four more boxes on a page whose problem was boxes. */
+.phead-meta {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 20px; padding: 14px 0;
+  border-top: 1px solid var(--hair);
+  font-size: 14px; color: var(--slate);
+}
+.phead-meta b { font-family: var(--mono); font-weight: 500; color: var(--ink); }
+.phead-meta .sep { color: var(--dust); }
+.phead-meta .warn b { color: var(--clay); }
+
+/* ── container 2: the document explorer ───────────────────────────────────
+   Site tabs, filters and results in one panel: they are three steps of a
+   single act, and three separate cards made them look like three subjects. */
+.explorer {
+  margin-top: 16px;
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: var(--r-stad);
+  overflow: hidden;
+}
+.explorer-bar {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 18px 26px;
+}
+.explorer-bar .spacer { flex: 1; }
+.explorer-count { font-family: var(--mono); font-size: 13px; color: var(--slate); }
+.explorer-count b { color: var(--ink); font-weight: 500; }
+
+/* Segmented control: one track, so switching site reads as switching a view
+   and not as picking from a row of loose chips. */
+.seg {
+  display: inline-flex; gap: 4px;
+  padding: 4px;
+  background: var(--canvas);
+  border-radius: var(--r-pill);
+}
+.seg button {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 38px; padding: 0 18px;
+  border: 0; border-radius: var(--r-pill);
+  background: none; color: var(--slate);
+  font: inherit; font-size: 14.5px; font-weight: 500;
+  cursor: pointer; white-space: nowrap;
+}
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--canvas); }
+.seg .n { font-family: var(--mono); font-size: 12.5px; opacity: .75; }
+
+/* Filter toolbar: one row, hairline-separated, square-ish radius so it reads
+   as instrumentation rather than as more content. */
+.toolbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 12px 26px;
+  border-top: 1px solid var(--hair);
+  background: var(--sunken);
+}
+.toolbar .spacer { flex: 1; }
+.ctl {
+  min-height: 40px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: var(--r-btn);
+  background: var(--surface); color: var(--ink);
+  font-family: inherit; font-size: 14px;
+}
+.ctl:focus { outline: 0; border-color: var(--ink); }
+.ctl-search { min-width: 180px; flex: 0 1 240px; padding: 0 16px; }
+.toolbar .lbl { font-size: 12.5px; color: var(--slate); }
+.toolbar .clear {
+  border: 0; background: none; padding: 0 4px;
+  font: inherit; font-size: 13.5px; color: var(--clay); cursor: pointer;
+}
+.toolbar .clear:hover { text-decoration: underline; }
+
+/* ── unified results grid ─────────────────────────────────────────────────
+   Columns, not cards: the point of a document list is comparing the same
+   field down the page, which three floating cards actively prevent. */
+.dgrid {
+  --cols: 88px 104px minmax(132px, 1.5fr) 112px 100px 126px 86px 60px 40px;
+}
+.dhead, .drow {
+  display: grid;
+  grid-template-columns: var(--cols);
+  gap: 14px;
+  align-items: center;
+}
+.dhead {
+  padding: 11px 26px;
+  border-top: 1px solid var(--hair);
+  background: var(--sunken);
+  font-size: 10.5px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate);
+}
+.dhead .r, .drow .c-amt { text-align: right; }
+.drow {
+  width: 100%; padding: 13px 26px;
+  border: 0; border-top: 1px solid var(--hair);
+  background: none; text-align: left; color: inherit; font: inherit;
+  cursor: pointer;
+}
+.drow:hover { background: var(--hover); }
+.c-id   { font-family: var(--mono); font-size: 13px; color: var(--slate); }
+.c-vend { font-size: 15.5px; font-weight: 500; }
+.c-site { font-size: 14px; color: var(--slate); }
+.c-ref  { font-family: var(--mono); font-size: 13px; color: var(--slate); }
+.c-amt  { font-family: var(--mono); font-size: 15px; font-variant-numeric: tabular-nums; }
+.c-amt.pending { font-size: 13px; color: var(--dust); }
+.c-date { font-family: var(--mono); font-size: 12.5px; color: var(--slate); }
+.open-sm {
+  width: 38px; height: 38px; flex: none;
+  display: grid; place-items: center;
+  background: var(--canvas); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 50%;
+  cursor: pointer;
+}
+.drow:hover .open-sm { background: var(--ink); border-color: var(--ink); color: var(--canvas); }
+
+/* Below the width the nine columns need, the row folds into two lines rather
+   than scrolling sideways — the amount stays hard right either way. */
+@media (max-width: 1180px) {
+  .dhead { display: none; }
+  .drow { display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 16px 22px; }
+  .drow .c-vend { order: -1; flex: 1 1 100%; }
+  .drow .c-amt { margin-left: auto; }
+}
+
+/* Status discs — shared by the attention panel, project cards and activity.
+   Same four hues as the pills, so a dot in the activity feed and a pill in a
+   table mean the same thing without anyone being told. */
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.d-hot  { background: var(--accent); }
+.d-mute { background: var(--dust); }
+.d-ink  { background: var(--info-fg); }
+.d-ok   { background: var(--ok-fg); }
+.d-no   { background: var(--bad-fg); }
+
+/* ══ home ═════════════════════════════════════════════════════════════════
+   Five zones, tighter rhythm than the browse screens, and only two of them
+   are cards: what needs doing, and the portfolio. The rest sits on the cream
+   so the page does not read as a stack of floating boxes. */
+#s-home .section { margin-top: 56px; }
+#s-home .section:first-of-type { margin-top: 44px; }
+
+/* ── zone 1: hero ─────────────────────────────────────────────────────────
+   The pitch on the left, the state of the desk on the right. The reference
+   brief wanted a hero snapshot AND a separate attention bar, but they carry
+   the same four numbers — so they are one panel here, which also buys back
+   the vertical space the brief asked for. */
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1.1fr .9fr;
+  gap: 44px;
+  align-items: start;
+  margin-top: 44px;
+}
+@media (max-width: 1000px) { .hero-grid { grid-template-columns: 1fr; gap: 28px; } }
+
+.hero-copy h1 { font-size: clamp(30px, 3.5vw, 42px); line-height: 1.07; margin-top: 16px; }
+.hero-copy .lede { margin-top: 16px; font-size: 17px; color: var(--slate); max-width: 46ch; }
+.hero-cta { display: flex; gap: 10px; margin-top: 28px; flex-wrap: wrap; }
+
+/* ── zone 2: needs attention ──────────────────────────────────────────────
+   Actions outrank metrics: the one thing with a decision waiting on it gets
+   the numeral, the sentence and the button. The other four are quiet rows. */
+.attn {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: var(--r-stad);
+  overflow: hidden;
+}
+.attn-top { padding: 20px 24px 22px; }
+.attn-lead { display: flex; align-items: flex-start; gap: 18px; margin-top: 16px; }
+.attn-lead .n {
+  font-family: var(--mono); font-size: 46px; font-weight: 500;
+  line-height: .86; letter-spacing: -0.04em; color: var(--clay);
+  font-variant-numeric: tabular-nums;
+}
+.attn-lead .t { font-size: 16.5px; font-weight: 500; }
+.attn-lead .d { font-size: 13.5px; color: var(--slate); margin-top: 4px; }
+.attn-act { margin-top: 16px; }
+
+.attn-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 24px;
+  border-top: 1px solid var(--hair);
+  font-size: 14.5px;
+}
+.attn-row .spacer { flex: 1; }
+.attn-row b {
+  font-family: var(--mono); font-weight: 500; font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── zone 3: project status intelligence ──────────────────────────────────
+   Cards stop being interchangeable: the label above the code says whether
+   this project needs you, so a portfolio can be scanned without opening it. */
+.tile-status {
+  display: inline-flex; align-items: center;
+  padding: 4px 12px; margin-bottom: 12px;
+  border-radius: var(--r-pill);
+  font-size: 10.5px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase;
+}
+.st-action { background: var(--warn-bg); color: var(--warn-fg); }
+.st-track  { background: var(--ok-bg);   color: var(--ok-fg); }
+.st-proc   { background: var(--info-bg); color: var(--info-fg); }
+.st-none   { background: var(--sunken);  color: var(--slate); }
+
+/* The one project with a person waiting on it gets a whole-surface wash — a
+   coloured rail down the side of a rounded card is a tell, not a design. */
+.tile.is-hot { background: var(--warn-tint); }
+
+.tile { transition: transform .16s ease, border-color .16s ease; }
+.tile:hover { transform: translateY(-2px); border-color: var(--line); }
+.open-round { transition: background .14s ease, color .14s ease; }
+
+/* ── zone 4: recent activity ──────────────────────────────────────────────── */
+.activity {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: var(--r-stad);
+  overflow: hidden;
+}
+.act-row {
+  display: grid;
+  grid-template-columns: 10px minmax(150px, 1.1fr) minmax(190px, 1.5fr) 156px 62px;
+  gap: 16px; align-items: center;
+  width: 100%; padding: 14px 26px;
+  border: 0; border-top: 1px solid var(--hair);
+  background: none; text-align: left; font: inherit; color: inherit;
+  cursor: pointer;
+}
+.act-row:first-child { border-top: 0; }
+.act-row:hover { background: var(--hover); }
+.act-vend { font-size: 15px; font-weight: 500; }
+.act-what { font-size: 14px; color: var(--slate); }
+.act-proj { font-family: var(--mono); font-size: 12.5px; color: var(--slate); }
+.act-when { font-family: var(--mono); font-size: 12.5px; color: var(--slate); text-align: right; }
+@media (max-width: 920px) {
+  .act-row { grid-template-columns: 10px 1fr auto; }
+  .act-proj { display: none; }
+}
+
+/* ── zone 5: quick actions ────────────────────────────────────────────────
+   Outlined and short on purpose — these are shortcuts, and they must not
+   compete with the portfolio above them. */
+.qa { display: grid; grid-template-columns: repeat(auto-fit, minmax(212px, 1fr)); gap: 12px; }
+.qa button {
+  display: flex; align-items: center; gap: 14px;
+  min-height: 68px; padding: 0 20px;
+  border: 1px solid var(--line); border-radius: var(--r-btn);
+  background: transparent; color: var(--ink);
+  font: inherit; font-size: 15px; font-weight: 500;
+  text-align: left; cursor: pointer;
+}
+.qa button:hover { background: var(--surface); border-color: var(--ink); }
+.qa .ico {
+  width: 38px; height: 38px; flex: none;
+  display: grid; place-items: center;
+  background: var(--canvas); border-radius: 50%;
+}
+.qa button:hover .ico { background: var(--ink); color: var(--canvas); }
+.qa .sub { display: block; font-size: 12.5px; font-weight: 400; color: var(--slate); margin-top: 2px; }
+
+/* ── project tiles ────────────────────────────────────────────────────────── */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(336px, 1fr)); gap: 24px; }
+
+.tile {
+  display: flex; flex-direction: column; gap: 18px;
+  padding: 32px;
+  background: var(--surface);
+  border: 1.5px solid transparent;
+  border-radius: var(--r-stad);
+}
+.tile:hover { border-color: var(--line); }
+
+/* The code is what people read off the paper and say out loud, so it leads. */
+.tile .code { font-family: var(--mono); font-size: 19px; font-weight: 500; letter-spacing: -0.02em; }
+.tile .name { font-size: 17px; font-weight: 500; margin-top: 6px; }
+.tile .where { font-size: 15px; color: var(--slate); }
+
+.tally { display: flex; gap: 32px; margin-top: auto; padding-top: 20px; border-top: 1px solid var(--hair); }
+.tally div { display: flex; flex-direction: column; gap: 4px; }
+.tally b {
+  font-family: var(--mono); font-size: 21px; font-weight: 500; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.tally span { font-size: 10.5px; font-weight: 700; letter-spacing: var(--wide); text-transform: uppercase; color: var(--slate); }
+.tally .hot b { color: var(--clay); }
+
+.tile-actions { display: flex; align-items: center; gap: 12px; }
+.tile-actions .spacer { flex: 1; }
+
+/* Add tile: outlined, not a filled black slab. A big dark block outweighs the
+   projects it sits beside — a site is registered monthly, an invoice hourly. */
+.tile-add {
+  display: grid; place-content: center; justify-items: center; gap: 6px;
+  min-height: 250px; padding: 32px;
+  background: transparent;
+  border: 1.5px solid var(--line); border-radius: var(--r-stad);
+  text-align: center; color: inherit; font: inherit; cursor: pointer;
+}
+.tile-add:hover { border-color: var(--ink); }
+.tile-add .ring {
+  width: 58px; height: 58px; margin-bottom: 14px;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--ink); border-radius: 50%;
+}
+.tile-add:hover .ring { background: var(--ink); color: var(--canvas); }
+.tile-add .t { font-size: 19px; font-weight: 500; letter-spacing: var(--tight); }
+.tile-add .d { font-size: 14.5px; color: var(--slate); max-width: 27ch; }
+
+/* ── pills: filled = status, outlined = type ──────────────────────────────
+   Colour belongs to status alone, because status is what you scan a list for.
+   Type is metadata and stays quiet. */
+.pill {
+  display: inline-flex; align-items: center;
+  border-radius: var(--r-pill); padding: 4px 14px;
+  font-size: 11.5px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; white-space: nowrap;
+}
+.p-type { border: 1px solid var(--line); color: var(--slate); }
+.p-wait { background: var(--warn-bg); color: var(--warn-fg); }
+.p-work { background: var(--info-bg); color: var(--info-fg); }
+.p-ok   { background: var(--ok-bg);   color: var(--ok-fg); }
+.p-no   { background: var(--bad-bg);  color: var(--bad-fg); }
+
+/* ── filters ──────────────────────────────────────────────────────────────── */
+.filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 30px; }
+.filters label { display: inline-flex; align-items: center; gap: 9px; font-size: 14px; color: var(--slate); }
+.filters input[type="date"] {
+  min-height: 46px; padding: 0 14px; border: 1px solid var(--line);
+  border-radius: var(--r-btn); background: var(--surface); font-family: inherit; font-size: 15px;
+}
+
+/* ── tables: kept only where numbers are meant to be compared ─────────────── */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 15.5px; }
+thead th {
+  text-align: left; padding: 0 20px 14px;
+  font-size: 11.5px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate);
+  border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+tbody td { padding: 20px; border-bottom: 1px solid var(--hair); vertical-align: middle; }
+tbody tr:hover { background: var(--hover); }
+thead th:first-child, tbody td:first-child { padding-left: 4px; }
+thead th:last-child,  tbody td:last-child  { padding-right: 4px; }
+td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.note { margin-top: 18px; font-size: 14.5px; color: var(--slate); max-width: 62ch; }
+
+/* ── the constellation: circular document portraits ───────────────────────
+   Circular masks are the system's defining treatment, and a browse gallery is
+   where they belong: this view is an index you scan, and the full page is one
+   click away. Placed asymmetrically on purpose — a tidy grid kills it. */
+.constellation {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+  gap: 56px 40px;
+}
+.portrait { text-align: left; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.portrait:nth-child(2) { transform: translateY(48px); }
+.portrait:nth-child(3) { transform: translateY(-16px); }
+.portrait:nth-child(5) { transform: translateY(34px); }
+.portrait:nth-child(6) { transform: translateY(-10px); }
+
+.disc {
+  position: relative;
+  width: 100%; max-width: 244px; aspect-ratio: 1;
+  border-radius: 50%; overflow: hidden;
+  background: var(--surface);
+  box-shadow: var(--lift-2);
+}
+/* Stand-in for the captured page: a miniature sheet, drawn rather than
+   photographed, so nothing here pretends to be real scanned paper. */
+.sheet {
+  position: absolute; inset: 21%;
+  background: #fff;
+  border: 1px solid var(--hair);
+  padding: 11px 10px;
+  display: flex; flex-direction: column; gap: 5px;
+  transform: rotate(-4deg);
+}
+.sheet i { display: block; height: 3px; background: #e8e2da; border-radius: 2px; }
+.sheet i.w1 { width: 62%; background: var(--dust); height: 5px; }
+.sheet i.w2 { width: 40%; }
+.sheet i.w3 { width: 88%; }
+.sheet i.w4 { width: 74%; }
+.sheet i.w5 { width: 52%; margin-top: auto; background: var(--accent); opacity: .5; }
+
+.portrait:hover .disc { box-shadow: 0 30px 56px rgba(0, 0, 0, .12); }
+
+.caption { margin-top: 20px; max-width: 244px; }
+.caption .eyebrow { margin-bottom: 9px; }
+.caption h3 { font-size: 21px; line-height: 1.2; }
+.caption .meta { margin-top: 8px; font-size: 14.5px; color: var(--slate); }
+.caption .stamp {
+  margin-top: 12px; display: flex; gap: 14px; align-items: center;
+  font-family: var(--mono); font-size: 12.5px; color: var(--slate);
+}
+
+/* ── review sheet (shown as a static panel, not a live modal) ─────────────── */
+.sheet-panel {
+  background: var(--surface); border-radius: var(--r-stad);
+  box-shadow: var(--lift-2); padding: 40px;
+}
+.grid-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 22px; }
+.f label { display: block; font-size: 11.5px; font-weight: 700; letter-spacing: var(--wide); text-transform: uppercase; color: var(--slate); margin-bottom: 7px; }
+.f .v { font-family: var(--mono); font-size: 16px; }
+.f .v.empty { color: var(--dust); }
+
+/* ── mock scaffolding ─────────────────────────────────────────────────────── */
+.mocknote {
+  margin: 96px auto 0; max-width: var(--col);
+  padding: 26px 32px;
+  border: 1px dashed var(--line); border-radius: var(--r-stad);
+  font-size: 15px; color: var(--slate);
+}
+.mocknote b { color: var(--ink); font-weight: 600; }
+.mocknote ul { margin: 12px 0 0; padding-left: 22px; }
+.mocknote li { margin-bottom: 7px; }
+.mocknote .m { font-family: var(--mono); }
+
+footer { padding: 96px 24px 80px; }
+footer .col { display: flex; gap: 20px; align-items: baseline; flex-wrap: wrap; }
+footer .mark { font-size: 15px; color: var(--dust); font-family: var(--mono); }
+</style>
+
+<div class="nav-rail">
+  <nav class="nav">
+    <div class="brand">Purchase<i>Division</i></div>
+    <div class="nav-links">
+      <button type="button" data-go="home" aria-current="page"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg>Home</button>
+      <button type="button" data-go="projects"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Projects</button>
+      <button type="button" data-go="detail"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>Project detail</button>
+      <button type="button" data-go="materials"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M4 17l5-4 4 3 3-2 4 3"/></svg>Materials</button>
+    </div>
+    <div class="spacer"></div>
+    <label class="nav-find">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+      <input type="search" placeholder="Search projects…" aria-label="Search projects and documents">
+      <kbd>&#8984;K</kbd>
+    </label>
+    <button class="btn btn-ink btn-sm" type="button">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+      Add project
+    </button>
+  </nav>
+</div>
+
+<!-- ══ HOME ════════════════════════════════════════════════════════════════ -->
+<section class="screen on" id="s-home">
+  <div class="band">
+    <div class="col">
+
+      <!-- ══ zones 1+2: the pitch, and the state of the desk beside it ══ -->
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <span class="eyebrow">PurchaseDivision</span>
+          <h1>Your projects. Your procurement.<br>One clear view.</h1>
+          <p class="lede">
+            Every site invoice, purchase order and delivery challan lands here —
+            read, matched to a material, and waiting on one decision instead of
+            a folder on somebody&rsquo;s desk.
+          </p>
+          <div class="hero-cta">
+            <button class="btn btn-ink" type="button">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              Add project
+            </button>
+            <button class="btn btn-out" type="button" data-go="projects">View projects</button>
+          </div>
+        </div>
+
+        <div class="attn">
+          <div class="attn-top">
+            <span class="eyebrow">Needs attention</span>
+            <div class="attn-lead">
+              <div class="n">1</div>
+              <div>
+                <div class="t">Awaiting review</div>
+                <div class="d">A document has been read and needs your decision.</div>
+                <div class="attn-act">
+                  <button class="btn btn-ink btn-sm" type="button" data-go="detail">
+                    Review now
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="M12 6l6 6-6 6"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="attn-row">
+            <span class="dot d-mute"></span> Active projects
+            <div class="spacer"></div><b>4</b>
+          </div>
+          <div class="attn-row">
+            <span class="dot d-ink"></span> Documents captured
+            <div class="spacer"></div><b>6</b>
+          </div>
+          <div class="attn-row">
+            <span class="dot d-ok"></span> Approved this week
+            <div class="spacer"></div><b>4</b>
+          </div>
+          <div class="attn-row">
+            <span class="dot d-no"></span> Rejected this week
+            <div class="spacer"></div><b>1</b>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ shortcuts: start a task without hunting for it ══════════════════════════════════════════ -->
+      <div class="section">
+        <div class="section-head"><span class="eyebrow">Quick actions</span></div>
+
+        <div class="qa">
+          <button type="button">
+            <span class="ico" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            </span>
+            <span>Add project<span class="sub">Register a new site</span></span>
+          </button>
+          <button type="button">
+            <span class="ico" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 18v2h16v-2"/></svg>
+            </span>
+            <span>Add document<span class="sub">Upload or scan by phone</span></span>
+          </button>
+          <button type="button" data-go="detail">
+            <span class="ico" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </span>
+            <span>Review queue<span class="sub">1 waiting</span></span>
+          </button>
+          <button type="button" data-go="materials">
+            <span class="ico" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M4 17l5-4 4 3 3-2 4 3"/></svg>
+            </span>
+            <span>Materials<span class="sub">Every capture</span></span>
+          </button>
+        </div>
+      </div>
+      <!-- ══ the portfolio ══════════════════════════════════════ -->
+      <div class="section">
+        <div class="section-head">
+          <span class="eyebrow">Projects</span>
+          <span class="tag">4 total</span>
+          <div class="spacer"></div>
+          <select class="ctl" aria-label="Sort projects">
+            <option>Needs attention first</option>
+            <option>Recently active</option>
+            <option>Project code</option>
+          </select>
+          <button class="btn btn-out btn-sm" type="button" data-go="projects">View all</button>
+        </div>
+
+        <div class="tiles">
+          <div class="tile is-hot">
+            <div>
+              <span class="tile-status st-action">Action required</span>
+              <div class="code">FIN-CONTRUCTIONS-6C11</div>
+              <div class="name">Fin Contructions</div>
+            </div>
+            <div class="where">CHN-Navalur</div>
+            <div class="tally">
+              <div><b>1</b><span>Documents</span></div>
+              <div><b>1</b><span>Pages</span></div>
+              <div class="hot"><b>1</b><span>Awaiting</span></div>
+            </div>
+            <div class="tile-actions">
+              <button class="btn btn-ink btn-sm" type="button">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                Add document
+              </button>
+              <div class="spacer"></div>
+              <button class="open-round" type="button" data-go="detail" aria-label="Open Fin Contructions">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="M12 6l6 6-6 6"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="tile">
+            <div>
+              <span class="tile-status st-proc">Processing</span>
+              <div class="code">RVK-TOWERS-A184</div>
+              <div class="name">Revathi Towers, Block A</div>
+            </div>
+            <div class="where">Adyar-North &middot; Adyar-South</div>
+            <div class="tally">
+              <div><b>3</b><span>Documents</span></div>
+              <div><b>7</b><span>Pages</span></div>
+              <div><b>0</b><span>Awaiting</span></div>
+            </div>
+            <div class="tile-actions">
+              <button class="btn btn-ink btn-sm" type="button">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                Add document
+              </button>
+              <div class="spacer"></div>
+              <button class="open-round" type="button" data-go="detail" aria-label="Open Revathi Towers, Block A">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="M12 6l6 6-6 6"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="tile">
+            <div>
+              <span class="tile-status st-track">On track</span>
+              <div class="code">SSN-VILLAS-3B0C</div>
+              <div class="name">Sunshine Villas, Phase 2</div>
+            </div>
+            <div class="where">OMR-Ph1 &middot; OMR-Ph2 &middot; Siruseri</div>
+            <div class="tally">
+              <div><b>2</b><span>Documents</span></div>
+              <div><b>4</b><span>Pages</span></div>
+              <div><b>0</b><span>Awaiting</span></div>
+            </div>
+            <div class="tile-actions">
+              <button class="btn btn-ink btn-sm" type="button">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                Add document
+              </button>
+              <div class="spacer"></div>
+              <button class="open-round" type="button" data-go="detail" aria-label="Open Sunshine Villas, Phase 2">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="M12 6l6 6-6 6"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="tile">
+            <div>
+              <span class="tile-status st-none">No activity</span>
+              <div class="code">MTR-DEPOT-9F2A</div>
+              <div class="name">Metro Depot Works</div>
+            </div>
+            <div class="where">Poonamallee</div>
+            <div class="tally">
+              <div><b>0</b><span>Documents</span></div>
+              <div><b>0</b><span>Pages</span></div>
+              <div><b>0</b><span>Awaiting</span></div>
+            </div>
+            <div class="tile-actions">
+              <button class="btn btn-ink btn-sm" type="button">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                Add document
+              </button>
+              <div class="spacer"></div>
+              <button class="open-round" type="button" data-go="detail" aria-label="Open Metro Depot Works">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="M12 6l6 6-6 6"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <button class="tile-add" type="button">
+            <span class="ring" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            </span>
+            <span class="t">Add project</span>
+            <span class="d">Register a site before its documents start arriving.</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ══ what has been happening ════════════════════════════ -->
+      <div class="section">
+        <div class="section-head">
+          <span class="eyebrow">Recent activity</span>
+          <div class="spacer"></div>
+          <button class="btn btn-out btn-sm" type="button" data-go="materials">View all captures</button>
+        </div>
+
+        <div class="activity">
+          <button class="act-row" type="button">
+            <span class="dot d-ok"></span>
+            <span class="act-vend">Sri Balaji Steels</span>
+            <span class="act-what">Invoice approved &middot; &#8377;2,14,600.00</span>
+            <span class="act-proj">RVK-TOWERS-A184</span>
+            <span class="act-when">24 Aug</span>
+          </button>
+          <button class="act-row" type="button">
+            <span class="dot d-hot"></span>
+            <span class="act-vend">Ultratech Cement</span>
+            <span class="act-what">Read &mdash; waiting on your decision</span>
+            <span class="act-proj">FIN-CONTRUCTIONS-6C11</span>
+            <span class="act-when">24 Aug</span>
+          </button>
+          <button class="act-row" type="button">
+            <span class="dot d-ok"></span>
+            <span class="act-vend">Ramco Cements</span>
+            <span class="act-what">Purchase order approved &middot; &#8377;86,400.00</span>
+            <span class="act-proj">RVK-TOWERS-A184</span>
+            <span class="act-when">23 Aug</span>
+          </button>
+          <button class="act-row" type="button">
+            <span class="dot d-ink"></span>
+            <span class="act-vend">Chettinad Ready Mix</span>
+            <span class="act-what">Delivery challan being read</span>
+            <span class="act-proj">RVK-TOWERS-A184</span>
+            <span class="act-when">23 Aug</span>
+          </button>
+          <button class="act-row" type="button">
+            <span class="dot d-no"></span>
+            <span class="act-vend">Kovai Blocks</span>
+            <span class="act-what">Invoice rejected &middot; totals did not match</span>
+            <span class="act-proj">SSN-VILLAS-3B0C</span>
+            <span class="act-when">22 Aug</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══ PROJECTS ════════════════════════════════════════════════════════════ -->
+<section class="screen" id="s-projects">
+  <div class="band">
+    <div class="col">
+
+      <div class="pagetitle">
+        <div>
+          <span class="eyebrow">Explorer</span>
+          <h1 style="margin-top:14px">Projects</h1>
+          <p class="lede">Open a project to see its sites, what was captured at each, and the materials they add up to.</p>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="tiles">
+          <div class="tile">
+            <div>
+              <div class="code">FIN-CONTRUCTIONS-6C11</div>
+              <div class="name">Fin Contructions</div>
+            </div>
+            <div class="where">1 site &middot; CHN-Navalur</div>
+            <div class="tally">
+              <div><b>1</b><span>Documents</span></div>
+              <div><b>1</b><span>Sites</span></div>
+              <div class="hot"><b>1</b><span>Awaiting</span></div>
+            </div>
+            <div class="tile-actions">
+              <button class="btn btn-ink btn-sm" type="button">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                Add document
+              </button>
+              <div class="spacer"></div>
+              <button class="open-round" type="button" data-go="detail" aria-label="Open Fin Contructions">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="M12 6l6 6-6 6"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="tile">
+            <div>
+              <div class="code">RVK-TOWERS-A184</div>
+              <div class="name">Revathi Towers, Block A</div>
+            </div>
+            <div class="where">2 sites &middot; Adyar-North, Adyar-South</div>
+            <div class="tally">
+              <div><b>3</b><span>Documents</span></div>
+              <div><b>2</b><span>Sites</span></div>
+              <div class="hot"><b>0</b><span>Awaiting</span></div>
+            </div>
+            <div class="tile-actions">
+              <button class="btn btn-ink btn-sm" type="button">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                Add document
+              </button>
+              <div class="spacer"></div>
+              <button class="open-round" type="button" data-go="detail" aria-label="Open Revathi Towers, Block A">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="M12 6l6 6-6 6"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="tile">
+            <div>
+              <div class="code">SSN-VILLAS-3B0C</div>
+              <div class="name">Sunshine Villas, Phase 2</div>
+            </div>
+            <div class="where">3 sites &middot; OMR-Ph1, OMR-Ph2, Siruseri</div>
+            <div class="tally">
+              <div><b>2</b><span>Documents</span></div>
+              <div><b>3</b><span>Sites</span></div>
+              <div class="hot"><b>0</b><span>Awaiting</span></div>
+            </div>
+            <div class="tile-actions">
+              <button class="btn btn-ink btn-sm" type="button">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                Add document
+              </button>
+              <div class="spacer"></div>
+              <button class="open-round" type="button" data-go="detail" aria-label="Open Sunshine Villas, Phase 2">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="M12 6l6 6-6 6"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="tile">
+            <div>
+              <div class="code">MTR-DEPOT-9F2A</div>
+              <div class="name">Metro Depot Works</div>
+            </div>
+            <div class="where">1 site &middot; Poonamallee</div>
+            <div class="tally">
+              <div><b>0</b><span>Documents</span></div>
+              <div><b>1</b><span>Sites</span></div>
+              <div class="hot"><b>0</b><span>Awaiting</span></div>
+            </div>
+            <div class="tile-actions">
+              <button class="btn btn-ink btn-sm" type="button">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                Add document
+              </button>
+              <div class="spacer"></div>
+              <button class="open-round" type="button" data-go="detail" aria-label="Open Metro Depot Works">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="M12 6l6 6-6 6"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ PROJECT DETAIL ══════════════════════════════════════════════════════ -->
+<section class="screen" id="s-detail">
+  <div class="band">
+    <div class="col">
+
+      <!-- container 1: who this project is, and the one thing you do to it -->
+      <div class="phead">
+        <button class="back" type="button" data-go="projects">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H6"/><path d="M12 6l-6 6 6 6"/></svg>
+          All projects
+        </button>
+
+        <div class="phead-main">
+          <div>
+            <div class="code">RVK-TOWERS-A184</div>
+            <div class="pname">Revathi Towers, Block A</div>
+          </div>
+          <div class="spacer"></div>
+          <div class="phead-actions">
+            <button class="btn btn-out btn-sm" type="button">Export</button>
+            <button class="btn btn-out btn-sm" type="button">Print</button>
+            <button class="btn btn-ink btn-sm" type="button">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              Add document
+            </button>
+          </div>
+        </div>
+
+        <div class="phead-meta">
+          <span><b>3</b> documents</span>
+          <span class="sep">&middot;</span>
+          <span><b>2</b> sites</span>
+          <span class="sep">&middot;</span>
+          <span class="warn"><b>1</b> still reading</span>
+          <span class="sep">&middot;</span>
+          <span><b>&#8377;3,01,000.00</b> booked</span>
+          <span class="sep">&middot;</span>
+          <span>last capture <b>24 Aug</b></span>
+        </div>
+      </div>
+
+      <!-- container 2: pick a site, narrow the list, read the answers -->
+      <div class="explorer">
+        <div class="explorer-bar">
+          <div class="seg">
+            <button type="button" aria-pressed="true">All sites <span class="n">3</span></button>
+            <button type="button" aria-pressed="false">Adyar-North <span class="n">2</span></button>
+            <button type="button" aria-pressed="false">Adyar-South <span class="n">1</span></button>
+          </div>
+          <div class="spacer"></div>
+          <span class="explorer-count"><b>3</b> of 3 documents</span>
+        </div>
+
+        <div class="toolbar">
+          <input class="ctl ctl-search" type="search" placeholder="Vendor, document or reference" aria-label="Search documents">
+          <select class="ctl" aria-label="Document type"><option>All types</option><option>Invoice</option><option>PO</option><option>Delivery</option></select>
+          <select class="ctl" aria-label="Status"><option>All statuses</option><option>Extracted</option><option>Approved</option><option>Rejected</option></select>
+          <span class="lbl">From</span>
+          <input class="ctl" type="date" value="2026-08-01" aria-label="From date">
+          <span class="lbl">To</span>
+          <input class="ctl" type="date" value="2026-08-24" aria-label="To date">
+          <div class="spacer"></div>
+          <button class="clear" type="button">Clear</button>
+        </div>
+
+        <div class="dgrid">
+          <div class="dhead">
+            <span>Document</span>
+            <span>Status</span>
+            <span>Vendor</span>
+            <span>Site</span>
+            <span>Reference</span>
+            <span class="r">Amount</span>
+            <span>Type</span>
+            <span>Date</span>
+            <span></span>
+          </div>
+
+          <button class="drow" type="button" aria-label="Review DOC-8a31, Sri Balaji Steels">
+            <span class="c-id">DOC-8a31</span>
+            <span><span class="pill p-ok">Approved</span></span>
+            <span class="c-vend">Sri Balaji Steels</span>
+            <span class="c-site">Adyar-North</span>
+            <span class="c-ref">INV-2291</span>
+            <span class="c-amt">&#8377;2,14,600.00</span>
+            <span><span class="pill p-type">Invoice</span></span>
+            <span class="c-date">24 Aug</span>
+            <span class="open-sm" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="M12 6l6 6-6 6"/></svg>
+            </span>
+          </button>
+
+          <button class="drow" type="button" aria-label="Review DOC-2f77, Ramco Cements">
+            <span class="c-id">DOC-2f77</span>
+            <span><span class="pill p-ok">Approved</span></span>
+            <span class="c-vend">Ramco Cements</span>
+            <span class="c-site">Adyar-South</span>
+            <span class="c-ref">PO-8841</span>
+            <span class="c-amt">&#8377;86,400.00</span>
+            <span><span class="pill p-type">PO</span></span>
+            <span class="c-date">23 Aug</span>
+            <span class="open-sm" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="M12 6l6 6-6 6"/></svg>
+            </span>
+          </button>
+
+          <button class="drow" type="button" aria-label="Review DOC-b902, Chettinad Ready Mix">
+            <span class="c-id">DOC-b902</span>
+            <span><span class="pill p-work">Processing</span></span>
+            <span class="c-vend">Chettinad Ready Mix</span>
+            <span class="c-site">Adyar-North</span>
+            <span class="c-ref">&mdash;</span>
+            <span class="c-amt pending">reading&hellip;</span>
+            <span><span class="pill p-type">Delivery</span></span>
+            <span class="c-date">23 Aug</span>
+            <span class="open-sm" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="M12 6l6 6-6 6"/></svg>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div class="section spaced">
+        <div class="section-head">
+          <span class="eyebrow">Materials</span>
+          <div class="spacer"></div>
+          <span class="tag">from 3 documents</span>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Material</th><th class="num">Quantity</th><th>Unit</th><th class="num">Documents</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>OPC Cement 53 Grade</td><td class="num">340</td><td>Bags</td><td class="num">2</td></tr>
+              <tr><td>TMT Steel Bar 12mm</td><td class="num">6.40</td><td>MT</td><td class="num">1</td></tr>
+              <tr><td>M Sand</td><td class="num">48</td><td>Tons</td><td class="num">1</td></tr>
+              <tr><td>20mm Aggregate</td><td class="num">32</td><td>Cum</td><td class="num">1</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">
+          Kept as a table on purpose: these are quantities meant to be compared
+          down a column, which cards would break apart. Summed from the line
+          items read off the documents above, so the filters narrow this too.
+        </p>
+      </div>
+
+      <div class="section spaced">
+        <div class="section-head"><span class="eyebrow">Review sheet</span></div>
+        <div class="sheet-panel">
+          <div style="display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;margin-bottom:32px">
+            <div>
+              <h3 style="font-size:24px">Invoice &middot; DOC-8a31</h3>
+              <p style="margin-top:8px;font-family:var(--mono);font-size:13.5px;color:var(--slate)">Approved by Karthikeyan &middot; 24 Aug 17:02</p>
+            </div>
+            <div style="flex:1"></div>
+            <span class="pill p-ok">Approved</span>
+          </div>
+
+          <div class="grid-fields">
+            <div class="f"><label>Vendor</label><div class="v">Sri Balaji Steels</div></div>
+            <div class="f"><label>Document no.</label><div class="v">INV-2291</div></div>
+            <div class="f"><label>Date</label><div class="v">11.08.2026</div></div>
+            <div class="f"><label>Vendor GSTIN</label><div class="v">33AAACL6442L1ZM</div></div>
+            <div class="f"><label>PO no.</label><div class="v empty">not printed</div></div>
+            <div class="f"><label>Basic value</label><div class="v">1,81,864.41</div></div>
+            <div class="f"><label>CGST</label><div class="v">16,367.80</div></div>
+            <div class="f"><label>SGST</label><div class="v">16,367.79</div></div>
+            <div class="f"><label>Total</label><div class="v">2,14,600.00</div></div>
+          </div>
+
+          <div style="display:flex;gap:10px;margin-top:36px;flex-wrap:wrap">
+            <button class="btn btn-ink" type="button">Approve</button>
+            <button class="btn btn-out" type="button">Save changes</button>
+            <div style="flex:1"></div>
+            <button class="btn btn-signal" type="button">Reject</button>
+          </div>
+          <p class="note" style="margin-top:16px">
+            Reject is the only orange in the console. It is the one action that
+            cannot be taken back without a second person, so it is the one that
+            gets the compliance colour.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ MATERIALS / CAPTURE HISTORY ═════════════════════════════════════════ -->
+<section class="screen" id="s-materials">
+  <div class="band">
+    <div class="col">
+
+      <div class="pagetitle">
+        <div>
+          <span class="eyebrow">Capture history</span>
+          <h1 style="margin-top:14px">Materials</h1>
+          <p class="lede">Every document photographed on a site phone or uploaded from this desk, with the project and site it was filed against.</p>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="filters">
+          <select class="field" aria-label="Project"><option>All projects</option><option>FIN-CONTRUCTIONS-6C11</option><option>RVK-TOWERS-A184</option><option>SSN-VILLAS-3B0C</option></select>
+          <select class="field" aria-label="Site"><option>All sites</option><option>CHN-Navalur</option><option>Adyar-North</option><option>OMR-Ph1</option></select>
+          <select class="field" aria-label="Type"><option>All types</option><option>Invoice</option><option>PO</option><option>Delivery</option></select>
+          <select class="field" aria-label="Status"><option>All statuses</option><option>Extracted</option><option>Approved</option><option>Rejected</option></select>
+        </div>
+
+        <div class="constellation">
+          <button class="portrait" type="button">
+            <div class="disc">
+              <div class="sheet"><i class="w1"></i><i class="w2"></i><i class="w3"></i><i class="w4"></i><i class="w3"></i><i class="w5"></i></div>
+            </div>
+            <div class="caption">
+              <span class="eyebrow">Invoice</span>
+              <h3>Ultratech Cement</h3>
+              <div class="meta">Fin Contructions &middot; CHN-Navalur</div>
+              <div class="stamp"><span>DOC-15d7</span><span class="pill p-wait">Extracted</span></div>
+            </div>
+          </button>
+
+          <button class="portrait" type="button">
+            <div class="disc">
+              <div class="sheet"><i class="w1"></i><i class="w3"></i><i class="w2"></i><i class="w4"></i><i class="w5"></i></div>
+            </div>
+            <div class="caption">
+              <span class="eyebrow">Invoice</span>
+              <h3>Sri Balaji Steels</h3>
+              <div class="meta">Revathi Towers &middot; Adyar-North</div>
+              <div class="stamp"><span>DOC-8a31</span><span class="pill p-ok">Approved</span></div>
+            </div>
+          </button>
+
+          <button class="portrait" type="button">
+            <div class="disc">
+              <div class="sheet"><i class="w1"></i><i class="w4"></i><i class="w3"></i><i class="w2"></i><i class="w3"></i><i class="w5"></i></div>
+            </div>
+            <div class="caption">
+              <span class="eyebrow">Purchase order</span>
+              <h3>Ramco Cements</h3>
+              <div class="meta">Revathi Towers &middot; Adyar-South</div>
+              <div class="stamp"><span>DOC-2f77</span><span class="pill p-ok">Approved</span></div>
+            </div>
+          </button>
+
+          <button class="portrait" type="button">
+            <div class="disc">
+              <div class="sheet"><i class="w1"></i><i class="w2"></i><i class="w4"></i><i class="w3"></i><i class="w5"></i></div>
+            </div>
+            <div class="caption">
+              <span class="eyebrow">Delivery challan</span>
+              <h3>Chettinad Sand Supply</h3>
+              <div class="meta">Sunshine Villas &middot; OMR-Ph1</div>
+              <div class="stamp"><span>DOC-c419</span><span class="pill p-work">Processing</span></div>
+            </div>
+          </button>
+
+          <button class="portrait" type="button">
+            <div class="disc">
+              <div class="sheet"><i class="w1"></i><i class="w3"></i><i class="w4"></i><i class="w2"></i><i class="w5"></i></div>
+            </div>
+            <div class="caption">
+              <span class="eyebrow">Invoice</span>
+              <h3>Kovai Blocks</h3>
+              <div class="meta">Sunshine Villas &middot; Siruseri</div>
+              <div class="stamp"><span>DOC-71be</span><span class="pill p-no">Rejected</span></div>
+            </div>
+          </button>
+
+          <button class="portrait" type="button">
+            <div class="disc">
+              <div class="sheet"><i class="w1"></i><i class="w2"></i><i class="w3"></i><i class="w4"></i><i class="w5"></i></div>
+            </div>
+            <div class="caption">
+              <span class="eyebrow">Invoice</span>
+              <h3>Asian Paints</h3>
+              <div class="meta">Revathi Towers &middot; Adyar-North</div>
+              <div class="stamp"><span>DOC-4d10</span><span class="pill p-ok">Approved</span></div>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="band">
+  <div class="mocknote">
+    <b>This is a design mock, not the running console.</b> Nothing here talks to
+    the backend — the nav switches screens and the controls are inert. Three of
+    the four projects, all vendor names and all money figures are illustrative;
+    only <span class="m">FIN-CONTRUCTIONS-6C11</span>, its site
+    <span class="m">CHN-Navalur</span> and <span class="m">DOC-15d7</span> are
+    your real data.
+    <ul>
+      <li>The circular portraits on Materials stand in for captured pages — drawn, not photographed, so nothing pretends to be a real scan.</li>
+      <li>Set in Sofia Sans, the open substitute for the reference face. The live console falls back to a system stack because it runs on a LAN with no guaranteed internet; self-hosting the font is what would close that gap.</li>
+    </ul>
+  </div>
+</div>
+
+<footer>
+  <div class="col">
+    <span class="eyebrow">Purchase Division</span>
+    <div style="flex:1"></div>
+    <span class="mark">console design mock &middot; v2</span>
+  </div>
+</footer>
+
+<script>
+  const screens = document.querySelectorAll(".screen");
+  const links = document.querySelectorAll(".nav-links button");
+
+  function show(name) {
+    screens.forEach((s) => s.classList.toggle("on", s.id === "s-" + name));
+    links.forEach((b) => {
+      if (b.dataset.go === name) b.setAttribute("aria-current", "page");
+      else b.removeAttribute("aria-current");
+    });
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+
+  document.querySelectorAll("[data-go]").forEach((el) => {
+    el.addEventListener("click", () => show(el.dataset.go));
+  });
+
+  /* The site switcher is the one live control here — how it feels to change
+     site is the thing worth trying before it gets built. */
+  document.querySelectorAll(".seg").forEach((seg) => {
+    seg.addEventListener("click", (e) => {
+      const hit = e.target.closest("button");
+      if (!hit) return;
+      seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", "false"));
+      hit.setAttribute("aria-pressed", "true");
+    });
+  });
+</script>
