@@ -19,7 +19,6 @@ export function ProjectCard({ project, docs, onScan, onUpload }) {
 
   const status = projectStatus(project, docs);
   const tally = projectTally(project, docs);
-  const sites = project.sites ?? [];
 
   return (
     <div className={`tile ${status.cls === "st-action" ? "is-hot" : ""}`} ref={ref}>
@@ -29,15 +28,9 @@ export function ProjectCard({ project, docs, onScan, onUpload }) {
         <div className="name">{project.name}</div>
       </div>
 
-      {sites.length ? (
-        <div className="where">{sites.map((s) => s.name).join(" · ")}</div>
-      ) : (
-        <div className="where">No sites registered yet</div>
-      )}
-
       <div className="tally">
         <div><b>{tally.documents}</b><span>Documents</span></div>
-        <div><b>{tally.pages}</b><span>Pages</span></div>
+        <div><b>{tally.purchaseOrders}</b><span>POs</span></div>
         <div className={tally.awaiting ? "hot" : ""}>
           <b>{tally.awaiting}</b><span>Awaiting</span>
         </div>

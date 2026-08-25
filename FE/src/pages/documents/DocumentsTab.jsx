@@ -3,7 +3,7 @@ import { FilterBar } from "../../components/FilterBar.jsx";
 import { StatusPill, TypePill } from "../../components/Pills.jsx";
 import { IconArrow, IconFile } from "../../components/Icons.jsx";
 import {
-  IMAGE_RE, isWaiting, matchesFilter, money, refOf, shortDate, siteNameOf,
+  IMAGE_RE, isWaiting, matchesFilter, money, refOf, shortDate,
 } from "../../lib/format.js";
 
 /* The document register: every scan and upload the console has taken, newest
@@ -12,7 +12,7 @@ import {
    what happened to it", and those are columns to be compared down the page,
    not captions under pictures. */
 export function DocumentsTab({ docs, projects, search, onOpenDocument }) {
-  const [filter, setFilter] = useState({ q: "", project: "", site: "", type: "", status: "" });
+  const [filter, setFilter] = useState({ q: "", project: "", type: "", status: "" });
 
   /* The nav search applies here too, so typing a vendor anywhere finds it. */
   const effective = useMemo(() => ({ ...filter, q: filter.q || search }), [filter, search]);
@@ -34,7 +34,7 @@ export function DocumentsTab({ docs, projects, search, onOpenDocument }) {
             <h1 style={{ marginTop: 14 }}>Document Register</h1>
             <p className="lede">
               Every document photographed on a site phone or uploaded from this
-              desk, newest first, with the project and site it was filed against.
+              desk, newest first, with the project it was filed against.
             </p>
           </div>
         </div>
@@ -55,7 +55,6 @@ export function DocumentsTab({ docs, projects, search, onOpenDocument }) {
               <span>Status</span>
               <span>Vendor</span>
               <span>Project</span>
-              <span>Site</span>
               <span>Reference</span>
               <span className="r">Amount</span>
               <span>Type</span>
@@ -87,7 +86,6 @@ export function DocumentsTab({ docs, projects, search, onOpenDocument }) {
                   <span><StatusPill status={d.status} /></span>
                   <span className="c-vend">{d.vendor_name ?? "—"}</span>
                   <span className="c-proj">{d.project_code ?? "—"}</span>
-                  <span className="c-site">{siteNameOf(d, projects)}</span>
                   <span className="c-ref">{refOf(d) ?? "—"}</span>
                   {money(d.total_value)
                     ? <span className="c-amt">{money(d.total_value)}</span>

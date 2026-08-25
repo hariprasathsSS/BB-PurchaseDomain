@@ -4,11 +4,17 @@ import { IconUpload } from "../../components/Icons.jsx";
 import { api } from "../../lib/api.js";
 import { ALLOWED_UPLOAD_RE, kb } from "../../lib/format.js";
 
-/* Browser intake: loose files against a project, and a site when the project
-   has any — otherwise the document lands unfiled and nothing can group it. */
-export function UploadModal({ project, onClose, onUploaded }) {
-  const sites = project.sites ?? [];
-  const [siteId, setSiteId] = useState(sites[0]?.id ?? "");
+/* Browser intake: loose files against a project.
+
+   `documentType` is the operator saying what they are holding — the PO desk
+   sends "PO" — and it is a hint, not the verdict: the classifier still reads
+   the page and can overrule it. */
+export function UploadModal({
+  project, onClose, onUploaded,
+  documentType = "UNCLASSIFIED",
+  title = "Upload files",
+  hint = "Photos or PDFs of invoices, purchase orders and delivery challans.",
+}) {
   const [picked, setPicked] = useState([]);
   const [over, setOver] = useState(false);
   const [err, setErr] = useState("");
@@ -37,14 +43,18 @@ export function UploadModal({ project, onClose, onUploaded }) {
     setErr("");
     setOk("");
     try {
-      await api.uploadFiles({ projectId: project.id, siteId, files: picked });
+      const result = await api.uploadFiles({
+        projectId: project.id, files: picked, documentType,
+      });
       setOk(
         `${picked.length} file${picked.length > 1 ? "s" : ""} uploaded to ${project.code}. ` +
         "Extraction starts automatically."
       );
       setPicked([]);
       if (fileInput.current) fileInput.current.value = "";
-      await onUploaded();
+      /* The caller may want to follow what was just created — the PO desk
+         opens the document it has this second told the operator about. */
+      await onUploaded(result.documents ?? []);
     } catch (e) {
       setErr(`Upload failed — ${e.message}. Nothing was saved; try again.`);
     } finally {
@@ -54,7 +64,7 @@ export function UploadModal({ project, onClose, onUploaded }) {
 
   return (
     <Modal
-      title="Upload files"
+      title={title}
       subtitle={`${project.code} — ${project.name}`}
       onClose={onClose}
       footer={
@@ -72,17 +82,6 @@ export function UploadModal({ project, onClose, onUploaded }) {
       {err ? <div className="banner banner-err">{err}</div> : null}
       {ok ? <div className="banner banner-ok">{ok}</div> : null}
 
-      {sites.length ? (
-        <div className="form" style={{ marginBottom: 24 }}>
-          <label>
-            <span>Site</span>
-            <select className="input" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
-              {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </label>
-        </div>
-      ) : null}
-
       <div
         className={`drop ${over ? "over" : ""}`}
         role="button"
@@ -98,10 +97,7 @@ export function UploadModal({ project, onClose, onUploaded }) {
       >
         <IconUpload width={26} height={26} />
         <div className="t">Choose files</div>
-        <div className="d">
-          Photos or PDFs of invoices, purchase orders and delivery challans.
-          Drag them here or click to browse.
-        </div>
+        <div className="d">{hint} Drag them here or click to browse.</div>
       </div>
 
       <input

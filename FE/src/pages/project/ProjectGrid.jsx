@@ -19,8 +19,8 @@ export function ProjectGrid({ projects, docs, search, onAddProject, onAddDocumen
             <span className="eyebrow">Explorer</span>
             <h1 style={{ marginTop: 14 }}>Projects</h1>
             <p className="lede">
-              Open a project to see its sites, what was captured at each, and the
-              materials they add up to.
+              Open a project to scan its purchase orders, see what was captured
+              against them, and the materials they add up to.
             </p>
           </div>
         </div>
@@ -36,7 +36,6 @@ export function ProjectGrid({ projects, docs, search, onAddProject, onAddDocumen
             {shown.map((p) => {
               const status = projectStatus(p, docs);
               const tally = projectTally(p, docs);
-              const sites = p.sites ?? [];
               return (
                 <div key={p.id} className={`tile ${status.cls === "st-action" ? "is-hot" : ""}`}>
                   <div>
@@ -45,15 +44,9 @@ export function ProjectGrid({ projects, docs, search, onAddProject, onAddDocumen
                     <div className="name">{p.name}</div>
                   </div>
 
-                  <div className="where">
-                    {sites.length
-                      ? `${sites.length} site${sites.length === 1 ? "" : "s"} · ${sites.map((s) => s.name).join(", ")}`
-                      : "No sites registered yet"}
-                  </div>
-
                   <div className="tally">
                     <div><b>{tally.documents}</b><span>Documents</span></div>
-                    <div><b>{tally.sites}</b><span>Sites</span></div>
+                    <div><b>{tally.purchaseOrders}</b><span>POs</span></div>
                     <div className={tally.awaiting ? "hot" : ""}>
                       <b>{tally.awaiting}</b><span>Awaiting</span>
                     </div>
@@ -87,7 +80,7 @@ export function ProjectGrid({ projects, docs, search, onAddProject, onAddDocumen
             <button className={`tile-add ${projects.length === 0 ? "is-only" : ""}`} type="button" onClick={onAddProject}>
               <span className="ring"><IconPlus width={24} height={24} /></span>
               <span className="t">Add project</span>
-              <span className="d">Register a site before its documents start arriving.</span>
+              <span className="d">Register a project before its documents start arriving.</span>
             </button>
           </div>
         </div>

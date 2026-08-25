@@ -52,6 +52,7 @@ export default function App() {
             docs={docs}
             materials={materials}
             search={search}
+            reload={reload}
             onOpenDocument={setReviewId}
             onAddProject={() => setAddingProject(true)}
             onAddDocument={setUploadFor}

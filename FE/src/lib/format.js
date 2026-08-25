@@ -24,11 +24,6 @@ export const shortDate = (stamp) => {
 export const projectOf = (doc) =>
   doc.project_code ? `${doc.project_code} — ${doc.project_name}` : "—";
 
-export const siteNameOf = (doc, projects) =>
-  projects
-    .find((p) => p.id === doc.project_id)
-    ?.sites?.find((s) => s.id === doc.site_id)?.name ?? "—";
-
 /* The reference printed on the paper, whichever kind of paper it is. */
 export const refOf = (doc) => doc.doc_number || doc.po_number || null;
 
@@ -60,6 +55,14 @@ export const isLocked = (doc) => doc.status === "APPROVED" || doc.status === "RE
    the document is sitting there wanting a decision. */
 export const needsDecision = (doc) => doc.status === "EXTRACTED";
 
+export const isPO = (doc) => doc.document_type === "PO";
+export const isInvoice = (doc) => doc.document_type === "INVOICE";
+
+/* An invoice is raised against a PO by the PO number printed on it. Both sides
+   spell it however the paper did, so the comparison is case- and space-blind —
+   "PO/2026/0041" and "po 2026 0041" are the same order. */
+export const orderKey = (s) => String(s ?? "").replace(/[\s\-\/\.]/g, "").toUpperCase();
+
 export const isRejected = (doc) => doc.status === "REJECTED";
 /* A rejected document stays visible in every list — that is the audit trail —
    but it is a document the business has decided not to accept, so its money
@@ -84,8 +87,8 @@ export function projectTally(project, docs) {
   return {
     documents: mine.length,
     pages: mine.reduce((n, d) => n + (d.page_count ?? 0), 0),
+    purchaseOrders: mine.filter(isPO).length,
     awaiting: mine.filter(needsDecision).length,
-    sites: (project.sites ?? []).length,
     // Rejected documents are excluded: the project did not buy that.
     booked: counted.reduce((sum, d) => sum + (Number(d.total_value) || 0), 0),
     reading: mine.filter(isWaiting).length,
@@ -114,7 +117,6 @@ export function activityOf(doc) {
 /* Shared by the project detail and material tabs so both filter identically. */
 export function matchesFilter(doc, f = {}) {
   if (f.project && doc.project_id !== f.project) return false;
-  if (f.site && doc.site_id !== f.site) return false;
   if (f.type && doc.document_type !== f.type) return false;
   if (f.status && doc.status !== f.status) return false;
   const day = (doc.uploaded_at || "").slice(0, 10);

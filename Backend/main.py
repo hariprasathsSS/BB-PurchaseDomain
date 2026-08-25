@@ -173,27 +173,6 @@ def generate_project_code(name: str) -> str:
     return f"{slug}-{uuid.uuid4().hex[:4].upper()}"
 
 
-def list_sites(project_id: str) -> list[dict]:
-    with db.db() as con:
-        rows = con.execute(
-            "SELECT * FROM sites WHERE project_id = ? ORDER BY name", (project_id,)
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def add_site(con: sqlite3.Connection, project_id: str, name: str, address: str | None = None) -> dict:
-    site_id = new_id("SITE")
-    con.execute(
-        "INSERT INTO sites (id, project_id, name, address) VALUES (?, ?, ?, ?)",
-        (site_id, project_id, name, address),
-    )
-    return {"id": site_id, "project_id": project_id, "name": name, "address": address}
-
-
-def project_dict(row: sqlite3.Row) -> dict:
-    return dict(row) | {"sites": list_sites(row["id"])}
-
-
 def new_session(project_id: str, created_by: str = "web") -> dict:
     """A session is always bound to a project — that is the whole point of
     choosing one in the web console before the QR is issued."""
@@ -309,7 +288,6 @@ def row_to_document(row: sqlite3.Row) -> dict:
         "project_id": row["project_id"],
         "project_code": row["project_code"],
         "project_name": row["project_name"],
-        "site_id": row["site_id"],
         "source": row["source"],
         "document_type": row["document_type"],
         "file_paths": json.loads(row["file_paths"]),
@@ -389,19 +367,16 @@ def console_page():
 def list_projects():
     with db.db() as con:
         rows = con.execute("SELECT * FROM projects ORDER BY code").fetchall()
-    return {"total": len(rows), "projects": [project_dict(r) for r in rows]}
+    return {"total": len(rows), "projects": [dict(r) for r in rows]}
 
 
 @app.post("/api/v1/projects", status_code=201)
 def create_project(body: dict):
     """The code is generated here, not typed by the operator — see
-    generate_project_code(). A project can list its sites up front, or gain
-    more later via POST .../sites."""
+    generate_project_code()."""
     name = str((body or {}).get("name", "")).strip()
     if not name:
         raise HTTPException(400, "name is required")
-    site_names = [s.strip() for s in (body or {}).get("sites") or [] if str(s).strip()]
-
     project_id = new_id("PRJ")
     for _ in range(5):
         code = generate_project_code(name)
@@ -411,32 +386,12 @@ def create_project(body: dict):
                     "INSERT INTO projects (id, code, name) VALUES (?, ?, ?)",
                     (project_id, code, name),
                 )
-                for site_name in site_names:
-                    add_site(con, project_id, site_name)
             break
         except sqlite3.IntegrityError:
             continue
     else:
         raise HTTPException(500, "could not generate a unique project code — try again")
-    return project_dict(get_project(project_id))
-
-
-@app.get("/api/v1/projects/{project_id}/sites")
-def get_sites(project_id: str):
-    get_project(project_id)
-    return {"sites": list_sites(project_id)}
-
-
-@app.post("/api/v1/projects/{project_id}/sites", status_code=201)
-def create_site(project_id: str, body: dict):
-    get_project(project_id)
-    name = str((body or {}).get("name", "")).strip()
-    if not name:
-        raise HTTPException(400, "name is required")
-    address = str((body or {}).get("address", "")).strip() or None
-    with db.db() as con:
-        site = add_site(con, project_id, name, address)
-    return site
+    return dict(get_project(project_id))
 
 
 @app.get("/api/v1/projects/{project_id}/export")
@@ -488,9 +443,9 @@ def store_documents(
     con: sqlite3.Connection,
     directory: Path,
     project_id: str,
-    site_id: str | None,
     session_id: str | None,
     source: str,
+    document_type: str,
     groups: list[list[UploadFile]],
 ) -> list[dict]:
     """Write each group of pages as one document row. Returns the created rows."""
@@ -508,13 +463,14 @@ def store_documents(
                 store_upload(upload, directory, doc_id, start_page=len(rel_paths) + 1)
             )
         con.execute(
-            "INSERT INTO documents (id, project_id, site_id, session_id, source, file_paths,"
-            " page_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (doc_id, project_id, site_id, session_id, source, json.dumps(rel_paths), len(rel_paths)),
+            "INSERT INTO documents (id, project_id, session_id, source, document_type,"
+            " file_paths, page_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (doc_id, project_id, session_id, source, document_type,
+             json.dumps(rel_paths), len(rel_paths)),
         )
         documents.append({
             "document_id": doc_id,
-            "document_type": "UNCLASSIFIED",
+            "document_type": document_type,
             "file_paths": rel_paths,
             "page_count": len(rel_paths),
             "status": "PENDING",
@@ -547,7 +503,7 @@ def batch_upload(
 
     with db.db() as con:
         row = con.execute(
-            "SELECT project_id, site_id FROM scanner_sessions WHERE id = ?", (session_id,)
+            "SELECT project_id FROM scanner_sessions WHERE id = ?", (session_id,)
         ).fetchone()
         if row is None:
             raise HTTPException(401, "Unknown session — scan the QR again")
@@ -558,7 +514,8 @@ def batch_upload(
             cursor += pages
 
         documents = store_documents(
-            con, UPLOAD_DIR / session_id, row["project_id"], row["site_id"], session_id, "SCAN", groups,
+            con, UPLOAD_DIR / session_id, row["project_id"], session_id, "SCAN",
+            "UNCLASSIFIED", groups,
         )
 
     queue_extraction(background, documents)
@@ -569,10 +526,13 @@ def batch_upload(
 def web_upload(
     background: BackgroundTasks,
     project_id: str = Form(...),
-    site_id: str | None = Form(None),
+    document_type: str = Form("UNCLASSIFIED"),
     files: list[UploadFile] = File(...),
 ):
     """Console upload: loose files picked in a browser, no phone and no session.
+
+    `document_type` is the operator's hint — "this is the PO" — not the verdict:
+    the classifier still reads the page and can overrule it (see extract.run_engine).
 
     One file is one document. A multi-page PDF therefore stores as a single
     document with page_count 1 — ponytail: the engine reads every page of the
@@ -581,11 +541,14 @@ def web_upload(
     """
     if not files:
         raise HTTPException(400, "no files were sent")
+    if document_type not in db.DOC_TYPES:
+        raise HTTPException(400, f"document_type must be one of {sorted(db.DOC_TYPES)}")
     get_project(project_id)          # 404 before anything touches the disk
 
     with db.db() as con:
         documents = store_documents(
-            con, UPLOAD_DIR / "web", project_id, site_id or None, None, "UPLOAD", [[f] for f in files],
+            con, UPLOAD_DIR / "web", project_id, None, "UPLOAD", document_type,
+            [[f] for f in files],
         )
 
     queue_extraction(background, documents)
@@ -646,6 +609,48 @@ def get_document(document_id: str):
         "header": dict(header) if header else None,
         "lines": [dict(line) for line in lines],
     }
+
+
+@app.delete("/api/v1/documents/{document_id}")
+def delete_document(document_id: str, confirm: str = ""):
+    """Remove a document and its pages — for the one somebody uploaded twice.
+
+    `confirm` has to repeat a reference the operator can read off the screen:
+    the document number, the PO number on it, or the document id. The console
+    makes them type it; checking it here as well means a mis-wired button
+    cannot quietly delete the wrong document. There is no undo.
+    """
+    with db.db() as con:
+        row = con.execute(
+            "SELECT d.id, d.file_paths, h.doc_number, h.po_number FROM documents d"
+            " LEFT JOIN doc_headers h ON h.document_id = d.id WHERE d.id = ?",
+            (document_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "No such document")
+
+        accepted = {
+            str(value).strip().casefold()
+            for value in (row["doc_number"], row["po_number"], row["id"])
+            if value
+        }
+        if confirm.strip().casefold() not in accepted:
+            raise HTTPException(
+                400, "Type the document's own number exactly to confirm the delete"
+            )
+
+        # Another document may be marked a duplicate of this one. The survivor
+        # keeps its own record rather than a reference to a row that is gone.
+        con.execute(
+            "UPDATE documents SET duplicate_of = NULL WHERE duplicate_of = ?", (document_id,)
+        )
+        # doc_headers and doc_lines cascade.
+        con.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+
+    # Pixels last: the row is what the console reads, and a stray file on disk
+    # is a smaller problem than a row pointing at a file that no longer exists.
+    db.remove_pages(document_id, json.loads(row["file_paths"]))
+    return {"deleted": document_id}
 
 
 @app.post("/api/v1/documents/{document_id}/extract")

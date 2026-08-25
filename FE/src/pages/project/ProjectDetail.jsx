@@ -1,58 +1,53 @@
 import { useMemo, useState } from "react";
 import { StatusPill, TypePill } from "../../components/Pills.jsx";
 import { IconArrow, IconBack, IconDownload, IconPlus, IconPrint } from "../../components/Icons.jsx";
-import { MaterialsRollup } from "./MaterialsRollup.jsx";
+import { PurchaseOrder } from "./PurchaseOrder.jsx";
+import { UploadModal } from "../home/UploadModal.jsx";
 import { go } from "../../lib/useHashRoute.js";
 import { api } from "../../lib/api.js";
 import {
-  countsTowardTotals, DOC_STATUSES, DOC_TYPES, isWaiting, matchesFilter, money,
+  DOC_STATUSES, DOC_TYPES, isWaiting, matchesFilter, money,
   projectTally, refOf, shortDate, titleCase,
 } from "../../lib/format.js";
 
 const EMPTY = { q: "", type: "", status: "", from: "", to: "" };
 
-/* Two containers instead of five loose blocks: who the project is, and one
-   panel that does all the narrowing-down. Site tabs, filters and results are
-   three steps of a single act — separate cards made them read as three
-   separate subjects. */
-export function ProjectDetail({ project, docs, materials, onOpenDocument, onAddDocument }) {
-  const [siteId, setSiteId] = useState("");
-  const [filter, setFilter] = useState(EMPTY);
+/* The two things the purchase desk takes in. Both are an upload for now; the
+   document type is the operator's hint, which the classifier can still
+   overrule. */
+const INTAKE = {
+  PO: {
+    documentType: "PO",
+    title: "Scan purchase order",
+    hint: "A photo or PDF of the purchase order.",
+  },
+  INVOICE: {
+    documentType: "INVOICE",
+    title: "Upload invoice",
+    hint: "A photo or PDF of the vendor's invoice.",
+  },
+};
 
-  const sites = project.sites ?? [];
+/* Three containers: who the project is, an overview of everything captured
+   against it, and the purchase desk. The overview leads because it answers
+   "what came in" — the desk below it answers "what does it add up to". */
+export function ProjectDetail({ project, docs, materials, reload, onOpenDocument, onAddDocument }) {
+  const [filter, setFilter] = useState(EMPTY);
+  /* Which kind of paper the intake modal is currently taking, or null. */
+  const [intake, setIntake] = useState(null);
+
   const projectDocs = useMemo(
     () => docs.filter((d) => d.project_id === project.id),
     [docs, project.id]
   );
 
-  const visible = useMemo(() => {
-    const scoped =
-      siteId === "" ? projectDocs
-      : siteId === "__none" ? projectDocs.filter((d) => !d.site_id)
-      : projectDocs.filter((d) => d.site_id === siteId);
-    return scoped.filter((d) => matchesFilter(d, filter));
-  }, [projectDocs, siteId, filter]);
-
-  /* The table below shows everything in view, rejected included. The rollup
-     under it must not — so it gets the same set minus the rejections. */
-  const counted = useMemo(() => visible.filter(countsTowardTotals), [visible]);
-  const rejectedInView = visible.length - counted.length;
+  const visible = useMemo(
+    () => projectDocs.filter((d) => matchesFilter(d, filter)),
+    [projectDocs, filter]
+  );
 
   const tally = projectTally(project, docs);
-  const unfiled = projectDocs.filter((d) => !d.site_id).length;
   const dirty = JSON.stringify(filter) !== JSON.stringify(EMPTY);
-
-  const countFor = (id) =>
-    id === "" ? projectDocs.length
-    : id === "__none" ? unfiled
-    : projectDocs.filter((d) => d.site_id === id).length;
-
-  const tabs = [
-    { id: "", label: "All sites" },
-    ...sites.map((s) => ({ id: s.id, label: s.name })),
-    /* Documents uploaded before a site was chosen have nowhere else to sit. */
-    ...(unfiled ? [{ id: "__none", label: "Unfiled" }] : []),
-  ];
 
   return (
     <div className="band">
@@ -98,7 +93,7 @@ export function ProjectDetail({ project, docs, materials, onOpenDocument, onAddD
           <div className="phead-meta">
             <span><b>{tally.documents}</b> documents</span>
             <span className="sep">·</span>
-            <span><b>{tally.sites}</b> sites</span>
+            <span><b>{tally.purchaseOrders}</b> purchase orders</span>
             {tally.awaiting ? (
               <>
                 <span className="sep">·</span>
@@ -122,19 +117,7 @@ export function ProjectDetail({ project, docs, materials, onOpenDocument, onAddD
 
         <div className="explorer">
           <div className="explorer-bar">
-            <div className="seg">
-              {tabs.map((t) => (
-                <button
-                  key={t.id || "all"}
-                  type="button"
-                  aria-pressed={siteId === t.id}
-                  onClick={() => setSiteId(t.id)}
-                >
-                  {t.label}
-                  <span className="n">{countFor(t.id)}</span>
-                </button>
-              ))}
-            </div>
+            <span className="eyebrow">Overview</span>
             <div className="spacer" />
             <span className="explorer-count">
               <b>{visible.length}</b> of {projectDocs.length} documents
@@ -193,7 +176,6 @@ export function ProjectDetail({ project, docs, materials, onOpenDocument, onAddD
               <span>Document</span>
               <span>Status</span>
               <span>Vendor</span>
-              <span>Site</span>
               <span>Reference</span>
               <span className="r">Amount</span>
               <span>Type</span>
@@ -212,9 +194,6 @@ export function ProjectDetail({ project, docs, materials, onOpenDocument, onAddD
                 <span className="c-id">{d.document_id.slice(0, 8)}</span>
                 <span><StatusPill status={d.status} /></span>
                 <span className="c-vend">{d.vendor_name ?? "—"}</span>
-                <span className="c-site">
-                  {sites.find((s) => s.id === d.site_id)?.name ?? "Unfiled"}
-                </span>
                 <span className="c-ref">{refOf(d) ?? "—"}</span>
                 {money(d.total_value)
                   ? <span className="c-amt">{money(d.total_value)}</span>
@@ -229,17 +208,28 @@ export function ProjectDetail({ project, docs, materials, onOpenDocument, onAddD
           </div>
         </div>
 
-        <div className="section spaced">
-          <div className="section-head">
-            <span className="eyebrow">Materials</span>
-            <div className="spacer" />
-            <span className="tag">
-              from {counted.length} document{counted.length === 1 ? "" : "s"}
-              {rejectedInView ? ` · ${rejectedInView} rejected excluded` : ""}
-            </span>
-          </div>
-          <MaterialsRollup docs={counted} materials={materials} />
-        </div>
+        <PurchaseOrder
+          project={project}
+          docs={docs}
+          materials={materials}
+          onSettled={reload}
+          onScanPO={() => setIntake(INTAKE.PO)}
+          onUploadInvoice={() => setIntake(INTAKE.INVOICE)}
+          onOpenDocument={onOpenDocument}
+        />
+
+        {/* ponytail: "scan" is an upload for now — the phone route already
+            exists on the home page and this desk does not need a second one. */}
+        {intake ? (
+          <UploadModal
+            project={project}
+            documentType={intake.documentType}
+            title={intake.title}
+            hint={intake.hint}
+            onClose={() => setIntake(null)}
+            onUploaded={reload}
+          />
+        ) : null}
       </div>
     </div>
   );

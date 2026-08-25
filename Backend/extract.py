@@ -20,7 +20,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 import media
-from db import BASE_DIR, DOC_TYPES, db, new_id
+from db import BASE_DIR, DOC_TYPES, db, new_id, remove_pages
 
 try:
     import anthropic
@@ -209,20 +209,33 @@ def match_vendor(con: sqlite3.Connection, name: str | None, gstin: str | None) -
 
 
 def find_duplicate(
-    con: sqlite3.Connection, gstin: str | None, doc_number: str | None, exclude_id: str
+    con: sqlite3.Connection, project_id: str, gstin: str | None,
+    doc_number: str | None, doc_kind: str | None, exclude_id: str,
 ) -> str | None:
-    """Same vendor, same document number, different scan.
+    """The same piece of paper, scanned twice.
 
-    Invoice numbers are per-vendor sequences — "136" and "32" in the samples — so
-    the number alone collides constantly. Vendor plus number is the real key.
+    Two keys, because two different parties issue the numbers:
+
+    * A vendor's invoice number is a per-vendor sequence — "136" and "32" in the
+      samples — so the number alone collides constantly and vendor + number is
+      the real key. That key works wherever the document lands.
+    * A PO number is issued by us, so within one project the number and the kind
+      already identify it. This is the case the vendor key cannot see at all: a
+      purchase order often carries no vendor GSTIN.
+
+    A document that has been rejected does not block a re-scan — rejecting a bad
+    read and photographing the page again is the normal way out of one.
     """
-    if not gstin or not doc_number:
+    if not doc_number:
         return None
     row = con.execute(
-        "SELECT document_id FROM doc_headers"
-        " WHERE vendor_gstin = ? AND doc_number = ? AND document_id != ?"
-        " ORDER BY rowid LIMIT 1",
-        (gstin, doc_number, exclude_id),
+        "SELECT h.document_id FROM doc_headers h"
+        "  JOIN documents d ON d.id = h.document_id"
+        " WHERE h.doc_number = ? AND h.document_id != ? AND d.status != 'REJECTED'"
+        "   AND ((? IS NOT NULL AND h.vendor_gstin = ?)"
+        "        OR (d.project_id = ? AND h.doc_kind IS ?))"
+        " ORDER BY d.uploaded_at, h.rowid LIMIT 1",
+        (doc_number, exclude_id, gstin, gstin, project_id, doc_kind),
     ).fetchone()
     return row["document_id"] if row else None
 
@@ -479,8 +492,30 @@ _HEADER_FIELDS = (
 )
 
 
-def save_extraction(con: sqlite3.Connection, document_id: str, data: dict) -> None:
-    """Persist engine output into doc_headers + doc_lines, mapping as it goes."""
+def classify(hint: str | None, doc_kind: str | None) -> str:
+    """What the document is filed as, from the operator's hint and the model's read.
+
+    The model wins whenever it recognised the page as a real kind — it read the
+    pixels and the hint is only what somebody picked from a menu. But OTHER and
+    UNCLASSIFIED are not a verdict, they are the model declining to say; when an
+    operator has explicitly pressed "Scan PO", throwing that away and filing the
+    page as OTHER loses the only information anybody has.
+    """
+    if doc_kind in DOC_TYPES and doc_kind not in ("OTHER", "UNCLASSIFIED"):
+        return doc_kind
+    if hint in DOC_TYPES and hint != "UNCLASSIFIED":
+        return hint
+    # An unrecognised kind stays UNCLASSIFIED rather than tripping the CHECK.
+    return doc_kind if doc_kind in DOC_TYPES else "UNCLASSIFIED"
+
+
+def save_extraction(
+    con: sqlite3.Connection, document_id: str, data: dict, hint: str | None = None
+) -> None:
+    """Persist engine output into doc_headers + doc_lines, mapping as it goes.
+
+    `hint` is the document type the operator filed it under before it was read.
+    """
     gstin = find_gstin(data.get("vendor_gstin"))
     vendor_id = match_vendor(con, data.get("vendor_name_raw"), data.get("vendor_gstin"))
 
@@ -515,15 +550,34 @@ def save_extraction(con: sqlite3.Connection, document_id: str, data: dict) -> No
             ),
         )
 
-    duplicate = find_duplicate(con, gstin, header["doc_number"], document_id)
-    # The classifier's answer is what files the document. An unrecognised kind
-    # leaves it UNCLASSIFIED rather than writing a value the CHECK would reject.
-    doc_kind = data.get("doc_kind")
-    document_type = doc_kind if doc_kind in DOC_TYPES else "UNCLASSIFIED"
+    document_type = classify(hint, data.get("doc_kind"))
+    project_id = con.execute(
+        "SELECT project_id FROM documents WHERE id = ?", (document_id,)
+    ).fetchone()["project_id"]
+    duplicate = find_duplicate(
+        con, project_id, gstin, header["doc_number"], header["doc_kind"], document_id
+    )
+
+    # A second scan of a document already on file is thrown away, not filed.
+    # Keeping it as a rejected row was the safer instinct, but it left the same
+    # purchase order sitting in the register twice and every screen then had to
+    # explain why one of them did not count. The original is untouched and is
+    # still the record of the document; this scan simply never happened.
+    if duplicate:
+        pages = json.loads(
+            con.execute(
+                "SELECT file_paths FROM documents WHERE id = ?", (document_id,)
+            ).fetchone()["file_paths"]
+        )
+        # doc_headers and doc_lines, written above, cascade with the row.
+        con.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+        remove_pages(document_id, pages)
+        return
+
     con.execute(
         "UPDATE documents SET status = 'EXTRACTED', document_type = ?, extracted_json = ?,"
-        " duplicate_of = ?, error = NULL WHERE id = ?",
-        (document_type, json.dumps(data), duplicate, document_id),
+        " duplicate_of = NULL, error = NULL WHERE id = ?",
+        (document_type, json.dumps(data), document_id),
     )
 
 
@@ -564,7 +618,7 @@ def process(document_id: str) -> None:
         return
 
     with db() as con:
-        save_extraction(con, document_id, data)
+        save_extraction(con, document_id, data, hint=document_type)
 
 
 # ── review: edit, approve, reject ───────────────────────────────────────────
@@ -671,6 +725,17 @@ def mark_rejected(con: sqlite3.Connection, document_id: str, rejected_by: str, r
 
 if __name__ == "__main__":
     import db as _db
+    import tempfile
+    from pathlib import Path
+
+    # A throwaway database, not the working one. These checks insert vendors,
+    # materials and documents and then delete them again, and against a real
+    # register that cleanup either collides with extracted data of the same
+    # name or is blocked by rows genuinely referencing it. The contextmanager
+    # reads DB_PATH when it opens a connection, so redirecting it here is
+    # enough to isolate everything below.
+    _db.DB_PATH = Path(tempfile.mkdtemp()) / "selfcheck.db"
+    _db.init()
 
     # Dates: every shape the three samples actually print, plus the ambiguous one.
     assert parse_date("08.08.2023") == "2023-08-08"
@@ -729,8 +794,12 @@ if __name__ == "__main__":
         assert match_material(con, "Zircon Fibre Mesh 400gsm") == "MAT-WALL-PUTTY"
 
         # Vendors: GSTIN wins, and a repeat lookup does not duplicate the row.
-        first = match_vendor(con, "UltraTech Cement Limited", "09AAACL6442L1Z8")
-        again = match_vendor(con, "ULTRATECH CEMENT LTD", "09AAACL6442L1Z8")
+        # The name is deliberately one no real document carries: this check runs
+        # against the working database, and a vendor of the same name extracted
+        # from an actual scan would be matched by name before the GSTIN is
+        # reached, failing the assertion for a reason that is not a bug.
+        first = match_vendor(con, "Selfcheck Cement Works Pvt Ltd", "09AAACL6442L1Z8")
+        again = match_vendor(con, "SELFCHECK CEMENT WORKS", "09AAACL6442L1Z8")
         assert first == again, "same GSTIN must resolve to one vendor"
         assert match_vendor(con, None, None) is None
 
@@ -848,6 +917,57 @@ if __name__ == "__main__":
         assert row["status"] == "REJECTED"
         assert row["rejection_reason"] == "wrong vendor"
 
+        # ── a second scan of a document already on file ───────────────────
+        def _scan(doc_id, project_id=_prj_id, kind="PO"):
+            con.execute(
+                "INSERT INTO documents (id, project_id, source, document_type, file_paths,"
+                " page_count, status) VALUES (?, ?, 'UPLOAD', ?, '[]', 1, 'PROCESSING')",
+                (doc_id, project_id, kind),
+            )
+
+        _po = {"doc_kind": "PO", "doc_number": "PO-SELFCHECK-1", "lines": []}
+
+        _scan("DOC-dup-a")
+        save_extraction(con, "DOC-dup-a", dict(_po), hint="PO")
+        assert con.execute(
+            "SELECT status FROM documents WHERE id = 'DOC-dup-a'"
+        ).fetchone()["status"] == "EXTRACTED", "the first scan of a PO must go through"
+
+        # No vendor GSTIN on either — a PO number is ours, so project + kind is
+        # the key that has to catch this one.
+        _scan("DOC-dup-b")
+        save_extraction(con, "DOC-dup-b", dict(_po), hint="PO")
+        assert con.execute(
+            "SELECT 1 FROM documents WHERE id = 'DOC-dup-b'"
+        ).fetchone() is None, "a PO already on file must not be kept a second time"
+        assert con.execute(
+            "SELECT 1 FROM doc_headers WHERE document_id = 'DOC-dup-b'"
+        ).fetchone() is None, "the discarded scan must take its header with it"
+        # The original is untouched by the scan that collided with it.
+        assert con.execute(
+            "SELECT status FROM documents WHERE id = 'DOC-dup-a'"
+        ).fetchone()["status"] == "EXTRACTED"
+
+        # A third upload collides with the original too, not with nothing.
+        _scan("DOC-dup-c")
+        save_extraction(con, "DOC-dup-c", dict(_po), hint="PO")
+        assert con.execute(
+            "SELECT 1 FROM documents WHERE id = 'DOC-dup-c'"
+        ).fetchone() is None, "every later duplicate must be discarded too"
+
+        # The same number under a different project is a different order.
+        con.execute(
+            "INSERT INTO projects (id, code, name) VALUES ('PRJ-selfcheck-2', 'SC2', 'Other')"
+        )
+        _scan("DOC-dup-d", project_id="PRJ-selfcheck-2")
+        save_extraction(con, "DOC-dup-d", dict(_po), hint="PO")
+        assert con.execute(
+            "SELECT status FROM documents WHERE id = 'DOC-dup-d'"
+        ).fetchone()["status"] == "EXTRACTED", "another project's PO must not collide"
+
+        con.execute("DELETE FROM documents WHERE id LIKE 'DOC-dup-%'")
+        con.execute("DELETE FROM projects WHERE id = 'PRJ-selfcheck-2'")
+
         con.execute("DELETE FROM material_aliases WHERE alias = 'old description'")
         con.execute("DELETE FROM documents WHERE id IN (?, ?)", (_doc_id, _doc_id_2))
         con.execute("DELETE FROM projects WHERE id = ?", (_prj_id,))
@@ -856,6 +976,18 @@ if __name__ == "__main__":
     # UNCLASSIFIED rather than tripping the CHECK constraint.
     assert "OTHER" in DOC_TYPES and "INVOICE" in DOC_TYPES
     assert "RA_BILL" not in DOC_TYPES, "an unknown kind must fall back, not be stored"
+
+    # The model read the page, so a recognised kind wins over the menu the
+    # operator picked from — but OTHER is the model declining to say, and it
+    # must not overwrite an operator who explicitly pressed "Scan PO".
+    assert classify("PO", "INVOICE") == "INVOICE"
+    assert classify("PO", "OTHER") == "PO"
+    assert classify("PO", "UNCLASSIFIED") == "PO"
+    assert classify("PO", None) == "PO"
+    assert classify("UNCLASSIFIED", "OTHER") == "OTHER"
+    assert classify(None, "OTHER") == "OTHER"
+    assert classify(None, "RA_BILL") == "UNCLASSIFIED"
+    assert classify(None, None) == "UNCLASSIFIED"
 
     # run_engine refuses before it can reach the network: no credentials, or a
     # page that is not on disk. Either way the self-check makes no API call.

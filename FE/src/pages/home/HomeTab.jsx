@@ -23,11 +23,7 @@ export function HomeTab({
   const term = search.trim().toLowerCase();
   const shown = !term
     ? projects
-    : projects.filter((p) =>
-        `${p.code} ${p.name} ${(p.sites ?? []).map((s) => s.name).join(" ")}`
-          .toLowerCase()
-          .includes(term)
-      );
+    : projects.filter((p) => `${p.code} ${p.name}`.toLowerCase().includes(term));
 
   /* Whatever needs a person floats up; everything else keeps its order. */
   const ordered = [...shown].sort((a, b) => {
@@ -100,8 +96,8 @@ export function HomeTab({
               <span className="t">Add project</span>
               <span className="d">
                 {projects.length === 0
-                  ? "No sites registered yet. Add the first one and its documents will have somewhere to land."
-                  : "Register a site before its documents start arriving."}
+                  ? "No projects yet. Add the first one and its documents will have somewhere to land."
+                  : "Register a project before its documents start arriving."}
               </span>
             </button>
           </div>

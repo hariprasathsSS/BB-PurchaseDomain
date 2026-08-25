@@ -122,7 +122,7 @@ def _write_summary(ws, project, documents, headers, rejected_count=0) -> None:
     rows = [
         ("Project Code", project["code"]), ("Project Name", project["name"]),
         ("Client", project["client"]), ("Location", project["location"]),
-        ("Site", project["site"]), ("Status", project["status"]),
+        ("Status", project["status"]),
         ("Created At", project["created_at"]), ("", ""),
         ("Total Documents", len(documents)),
     ]

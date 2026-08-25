@@ -1,7 +1,7 @@
 # Construction Purchase Document Intelligence — POC
 
 Site staff photograph invoices, purchase orders and delivery challans with a phone. The system
-extracts the fields, maps each purchase to the right project / site / material, validates the
+extracts the fields, maps each purchase to the right project / material, validates the
 invoice against its PO and delivery document, and the office team approves or rejects the result.
 
 Replaces manual purchase data entry and manual three-way matching.
@@ -40,7 +40,7 @@ and `Implementation_Plan_Phasewise.md` (build order, decisions, per-phase delive
 
 ```
 phone  ──▶ POST /api/v1/documents/batch-upload   (session token, pages grouped)
-browser ─▶ POST /api/v1/documents/upload         (project_id, one file per document)
+browser ─▶ POST /api/v1/documents/upload         (project_id, document_type hint, one file per document)
                         │
                         ▼
               stored on disk, row = PENDING, type = UNCLASSIFIED
@@ -73,7 +73,7 @@ unverified rather than rejected, and an unparseable date keeps its raw string fo
 | 2 | Data foundation | `scanner_sessions`, `documents` | **Done** |
 | 3 | Scanner + upload API | `Backend/main.py`, `FE/index.html`, `Mobile/` 5 screens | **Done** |
 | 4 | Extraction | `Backend/db.py`, `Backend/extract.py` — classifier + field schema | **Done** |
-| 5 | Mapping | Masters, 6-rung linkage chain, alias tables | Material + vendor mapping done; site/PO linkage next |
+| 5 | Mapping | Masters, 6-rung linkage chain, alias tables | Material + vendor mapping done; PO ↔ invoice linkage by PO number |
 | 6 | Validation | `validate()` + 9 checks + fixture test suite | Blocked on 1 + 5 |
 | 7 | Review web app | `FE/` dashboard, review, auth, audit | Blocked on 6 |
 | 8 | Purchase records | `purchases` table + rollup views | Blocked on 7 |

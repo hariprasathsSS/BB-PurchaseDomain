@@ -21,7 +21,7 @@ export const api = {
   config: () => get("/api/v1/config"),
 
   listProjects: () => get("/api/v1/projects").then((d) => d.projects ?? []),
-  createProject: (name, sites) => send("/api/v1/projects", "POST", { name, sites }),
+  createProject: (name) => send("/api/v1/projects", "POST", { name }),
 
   listDocuments: () => get("/api/v1/documents").then((d) => d.documents ?? []),
   getDocument: (id) => get(`/api/v1/documents/${id}`),
@@ -31,6 +31,13 @@ export const api = {
   rejectDocument: (id, rejectedBy, reason) =>
     send(`/api/v1/documents/${id}/reject`, "POST", { rejected_by: rejectedBy, reason }),
   retryExtraction: (id) => fetch(`/api/v1/documents/${id}/extract`, { method: "POST" }),
+
+  /* `confirm` is the reference the operator retyped. The server checks it too,
+     so a mis-wired button cannot delete the wrong document. */
+  deleteDocument: (id, confirm) =>
+    fetch(`/api/v1/documents/${id}?confirm=${encodeURIComponent(confirm)}`, {
+      method: "DELETE",
+    }).then(json),
 
   listMaterials: () => get("/api/v1/materials").then((d) => d.materials ?? []),
 
@@ -44,11 +51,13 @@ export const api = {
      gets the filename the server chose, which a blob round-trip would lose. */
   exportUrl: (projectId) => `/api/v1/projects/${projectId}/export`,
 
-  /* Multipart, so it does not go through send(). One file is one document. */
-  uploadFiles: ({ projectId, siteId, files }) => {
+  /* Multipart, so it does not go through send(). One file is one document.
+     documentType is the operator saying what they scanned ("this is the PO");
+     the classifier still reads the page and can overrule it. */
+  uploadFiles: ({ projectId, files, documentType }) => {
     const form = new FormData();
     form.append("project_id", projectId);
-    if (siteId) form.append("site_id", siteId);
+    if (documentType) form.append("document_type", documentType);
     files.forEach((f) => form.append("files", f, f.name));
     return fetch("/api/v1/documents/upload", { method: "POST", body: form }).then(json);
   },

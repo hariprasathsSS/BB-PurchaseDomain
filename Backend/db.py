@@ -36,18 +36,8 @@ CREATE TABLE IF NOT EXISTS projects (
   name       TEXT NOT NULL,
   client     TEXT,
   location   TEXT,
-  -- ponytail: the console's one free-text site label. The `sites` table below
-  -- is the Phase 5 site master; this is just what the project card prints.
-  site       TEXT,
   status     TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','CLOSED')),
   created_at TEXT DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS sites (
-  id         TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  name       TEXT NOT NULL,
-  address    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS materials (
@@ -81,7 +71,6 @@ CREATE TABLE IF NOT EXISTS scanner_sessions (
   session_token TEXT UNIQUE NOT NULL,
   created_by    TEXT NOT NULL,
   project_id    TEXT NOT NULL REFERENCES projects(id),
-  site_id       TEXT REFERENCES sites(id),
   created_at    TEXT DEFAULT (datetime('now')),
   expires_at    TEXT NOT NULL,
   status        TEXT DEFAULT 'ACTIVE'
@@ -90,7 +79,6 @@ CREATE TABLE IF NOT EXISTS scanner_sessions (
 CREATE TABLE IF NOT EXISTS documents (
   id             TEXT PRIMARY KEY,
   project_id     TEXT NOT NULL REFERENCES projects(id),
-  site_id        TEXT REFERENCES sites(id),
   session_id     TEXT REFERENCES scanner_sessions(id),
   source         TEXT NOT NULL CHECK (source IN ('SCAN','UPLOAD')),
 
@@ -167,7 +155,6 @@ CREATE TABLE IF NOT EXISTS doc_lines (
 
 CREATE INDEX IF NOT EXISTS ix_headers_date ON doc_headers(doc_date);
 CREATE INDEX IF NOT EXISTS ix_documents_project ON documents(project_id);
-CREATE INDEX IF NOT EXISTS ix_sites_project ON sites(project_id);
 """
 
 
@@ -215,6 +202,25 @@ def db():
         con.commit()
     finally:
         con.close()
+
+
+def remove_pages(document_id: str, file_paths: list[str]) -> None:
+    """Delete every page stored for a document.
+
+    Every page lives in one folder named after the document — including the
+    source PDF, which is not in file_paths — so the folder is located from a
+    stored page and then swept by prefix. The stored path decides which folder
+    is touched, so it is checked against the upload root before anything is
+    unlinked.
+    """
+    if not file_paths:
+        return
+    root = UPLOAD_DIR.resolve()
+    folder = (BASE_DIR / file_paths[0]).resolve().parent
+    if not folder.is_relative_to(root):
+        return
+    for stored in folder.glob(f"{document_id}_*"):
+        stored.unlink(missing_ok=True)
 
 
 def new_id(prefix: str) -> str:
