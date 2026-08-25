@@ -17,6 +17,8 @@ these can live there instead of the real environment):
     SESSION_TTL        token lifetime in seconds          (default: 900)
     HOST_IP            LAN IP to advertise in the QR      (default: auto-detected)
     PORT               port to advertise in the QR        (default: 8000)
+    OPENROUTER_API_KEY OpenRouter credentials             (required for /api/v1/chat)
+    CHAT_MODEL         model the chatbot writes SQL with  (default: google/gemini-2.0-flash-001)
 """
 
 from __future__ import annotations
@@ -73,6 +75,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+import chat
 import db
 import export
 import extract
@@ -799,6 +802,27 @@ def list_materials(verified_only: bool = False):
     with db.db() as con:
         rows = con.execute(sql + " ORDER BY category, name").fetchall()
     return {"total": len(rows), "materials": [dict(r) for r in rows]}
+
+
+@app.post("/api/v1/chat")
+def chat_ask(body: dict):
+    """Answer a question about the data. Reads only — see chat.py: the connection
+    it runs the generated SQL on is opened `mode=ro`, so there is no path from
+    here to a write no matter what the model emits."""
+    question = str((body or {}).get("question", "")).strip()
+    if not question:
+        raise HTTPException(400, "question is required")
+    try:
+        return chat.answer(question, (body or {}).get("history") or [])
+    except extract.EngineNotConfigured as exc:
+        raise HTTPException(503, str(exc))
+    except chat.UnsafeQuery as exc:
+        raise HTTPException(400, str(exc))
+    except chat.ModelUnavailable as exc:
+        raise HTTPException(502, str(exc))
+    except sqlite3.Error as exc:
+        # The retry inside answer() already had a go at this one.
+        raise HTTPException(422, f"Could not run that question against the data: {exc}")
 
 
 # ── self-check: the token logic is the only security-critical part here ──────

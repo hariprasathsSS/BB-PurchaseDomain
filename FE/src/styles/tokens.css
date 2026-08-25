@@ -83,4 +83,13 @@
   --wide:   0.04em;   /* eyebrows and column labels only */
 
   --col: 100%;        /* content column — full width, edge padding comes from .band/.nav-rail */
+
+  /* ── the alignment line ────────────────────────────────────────────────
+     The nav pill floats inset from the viewport by --rail, and its own
+     content is inset from the pill by --nav-inset. --gutter is the sum, so
+     every heading, card and row on the page starts on the same vertical line
+     as the wordmark. Change --rail or --nav-inset and the page follows. */
+  --rail:      24px;
+  --nav-inset: 30px;
+  --gutter:    54px;   /* = --rail + --nav-inset, spelled out so it can be used in calc-free padding */
 }

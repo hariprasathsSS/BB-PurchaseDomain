@@ -34,6 +34,10 @@ export const api = {
 
   listMaterials: () => get("/api/v1/materials").then((d) => d.materials ?? []),
 
+  /* Read-only question answering. Stateless on the server — prior turns are
+     replayed from here, so there is no conversation to lose or to clean up. */
+  ask: (question, history) => send("/api/v1/chat", "POST", { question, history }),
+
   /* The QR ships with the session, so picking a project no longer costs a
      page reload. */
   createSession: (projectId) =>

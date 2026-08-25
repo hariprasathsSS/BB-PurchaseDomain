@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { TopNav } from "./components/TopNav.jsx";
+import { ChatDock } from "./components/ChatDock.jsx";
 import { HomeTab } from "./pages/home/HomeTab.jsx";
 import { ProjectTab } from "./pages/project/ProjectTab.jsx";
 import { DocumentsTab } from "./pages/documents/DocumentsTab.jsx";
@@ -117,6 +118,9 @@ export default function App() {
           onUploaded={reload}
         />
       ) : null}
+
+      {/* Shell-level like the modals: a question outlives a tab switch. */}
+      <ChatDock />
     </div>
   );
 }

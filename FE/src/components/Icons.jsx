@@ -98,3 +98,13 @@ export const IconCheck = (p) => (
 export const IconChevron = (p) => (
   <svg {...base} {...p}><path d="M9 6l6 6-6 6" /></svg>
 );
+
+export const IconChat = (p) => (
+  <svg {...base} {...p}>
+    <path d="M20 14a3 3 0 0 1-3 3H8l-4 3V7a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3z" />
+  </svg>
+);
+
+export const IconSend = (p) => (
+  <svg {...base} {...p}><path d="M4 12h15" /><path d="M13 6l6 6-6 6" /></svg>
+);

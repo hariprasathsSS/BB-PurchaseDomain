@@ -7,12 +7,12 @@
    gap is what makes the cream read as paper rather than as chrome. */
 .shell { min-height: 100%; padding-bottom: var(--s12); }
 
-.nav-rail { position: sticky; top: 0; z-index: 40; padding: var(--s3) var(--s3) 0; background: var(--canvas); }
+.nav-rail { position: sticky; top: 0; z-index: 40; padding: var(--rail) var(--rail) 0; background: var(--canvas); }
 .nav {
   max-width: var(--col);
   margin: 0 auto;
   min-height: 64px;
-  padding: 9px 10px 9px 30px;
+  padding: 9px 10px 9px var(--nav-inset);
   display: flex;
   align-items: center;
   gap: 18px;
@@ -69,7 +69,11 @@
   .nav-find { flex: 1 1 100%; order: 5; }
 }
 
-.band { padding: 0 var(--s3); }
+/* Everything on the page starts on the same vertical line as the wordmark
+   in the nav above it: the rail's inset plus the pill's own. Getting this
+   wrong is invisible in isolation and obvious once the page is full. */
+.band { padding: 0 var(--gutter); }
+@media (max-width: 720px) { .band { padding: 0 var(--rail); } }
 .col { max-width: var(--col); margin: 0 auto; }
 
 .section { margin-top: var(--s8); }
@@ -217,13 +221,14 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
    a hero snapshot plus a separate stat row: they carry the same numbers. */
 .hero-grid {
   display: grid;
-  grid-template-columns: 1.1fr .9fr;
-  gap: 44px;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  gap: var(--s8);
   align-items: start;
-  margin-top: 44px;
+  margin-top: var(--s6);
 }
 @media (max-width: 1000px) { .hero-grid { grid-template-columns: 1fr; gap: var(--s4); } }
 
+.hero-copy { padding-top: var(--s3); }
 .hero-copy h1 { margin-top: var(--s2); }
 .hero-copy .lede { margin-top: var(--s2); font-size: 17px; color: var(--slate); max-width: 46ch; }
 .hero-cta { display: flex; gap: 10px; margin-top: var(--s4); flex-wrap: wrap; }
@@ -236,7 +241,7 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
   border-radius: var(--r-stad);
   overflow: hidden;
 }
-.attn-top { padding: 20px 24px 22px; }
+.attn-top { padding: var(--s3) var(--s3) 22px; }
 .attn-lead { display: flex; align-items: flex-start; gap: 18px; margin-top: var(--s2); }
 .attn-lead .n {
   font-family: var(--mono); font-size: 46px; font-weight: 500;
@@ -250,7 +255,7 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 
 .attn-row {
   display: flex; align-items: center; gap: 12px;
-  padding: 12px 24px;
+  padding: 12px var(--s3);
   border-top: 1px solid var(--hair);
   font-size: 14.5px;
 }
@@ -261,7 +266,7 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 }
 
 /* ── project tiles ────────────────────────────────────────────────────────── */
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(336px, 1fr)); gap: var(--s3); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--s3); }
 
 .tile {
   display: flex; flex-direction: column; gap: 18px;
@@ -358,7 +363,13 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 }
 .act-row {
   display: grid;
-  grid-template-columns: 10px minmax(150px, 1.1fr) minmax(190px, 1.5fr) 156px 62px;
+  /* Capped, not fractional. On fr units these columns grew with the viewport,
+     so on a wide screen the vendor, what-happened and project sat a third of a
+     screen apart and the eye had to travel between them. Capping clusters a
+     row's facts together and leaves the slack at the right, where it costs
+     nothing. */
+  grid-template-columns: 10px minmax(150px, 250px) minmax(200px, 440px)
+                         minmax(140px, 200px) 76px;
   gap: var(--s2); align-items: center;
   width: 100%; padding: 14px 26px;
   border: 0; border-top: 1px solid var(--hair);
@@ -800,13 +811,110 @@ table.lines .input { min-height: 36px; font-size: 13px; border-radius: var(--r-c
 }
 .empty-mini { font-size: 13px; color: var(--dust); }
 
+/* ── ask the data ─────────────────────────────────────────────
+   A docked panel, not a modal: the answer is read against the screen behind it,
+   so nothing gets a backdrop and nothing traps focus. */
+
+.chat-bubble {
+  position: fixed; right: var(--s3); bottom: var(--s3); z-index: 40;
+  width: 52px; height: 52px; border-radius: var(--r-pill);
+  display: grid; place-items: center;
+  background: var(--ink); color: var(--text-invert);
+  border: 0; cursor: pointer; box-shadow: var(--lift-2);
+}
+.chat-bubble:hover { background: var(--charcoal); }
+
+.chat-dock {
+  position: fixed; right: var(--s3); bottom: var(--s3); z-index: 40;
+  display: flex; flex-direction: column;
+  width: min(400px, calc(100vw - var(--s4)));
+  height: min(560px, calc(100vh - var(--s8)));
+  background: var(--surface); border-radius: var(--r-stad);
+  box-shadow: var(--lift-2); overflow: hidden;
+}
+
+.chat-head { display: flex; align-items: flex-start; gap: var(--s2); padding: 14px var(--s2) 10px; }
+.chat-head h2 { font-size: 17px; letter-spacing: var(--tight); }
+.chat-head .for { font-family: var(--mono); font-size: 12px; color: var(--slate); margin-top: 2px; }
+.chat-head .spacer { flex: 1; }
+
+.chat-log {
+  flex: 1; overflow-y: auto; padding: 0 var(--s2) 14px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+
+.chat-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.chat-empty p { font-size: 14.5px; color: var(--text); margin-bottom: 2px; }
+.chat-empty .btn { text-align: left; white-space: normal; }
+
+/* The question is the inset one — white is for lifted things, and the panel is
+   already the lifted surface, so a bubble here has to sink instead. */
+.chat-turn.is-user {
+  align-self: flex-end; max-width: 85%;
+  background: var(--sunken); border-radius: var(--r-stad);
+  padding: 9px 14px;
+}
+.chat-turn.is-assistant { max-width: 95%; }
+.chat-turn.is-failed .chat-text { color: var(--bad-fg); }
+.chat-text { font-size: 16px; line-height: 1.5; white-space: pre-wrap; }
+.chat-wait { color: var(--slate); font-size: 14.5px; }
+
+.chat-sql { margin-top: 6px; }
+.chat-sql summary {
+  font-size: 12.5px; color: var(--clay); cursor: pointer;
+  font-family: var(--mono); letter-spacing: var(--wide);
+}
+.chat-sql pre {
+  margin-top: 6px; padding: var(--s1); overflow-x: auto;
+  background: var(--hover); border-radius: var(--r-btn);
+  font-family: var(--mono); font-size: 12px; line-height: 1.45; color: var(--slate);
+}
+.chat-sql .for { font-size: 12px; color: var(--dust); margin-top: 6px; }
+
+/* The result is the answer, not a footnote to it — so it sits in the turn
+   with its own frame, and only the SQL stays folded away. Sticky header
+   because a twenty-row answer scrolls inside the turn. */
+.chat-result {
+  margin-top: var(--s1);
+  border: 1px solid var(--hair); border-radius: var(--r-btn);
+  overflow: hidden;
+}
+.chat-result .chat-rows { margin-top: 0; border-radius: 0; }
+.chat-result-foot {
+  padding: 5px 10px;
+  border-top: 1px solid var(--hair); background: var(--sunken);
+  font-family: var(--mono); font-size: 12px; color: var(--slate);
+}
+.chat-rows { margin-top: 6px; max-height: 200px; overflow: auto; }
+.chat-rows thead th { position: sticky; top: 0; z-index: 1; }
+.chat-rows table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.chat-rows th, .chat-rows td {
+  padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--hair);
+  white-space: nowrap;
+}
+.chat-rows th {
+  position: sticky; top: 0; background: var(--surface);
+  font-family: var(--mono); font-weight: 600; letter-spacing: 0.02em; color: var(--slate);
+}
+.chat-rows td { font-variant-numeric: tabular-nums; color: var(--text); }
+
+.chat-ask { display: flex; gap: var(--s1); padding: 12px var(--s2); border-top: 1px solid var(--hair); }
+.chat-ask input {
+  flex: 1; min-width: 0; padding: 10px var(--s2);
+  border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--canvas); font: inherit; font-size: 15px; color: var(--text);
+}
+.chat-ask input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chat-ask .btn { border-radius: var(--r-pill); padding: 0 14px; }
+
 /* ── print ────────────────────────────────────────────────────────────────
    The site office pins the day's intake on a wall, so the register has to
    survive a printer: chrome, controls and anything mid-interaction go. */
 @media print {
   body { background: #fff; }
   .nav-rail, .btn, .close-x, .tile-actions, .tile-add, .backdrop,
-  .toolbar, .filter-bar, .input, .open-round, .open-sm { display: none !important; }
+  .toolbar, .filter-bar, .input, .open-round, .open-sm,
+  .chat-bubble, .chat-dock { display: none !important; }
   .band { padding: 0; }
   .tile, .card, .attn, .phead, .explorer, .activity {
     box-shadow: none; border: 1px solid var(--line); break-inside: avoid;
