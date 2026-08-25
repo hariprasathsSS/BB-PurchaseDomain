@@ -17,7 +17,7 @@
   align-items: center;
   gap: 18px;
   background: var(--surface);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-stad);
   box-shadow: var(--lift-1);
 }
 .nav .spacer { flex: 1; }
@@ -35,7 +35,7 @@
   letter-spacing: -0.015em;
   color: var(--slate);
   padding: 10px 18px;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-btn);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -413,6 +413,24 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 
 /* Site tabs, filters and results in one panel: they are three steps of a
    single act, and three separate cards made them look like three subjects. */
+/* Overview / Purchase Orders / Invoices / Materials — an underline tab strip
+   rather than the pill-segmented control used for site switching above:
+   these are different *sections* of the page, not different scopes of the
+   same list, so they read as a different kind of choice. */
+.ptabs {
+  display: flex; gap: var(--s4); flex-wrap: wrap;
+  margin-top: var(--s3);
+  border-bottom: 1px solid var(--hair);
+}
+.ptabs button {
+  border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  background: none; padding: 0 0 14px;
+  font-size: 15px; font-weight: 500; color: var(--slate);
+  cursor: pointer;
+}
+.ptabs button:hover { color: var(--ink); }
+.ptabs button[aria-current="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+
 .explorer {
   margin-top: var(--s2);
   background: var(--surface);
@@ -455,8 +473,19 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 .toolbar .clear:hover { text-decoration: underline; }
 
 /* Columns, not cards: the point of a document list is comparing the same
-   field down the page, which floating cards actively prevent. */
-.dgrid { --cols: 88px 104px minmax(132px, 1.5fr) 112px 100px 126px 86px 60px 40px; }
+   field down the page, which floating cards actively prevent.
+
+   Every text column carries a share of extra width (minmax(floor, Nfr)),
+   not just one — a single fr track soaking up all the room a wide viewport
+   frees is what made this misalign at full width: everything else stayed
+   pinned to its old fixed size while one column ballooned, so the header
+   labels no longer sat where the eye expected them relative to the data
+   beneath. Short, fixed-content columns (ids, pills, the arrow) stay fixed
+   on purpose — a status pill doesn't read better 200px wide. */
+.dgrid {
+  --cols: 92px 112px minmax(160px, 1.8fr) minmax(90px, .7fr) minmax(110px, .9fr)
+          minmax(110px, .9fr) 96px minmax(100px, .8fr) 40px;
+}
 .dhead, .drow { display: grid; grid-template-columns: var(--cols); gap: 14px; align-items: center; }
 .dhead {
   padding: 11px 26px;
@@ -495,7 +524,8 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
    The same row as a project's document list, plus the two columns a
    cross-project view needs — a page thumbnail and the project code. */
 .dgrid.reg {
-  --cols: 34px 88px 104px minmax(132px, 1.4fr) 132px 100px 112px 96px 74px 118px 40px;
+  --cols: 34px 92px 112px minmax(150px, 1.8fr) minmax(110px, .9fr) minmax(90px, .7fr)
+          minmax(110px, .9fr) minmax(100px, .8fr) 96px minmax(110px, .8fr) 40px;
 }
 
 /* Rectangular, not circular: a document is a rectangle, and the crop has to
@@ -572,6 +602,41 @@ table.data.rollup tbody td { padding-top: 13px; padding-bottom: 13px; }
 
 .rollup-wrap.is-tall { max-height: 30rem; overflow-y: auto; }
 .rollup-wrap.is-tall thead th { position: sticky; top: 0; z-index: 1; }
+
+/* Ordered vs. delivered, per material — the numbers earn their color: full
+   or over delivery reads as done, a shortfall reads as still owed, and
+   nothing yet is quiet rather than alarming. */
+.rollup .num.ok   { color: var(--ok-fg); }
+.rollup .num.warn { color: var(--clay); }
+.rollup .num.mute { color: var(--dust); }
+
+.rollup-toggle {
+  width: 22px; height: 22px; flex: none; margin: -2px 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; background: none; padding: 0; color: var(--slate); cursor: pointer;
+  transition: transform .14s ease, color .14s ease;
+}
+.rollup-toggle:hover { color: var(--ink); }
+.rollup-toggle.is-open { transform: rotate(90deg); color: var(--ink); }
+.rollup-mat-cell { display: flex; align-items: center; gap: 6px; }
+
+/* The expanded breakdown: one card per side, so "ordered" and "delivered"
+   never bleed into the same list. */
+tr.rollup-detail td { padding: 0 20px var(--s3); background: var(--hover); }
+.rollup-breakdown { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); padding-top: var(--s2); }
+.rollup-breakdown h4 {
+  font-size: 11px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate); margin-bottom: 6px;
+}
+.rollup-breakdown ul { list-style: none; margin: 0; padding: 0; }
+.rollup-breakdown li {
+  display: flex; justify-content: space-between; gap: var(--s2);
+  padding: 7px 0; border-top: 1px solid var(--hair); font-size: 13.5px;
+}
+.rollup-breakdown li:first-child { border-top: 0; }
+.rollup-breakdown .qty { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rollup-breakdown .empty-mini { font-size: 13px; color: var(--dust); padding: 7px 0; }
+@media (max-width: 640px) { .rollup-breakdown { grid-template-columns: 1fr; } }
 
 @media (max-width: 640px) {
   table.data.rollup { table-layout: auto; }
@@ -693,6 +758,47 @@ table.lines .input { min-height: 36px; font-size: 13px; border-radius: var(--r-c
   border: 1px solid var(--line); border-radius: var(--r-btn); padding: var(--s2);
   font-family: inherit; font-size: 14.5px; resize: vertical; min-height: 72px;
 }
+
+/* ── compare (PO vs. invoice) ──────────────────────────────────────────────
+   The PO is the document this page was opened for, so it gets the width and
+   the primary column; the scanned page and any matching invoices are
+   supporting material in a narrow, secondary sidebar — not equal billing. */
+.compare-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--s3); align-items: start; }
+@media (max-width: 900px) { .compare-layout { grid-template-columns: 1fr; } }
+
+.compare-main { padding: var(--s4); }
+
+.compare-aside {
+  display: flex; flex-direction: column; gap: var(--s3);
+  position: sticky; top: calc(var(--s3) + 88px);
+}
+.compare-side { display: flex; flex-direction: column; gap: var(--s1); }
+.compare-side img {
+  width: 100%; height: auto; display: block;
+  border-radius: var(--r-stad); border: 1px solid var(--hair);
+}
+
+.compare-links { padding: var(--s3); }
+.compare-links h3 {
+  font-size: 12px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate); margin-bottom: var(--s2);
+}
+.compare-link-row {
+  display: flex; align-items: center; gap: var(--s2);
+  width: 100%; padding: 12px 14px;
+  border: 1px solid var(--hair); border-radius: var(--r-btn);
+  background: var(--surface); color: inherit; font: inherit; text-align: left;
+  cursor: pointer;
+}
+.compare-link-row + .compare-link-row { margin-top: var(--s1); }
+.compare-link-row:hover { background: var(--hover); border-color: var(--line); }
+.compare-link-main { flex: 1; min-width: 0; }
+.compare-link-num { font-size: 14.5px; font-weight: 500; }
+.compare-link-meta {
+  font-size: 12.5px; color: var(--slate); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.empty-mini { font-size: 13px; color: var(--dust); }
 
 /* ── print ────────────────────────────────────────────────────────────────
    The site office pins the day's intake on a wall, so the register has to

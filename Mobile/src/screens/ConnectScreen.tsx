@@ -43,7 +43,7 @@ const s = StyleSheet.create({
     width: 92,
     height: 92,
     borderRadius: T.radius,
-    backgroundColor: '#e7effb',
+    backgroundColor: '#dde7f0',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,

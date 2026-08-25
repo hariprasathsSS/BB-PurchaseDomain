@@ -1,13 +1,18 @@
 import { useEffect, useState } from "react";
 
-/* Routing is two segments deep: #/<tab> and #/project/<id>. A router library
-   would be a dependency for that, so this is the hash and a listener. */
-const TABS = ["home", "project", "documents"];
+/* Routing is two segments deep: #/<tab> and #/project/<id> (or #/compare/<id>
+   for a PO's compare page). A router library would be a dependency for
+   that, so this is the hash and a listener. */
+const TABS = ["home", "project", "documents", "compare"];
 
 function parse() {
   const parts = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   const tab = TABS.includes(parts[0]) ? parts[0] : "home";
-  return { tab, projectId: tab === "project" ? parts[1] ?? null : null };
+  return {
+    tab,
+    projectId: tab === "project" ? parts[1] ?? null : null,
+    documentId: tab === "compare" ? parts[1] ?? null : null,
+  };
 }
 
 export function useHashRoute() {

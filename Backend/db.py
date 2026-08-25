@@ -221,6 +221,40 @@ def new_id(prefix: str) -> str:
     return prefix + "-" + uuid.uuid4().hex[:10]
 
 
+# poc.db predates several of the columns above — CREATE TABLE IF NOT EXISTS
+# leaves an existing table exactly as it was, so a table that already existed
+# before a column was added to SCHEMA never gets it. Add what's missing
+# instead of asking anyone to delete a database that has real projects in it.
+_MIGRATIONS = {
+    "projects": [
+        ("client", "TEXT"),
+        ("location", "TEXT"),
+        ("status", "TEXT NOT NULL DEFAULT 'ACTIVE'"),
+    ],
+    "scanner_sessions": [
+        ("site_id", "TEXT REFERENCES sites(id)"),
+    ],
+    "documents": [
+        ("site_id", "TEXT REFERENCES sites(id)"),
+        ("source", "TEXT NOT NULL DEFAULT 'UPLOAD'"),
+        ("notes", "TEXT"),
+        ("is_handwritten", "INTEGER NOT NULL DEFAULT 0"),
+        ("extracted_json", "TEXT"),
+        ("duplicate_of", "TEXT REFERENCES documents(id)"),
+        ("error", "TEXT"),
+    ],
+}
+
+
+def migrate(con: sqlite3.Connection) -> None:
+    """Idempotent: only ever adds a column that isn't there yet."""
+    for table, columns in _MIGRATIONS.items():
+        existing = {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}
+        for name, ddl in columns:
+            if name not in existing:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+
+
 def seed_materials(con) -> int:
     """Idempotent: only fills an empty materials table."""
     if con.execute("SELECT 1 FROM materials LIMIT 1").fetchone():
@@ -247,4 +281,5 @@ def init() -> None:
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     with db() as con:
         con.executescript(SCHEMA)
+        migrate(con)
         seed_materials(con)

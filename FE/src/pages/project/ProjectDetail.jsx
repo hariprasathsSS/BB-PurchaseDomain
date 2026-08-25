@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { StatusPill, TypePill } from "../../components/Pills.jsx";
-import { IconArrow, IconBack, IconDownload, IconPlus, IconPrint } from "../../components/Icons.jsx";
+import { IconArrow, IconBack, IconDownload, IconPlus, IconPrint, IconUpload } from "../../components/Icons.jsx";
 import { MaterialsRollup } from "./MaterialsRollup.jsx";
+import { PurchaseOrdersSection } from "./PurchaseOrdersSection.jsx";
+import { InvoicesSection } from "./InvoicesSection.jsx";
 import { go } from "../../lib/useHashRoute.js";
 import { api } from "../../lib/api.js";
 import {
@@ -15,7 +17,15 @@ const EMPTY = { q: "", type: "", status: "", from: "", to: "" };
    panel that does all the narrowing-down. Site tabs, filters and results are
    three steps of a single act — separate cards made them read as three
    separate subjects. */
-export function ProjectDetail({ project, docs, materials, onOpenDocument, onAddDocument }) {
+const SECTIONS = [
+  { id: "overview", label: "Overview" },
+  { id: "po", label: "Purchase Orders" },
+  { id: "invoices", label: "Invoices" },
+  { id: "materials", label: "Materials" },
+];
+
+export function ProjectDetail({ project, docs, materials, onOpenDocument, onAddDocument, onScanPo }) {
+  const [section, setSection] = useState("overview");
   const [siteId, setSiteId] = useState("");
   const [filter, setFilter] = useState(EMPTY);
 
@@ -86,6 +96,10 @@ export function ProjectDetail({ project, docs, materials, onOpenDocument, onAddD
                 <IconDownload width={16} height={16} />
                 Export
               </a>
+              <button className="btn btn-out btn-sm" type="button" onClick={() => onScanPo(project)}>
+                <IconUpload width={16} height={16} />
+                Scan PO
+              </button>
               <button className="btn btn-ink btn-sm" type="button" onClick={() => onAddDocument(project)}>
                 <IconPlus width={17} height={17} />
                 Add document
@@ -120,6 +134,20 @@ export function ProjectDetail({ project, docs, materials, onOpenDocument, onAddD
           </div>
         </div>
 
+        <div className="ptabs">
+          {SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              aria-current={section === s.id}
+              onClick={() => setSection(s.id)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        {section === "overview" ? (
         <div className="explorer">
           <div className="explorer-bar">
             <div className="seg">
@@ -228,18 +256,44 @@ export function ProjectDetail({ project, docs, materials, onOpenDocument, onAddD
             )}
           </div>
         </div>
+        ) : null}
 
-        <div className="section spaced">
-          <div className="section-head">
-            <span className="eyebrow">Materials</span>
-            <div className="spacer" />
-            <span className="tag">
-              from {counted.length} document{counted.length === 1 ? "" : "s"}
-              {rejectedInView ? ` · ${rejectedInView} rejected excluded` : ""}
-            </span>
+        {section === "po" ? (
+          <div className="section">
+            <div className="section-head">
+              <div className="spacer" />
+              <span className="tag">
+                {projectDocs.filter((d) => d.document_type === "PO").length} total
+              </span>
+            </div>
+            <PurchaseOrdersSection docs={projectDocs} sites={sites} />
           </div>
-          <MaterialsRollup docs={counted} materials={materials} />
-        </div>
+        ) : null}
+
+        {section === "invoices" ? (
+          <div className="section">
+            <div className="section-head">
+              <div className="spacer" />
+              <span className="tag">
+                {projectDocs.filter((d) => d.document_type === "INVOICE").length} total
+              </span>
+            </div>
+            <InvoicesSection docs={projectDocs} sites={sites} onOpenDocument={onOpenDocument} />
+          </div>
+        ) : null}
+
+        {section === "materials" ? (
+          <div className="section">
+            <div className="section-head">
+              <div className="spacer" />
+              <span className="tag">
+                from {counted.length} document{counted.length === 1 ? "" : "s"}
+                {rejectedInView ? ` · ${rejectedInView} rejected excluded` : ""}
+              </span>
+            </div>
+            <MaterialsRollup docs={counted} materials={materials} />
+          </div>
+        ) : null}
       </div>
     </div>
   );

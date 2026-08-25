@@ -44,23 +44,25 @@ export function AppBar({
 export function Btn({
   label,
   onPress,
-  tone = 'green',
+  tone = 'ink',
   disabled,
   busy,
   style,
 }: {
   label: string;
   onPress: () => void;
-  tone?: 'green' | 'blue' | 'ghost' | 'danger';
+  tone?: 'ink' | 'blue' | 'ghost' | 'danger';
   disabled?: boolean;
   busy?: boolean;
   style?: ViewStyle;
 }) {
   const tones = {
-    green: { bg: T.green, fg: '#fff', border: T.green },
+    // The web console's primary action is a solid ink-navy pill — the phone
+    // matched it to green instead, arbitrarily, before this pass.
+    ink: { bg: T.navy, fg: '#fff', border: T.navy },
     blue: { bg: T.blue, fg: '#fff', border: T.blue },
     ghost: { bg: T.card, fg: T.text, border: T.border },
-    danger: { bg: T.card, fg: T.red, border: '#f3c9c3' },
+    danger: { bg: T.card, fg: T.red, border: '#e3c3bd' },
   }[tone];
 
   const off = disabled || busy;
@@ -112,7 +114,7 @@ const s = StyleSheet.create({
     gap: 10,
   },
   brand: { color: T.invert, fontSize: 19, fontWeight: '700' },
-  brandAccent: { color: T.gold, fontWeight: '400', fontStyle: 'italic' },
+  brandAccent: { color: T.accent, fontWeight: '400', fontStyle: 'italic' },
   appbarTitle: { color: T.invert, fontSize: 17, fontWeight: '600' },
   back: { paddingRight: 2 },
   backIcon: { color: T.invert, fontSize: 30, lineHeight: 32, marginTop: -4 },
@@ -140,12 +142,12 @@ const s = StyleSheet.create({
   },
 
   error: {
-    backgroundColor: '#fbe4e1',
-    borderColor: '#f0c4bd',
+    backgroundColor: '#f3ddd6',
+    borderColor: '#e3b6ac',
     borderWidth: 1,
     borderRadius: T.radiusSm,
     padding: 11,
     marginTop: 12,
   },
-  errorText: { color: '#a5291b', fontSize: 13 },
+  errorText: { color: T.red, fontSize: 13 },
 });

@@ -247,6 +247,23 @@ def parse_page_counts(text: str, n_files: int) -> list[int]:
     return counts
 
 
+def parse_document_types(text: str | None, n_docs: int) -> list[str]:
+    """"INVOICE,PO" -> ["INVOICE", "PO"], one hint per document.
+
+    Unlike page_counts, a bad value here is never fatal — it's only ever a
+    hint the classifier is free to overrule (see extract.run_engine). Blank,
+    absent, or a count that doesn't match the number of documents all just
+    fall back to UNCLASSIFIED for every document rather than rejecting the
+    upload or guessing which hint belongs to which document.
+    """
+    if not text:
+        return ["UNCLASSIFIED"] * n_docs
+    parts = [p.strip().upper() for p in text.split(",")]
+    if len(parts) != n_docs:
+        return ["UNCLASSIFIED"] * n_docs
+    return [p if p in db.DOC_TYPES else "UNCLASSIFIED" for p in parts]
+
+
 def store_upload(
     upload: UploadFile, directory: Path, doc_id: str, start_page: int
 ) -> list[str]:
@@ -492,11 +509,25 @@ def store_documents(
     session_id: str | None,
     source: str,
     groups: list[list[UploadFile]],
+    document_type_hints: list[str] | None = None,
 ) -> list[dict]:
-    """Write each group of pages as one document row. Returns the created rows."""
+    """Write each group of pages as one document row. Returns the created rows.
+
+    document_type_hints is one entry per group — only what the operator
+    *filed* each document as (e.g. the console's "Scan PO" button, or the
+    phone's per-document type picker). Missing, or shorter than `groups`,
+    defaults the rest to UNCLASSIFIED. The classifier still makes the real
+    call during extraction (see extract.run_engine's hint text) and can
+    override it; this only decides what the hint says.
+    """
     directory.mkdir(parents=True, exist_ok=True)
     documents = []
-    for pages in groups:
+    for index, pages in enumerate(groups):
+        hint = (
+            document_type_hints[index]
+            if document_type_hints and index < len(document_type_hints)
+            else "UNCLASSIFIED"
+        )
         doc_id = new_id("DOC")
         # Accumulated rather than enumerated: one document can be several
         # uploads, and a PDF among them contributes more than one page. Page
@@ -508,13 +539,14 @@ def store_documents(
                 store_upload(upload, directory, doc_id, start_page=len(rel_paths) + 1)
             )
         con.execute(
-            "INSERT INTO documents (id, project_id, site_id, session_id, source, file_paths,"
-            " page_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (doc_id, project_id, site_id, session_id, source, json.dumps(rel_paths), len(rel_paths)),
+            "INSERT INTO documents (id, project_id, site_id, session_id, source, document_type,"
+            " file_paths, page_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (doc_id, project_id, site_id, session_id, source, hint,
+             json.dumps(rel_paths), len(rel_paths)),
         )
         documents.append({
             "document_id": doc_id,
-            "document_type": "UNCLASSIFIED",
+            "document_type": hint,
             "file_paths": rel_paths,
             "page_count": len(rel_paths),
             "status": "PENDING",
@@ -533,17 +565,24 @@ def batch_upload(
     session_id: str = Depends(current_session),
     files: list[UploadFile] = File(...),
     page_counts: str = Form(...),
+    document_types: str | None = Form(None),
 ):
     """Receive N scanned pages grouped into documents, and write them to disk.
 
-    The phone sends pixels and page boundaries, nothing else. Document type is
-    decided by the classifier; the project comes from the session.
+    The phone sends pixels, page boundaries, and — since the Preview screen's
+    type picker gives it one — an optional hint per document; the project
+    comes from the session either way.
 
     page_counts is one comma-separated count per document — "2,1,3" means the
     first three pages of `files` are one document, the next one another, and so
-    on, so the counts must sum to len(files).
+    on, so the counts must sum to len(files). document_types, if sent, is one
+    comma-separated hint per document in the same order — "INVOICE,PO" for the
+    example above would mean two documents, not three: parse_document_types
+    ignores it entirely (falling back to UNCLASSIFIED for every document)
+    unless its count matches exactly.
     """
     counts = parse_page_counts(page_counts, len(files))
+    hints = parse_document_types(document_types, len(counts))
 
     with db.db() as con:
         row = con.execute(
@@ -559,6 +598,7 @@ def batch_upload(
 
         documents = store_documents(
             con, UPLOAD_DIR / session_id, row["project_id"], row["site_id"], session_id, "SCAN", groups,
+            document_type_hints=hints,
         )
 
     queue_extraction(background, documents)
@@ -570,6 +610,7 @@ def web_upload(
     background: BackgroundTasks,
     project_id: str = Form(...),
     site_id: str | None = Form(None),
+    document_type: str | None = Form(None),
     files: list[UploadFile] = File(...),
 ):
     """Console upload: loose files picked in a browser, no phone and no session.
@@ -578,14 +619,25 @@ def web_upload(
     document with page_count 1 — ponytail: the engine reads every page of the
     PDF regardless, so counting them would mean a PDF library for a number
     nothing reads. Add pypdf when the review UI needs a real page count.
+
+    document_type is optional and only ever a hint — e.g. "Scan PO" sends
+    "PO" so the extractor is told what the operator expects, but an invalid
+    or absent value just falls back to UNCLASSIFIED rather than rejecting
+    the upload over it; the classifier's own read of the pixels is what
+    actually decides.
     """
     if not files:
         raise HTTPException(400, "no files were sent")
     get_project(project_id)          # 404 before anything touches the disk
 
+    hint = document_type.strip().upper() if document_type else "UNCLASSIFIED"
+    if hint not in db.DOC_TYPES:
+        hint = "UNCLASSIFIED"
+
     with db.db() as con:
         documents = store_documents(
             con, UPLOAD_DIR / "web", project_id, site_id or None, None, "UPLOAD", [[f] for f in files],
+            document_type_hints=[hint] * len(files),
         )
 
     queue_extraction(background, documents)

@@ -3,6 +3,7 @@ import { TopNav } from "./components/TopNav.jsx";
 import { HomeTab } from "./pages/home/HomeTab.jsx";
 import { ProjectTab } from "./pages/project/ProjectTab.jsx";
 import { DocumentsTab } from "./pages/documents/DocumentsTab.jsx";
+import { ComparePage } from "./pages/compare/ComparePage.jsx";
 import { UploadModal } from "./pages/home/UploadModal.jsx";
 import { AddProjectModal } from "./pages/home/AddProjectModal.jsx";
 import { ReviewModal } from "./features/review/ReviewModal.jsx";
@@ -12,7 +13,7 @@ import { useHashRoute } from "./lib/useHashRoute.js";
 /* Shell and routing only. Each tab owns its own filters; the shared data comes
    from one hook so all three read the same lists. */
 export default function App() {
-  const { tab, projectId } = useHashRoute();
+  const { tab, projectId, documentId } = useHashRoute();
   const { projects, docs, materials, reload } = useConsoleData();
 
   /* Search lives in the nav, so it belongs to the shell and is handed down. */
@@ -22,6 +23,7 @@ export default function App() {
   const [reviewId, setReviewId] = useState(null);
   const [addingProject, setAddingProject] = useState(false);
   const [uploadFor, setUploadFor] = useState(null);
+  const [scanPoFor, setScanPoFor] = useState(null);
 
   return (
     <div className="shell">
@@ -55,6 +57,7 @@ export default function App() {
             onOpenDocument={setReviewId}
             onAddProject={() => setAddingProject(true)}
             onAddDocument={setUploadFor}
+            onScanPo={setScanPoFor}
           />
         ) : null}
 
@@ -64,6 +67,16 @@ export default function App() {
             projects={projects}
             search={search}
             onOpenDocument={setReviewId}
+          />
+        ) : null}
+
+        {tab === "compare" ? (
+          <ComparePage
+            documentId={documentId}
+            docs={docs}
+            materials={materials}
+            onOpenDocument={setReviewId}
+            reload={reload}
           />
         ) : null}
       </main>
@@ -87,6 +100,20 @@ export default function App() {
         <UploadModal
           project={uploadFor}
           onClose={() => setUploadFor(null)}
+          onUploaded={reload}
+        />
+      ) : null}
+
+      {/* Same capture flow as "Add document" — reused rather than duplicated
+          — just hinted as a PO so extraction is told what to expect and the
+          Purchase Orders section on the project page picks it up. */}
+      {scanPoFor ? (
+        <UploadModal
+          project={scanPoFor}
+          documentType="PO"
+          title="Scan PO"
+          hint="A photo or PDF of the purchase order. Materials, quantities and the PO number are read automatically — drag it here or click to browse."
+          onClose={() => setScanPoFor(null)}
           onUploaded={reload}
         />
       ) : null}

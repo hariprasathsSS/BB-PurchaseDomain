@@ -92,3 +92,9 @@ export const IconSearch = (p) => (
 export const IconCheck = (p) => (
   <svg {...base} {...p}><path d="M20 6L9 17l-5-5" /></svg>
 );
+
+/* Rotated 90deg via .is-open rather than swapped for a down-chevron: one
+   element, one transition, instead of two icons crossfading. */
+export const IconChevron = (p) => (
+  <svg {...base} {...p}><path d="M9 6l6 6-6 6" /></svg>
+);

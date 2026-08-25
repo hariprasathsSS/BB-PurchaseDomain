@@ -41,12 +41,11 @@ export function HomeTab({
 
         <div className="hero-grid">
           <div className="hero-copy">
-            <span className="eyebrow">PurchaseDivision</span>
-            <h1>Your projects. Your procurement. One clear view.</h1>
+            <span className="eyebrow">Overview</span>
+            <h1>Purchase orders, invoices and deliveries — by project.</h1>
             <p className="lede">
-              Every site invoice, purchase order and delivery challan lands here —
-              read, matched to a material, and waiting on one decision instead of
-              a folder on somebody’s desk.
+              Everything captured on a site phone or uploaded at the desk lands here,
+              read automatically and filed against the right project and material.
             </p>
             <div className="hero-cta">
               <button className="btn btn-ink" type="button" onClick={() => setAddingProject(true)}>

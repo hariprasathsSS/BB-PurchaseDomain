@@ -44,11 +44,14 @@ export const api = {
      gets the filename the server chose, which a blob round-trip would lose. */
   exportUrl: (projectId) => `/api/v1/projects/${projectId}/export`,
 
-  /* Multipart, so it does not go through send(). One file is one document. */
-  uploadFiles: ({ projectId, siteId, files }) => {
+  /* Multipart, so it does not go through send(). One file is one document.
+     documentType is only a hint ("PO" from the Scan PO button) — the
+     classifier's own read of the pixels still decides what gets stored. */
+  uploadFiles: ({ projectId, siteId, documentType, files }) => {
     const form = new FormData();
     form.append("project_id", projectId);
     if (siteId) form.append("site_id", siteId);
+    if (documentType) form.append("document_type", documentType);
     files.forEach((f) => form.append("files", f, f.name));
     return fetch("/api/v1/documents/upload", { method: "POST", body: form }).then(json);
   },

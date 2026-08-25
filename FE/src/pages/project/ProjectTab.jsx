@@ -5,7 +5,7 @@ import { ProjectDetail } from "./ProjectDetail.jsx";
    a real, linkable location with a working back button. */
 export function ProjectTab({
   projectId, projects, docs, materials, search,
-  onOpenDocument, onAddProject, onAddDocument,
+  onOpenDocument, onAddProject, onAddDocument, onScanPo,
 }) {
   if (!projectId) {
     return (
@@ -43,6 +43,7 @@ export function ProjectTab({
       materials={materials}
       onOpenDocument={onOpenDocument}
       onAddDocument={onAddDocument}
+      onScanPo={onScanPo}
     />
   );
 }

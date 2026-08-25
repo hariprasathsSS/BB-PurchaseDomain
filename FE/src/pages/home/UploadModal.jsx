@@ -5,8 +5,16 @@ import { api } from "../../lib/api.js";
 import { ALLOWED_UPLOAD_RE, kb } from "../../lib/format.js";
 
 /* Browser intake: loose files against a project, and a site when the project
-   has any — otherwise the document lands unfiled and nothing can group it. */
-export function UploadModal({ project, onClose, onUploaded }) {
+   has any — otherwise the document lands unfiled and nothing can group it.
+
+   documentType is an optional hint ("PO" from the project page's Scan PO
+   button) — title/description default to the generic upload copy so every
+   existing call site is unaffected. */
+export function UploadModal({
+  project, documentType, title = "Upload files",
+  hint = "Photos or PDFs of invoices, purchase orders and delivery challans. Drag them here or click to browse.",
+  onClose, onUploaded,
+}) {
   const sites = project.sites ?? [];
   const [siteId, setSiteId] = useState(sites[0]?.id ?? "");
   const [picked, setPicked] = useState([]);
@@ -37,7 +45,7 @@ export function UploadModal({ project, onClose, onUploaded }) {
     setErr("");
     setOk("");
     try {
-      await api.uploadFiles({ projectId: project.id, siteId, files: picked });
+      await api.uploadFiles({ projectId: project.id, siteId, documentType, files: picked });
       setOk(
         `${picked.length} file${picked.length > 1 ? "s" : ""} uploaded to ${project.code}. ` +
         "Extraction starts automatically."
@@ -54,7 +62,7 @@ export function UploadModal({ project, onClose, onUploaded }) {
 
   return (
     <Modal
-      title="Upload files"
+      title={title}
       subtitle={`${project.code} — ${project.name}`}
       onClose={onClose}
       footer={
@@ -98,10 +106,7 @@ export function UploadModal({ project, onClose, onUploaded }) {
       >
         <IconUpload width={26} height={26} />
         <div className="t">Choose files</div>
-        <div className="d">
-          Photos or PDFs of invoices, purchase orders and delivery challans.
-          Drag them here or click to browse.
-        </div>
+        <div className="d">{hint}</div>
       </div>
 
       <input
@@ -110,6 +115,7 @@ export function UploadModal({ project, onClose, onUploaded }) {
         multiple
         hidden
         accept=".pdf,.jpg,.jpeg,.png,image/jpeg,image/png,application/pdf"
+        capture={documentType ? "environment" : undefined}
         onChange={(e) => addFiles(e.target.files)}
       />
 

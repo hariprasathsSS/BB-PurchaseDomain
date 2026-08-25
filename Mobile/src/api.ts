@@ -80,24 +80,20 @@ export async function batchUpload(
 ): Promise<UploadResult> {
   const form = new FormData();
 
-  // Files are flat and consumed in order; page_count tells the server where
-  // each document starts and stops.
+  // Files are flat and consumed in order; page_counts tells the server where
+  // each document starts and stops — the backend's actual contract, not the
+  // {document_type, notes, page_count} metadata blob this used to send
+  // (which the server has never read; every phone upload 422'd until this
+  // was caught). document_types rides beside it, one hint per document, in
+  // the same order — what the Preview screen's type picker chose.
   for (const doc of queue) {
     for (const [i, uri] of doc.pages.entries()) {
       await appendPage(form, uri, `${doc.id}_p${i + 1}.jpg`);
     }
   }
 
-  form.append(
-    'metadata',
-    JSON.stringify(
-      queue.map((d) => ({
-        document_type: d.documentType,
-        notes: d.notes,
-        page_count: d.pages.length,
-      })),
-    ),
-  );
+  form.append('page_counts', queue.map((d) => d.pages.length).join(','));
+  form.append('document_types', queue.map((d) => d.documentType).join(','));
 
   return request(`${serverUrl}/api/v1/documents/batch-upload`, {
     method: 'POST',
