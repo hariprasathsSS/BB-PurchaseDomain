@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -227,6 +228,83 @@ def find_duplicate(
     return row["document_id"] if row else None
 
 
+# ── reconciliation ───────────────────────────────────────────────────────────
+# Two documents that find_duplicate paired (same vendor GSTIN + document
+# number) are meant to be the same delivery billed twice through different
+# channels — a paper copy to the site, a separate copy emailed to head
+# office. Genuinely being the same paper, there is no legitimate reason for
+# their line items to disagree, unlike an invoice against its PO, where day-
+# to-day price movement is expected. No DB access here — the caller joins in
+# material_name and hands in the two line lists, so this stays a pure,
+# independently testable function.
+
+RATE_TOLERANCE = 0.01
+
+
+def aggregate_by_material(lines: list[dict]) -> tuple[dict[str, dict], list[dict]]:
+    """One document's lines collapsed to one entry per material — summing
+    quantity (the same material split across several rows on one invoice is
+    still one delivered amount) and taking the quantity-weighted average rate,
+    so a material billed on more than one row still reduces to one comparable
+    number. Lines that never resolved to a material_id come back separately —
+    reported as unmatched, never silently dropped or coincidentally paired."""
+    by_material: dict[str, dict] = {}
+    unmatched: list[dict] = []
+    for line in lines:
+        material_id = line.get("material_id")
+        qty = line.get("quantity") or 0
+        rate = line.get("rate")
+        amount = line.get("amount")
+        if amount is None and rate is not None:
+            amount = qty * rate
+        if not material_id:
+            unmatched.append(line)
+            continue
+        entry = by_material.setdefault(material_id, {
+            "material_id": material_id, "material_name": line.get("material_name"),
+            "unit": line.get("unit"), "qty": 0.0, "amount": 0.0,
+        })
+        if not entry["unit"]:
+            entry["unit"] = line.get("unit")
+        entry["qty"] += qty
+        entry["amount"] += amount or 0
+    for entry in by_material.values():
+        entry["rate"] = round(entry["amount"] / entry["qty"], 2) if entry["qty"] else None
+    return by_material, unmatched
+
+
+def compare_document_lines(lines_a: list[dict], lines_b: list[dict]) -> dict:
+    """Line-by-line diff between two documents believed to be the same
+    delivery. `match` on a line is False the moment quantity differs at all,
+    rate differs by more than a cent of rounding, or the material is present
+    on only one side."""
+    by_a, unmatched_a = aggregate_by_material(lines_a)
+    by_b, unmatched_b = aggregate_by_material(lines_b)
+
+    diff_lines = []
+    for material_id in sorted(set(by_a) | set(by_b)):
+        a, b = by_a.get(material_id), by_b.get(material_id)
+        match = bool(
+            a and b and a["qty"] == b["qty"]
+            and a["rate"] is not None and b["rate"] is not None
+            and abs(a["rate"] - b["rate"]) <= RATE_TOLERANCE
+        )
+        diff_lines.append({
+            "material_id": material_id,
+            "material_name": (a or b)["material_name"],
+            "qty_a": a["qty"] if a else None, "rate_a": a["rate"] if a else None,
+            "qty_b": b["qty"] if b else None, "rate_b": b["rate"] if b else None,
+            "match": match,
+        })
+
+    return {
+        "lines": diff_lines,
+        "unmatched_a": [{"description_raw": l.get("description_raw")} for l in unmatched_a],
+        "unmatched_b": [{"description_raw": l.get("description_raw")} for l in unmatched_b],
+        "clean": all(d["match"] for d in diff_lines) and not unmatched_a and not unmatched_b,
+    }
+
+
 # ── the engine ───────────────────────────────────────────────────────────────
 # One Claude vision call per document does classification and extraction
 # together. A separate classifier pass would read the same pixels twice to
@@ -257,7 +335,12 @@ class Line(BaseModel):
 
 class Extraction(BaseModel):
     """The engine's contract. Mirrors doc_headers + doc_lines."""
-    doc_kind: Literal["INVOICE", "PO", "DELIVERY", "OTHER"]
+    # Nullable, like every other field here — but still required in the JSON
+    # sense (the key must be present); see the self-check's schema assertion.
+    # A genuinely unreadable-as-any-of-the-four page returns null rather than
+    # a forced guess; save_extraction() already treats anything not in
+    # DOC_TYPES as UNCLASSIFIED, so this needed no change there.
+    doc_kind: Literal["INVOICE", "PO", "DELIVERY", "QUOTATION", "INWARD", "OTHER"] | None
 
     doc_number: str | None
     po_number: str | None
@@ -290,13 +373,43 @@ SYSTEM = """You read photographs and scans of Indian construction purchase docum
 and transcribe them. You are a transcriber, not an analyst.
 
 Classify the document as doc_kind:
-  INVOICE   a tax invoice for supplied materials — has quantities and unit rates
-  PO        a purchase order the buyer issued
-  DELIVERY  a delivery challan or goods-received note
-  OTHER     anything else, including works-contract / RA bills. An RA bill is a
-            lump sum against a BOQ or Work Order with no quantity and no unit
-            rate — that absence is how you recognise it. Never force one into
-            INVOICE.
+  INVOICE    a tax invoice for supplied materials — has quantities and unit rates
+  PO         a purchase order the buyer issued
+  DELIVERY   a delivery challan or goods-received note
+  QUOTATION  a vendor's price quotation or rate offer — rates offered, not yet
+             transacted; typically no GST breakup and no delivery details,
+             often carrying a validity period ("valid for N days")
+  INWARD     a material inward report or goods-received note the *site*
+             prepares on receiving a delivery — not something the vendor
+             sends. No vendor letterhead, no tax breakup; it lists what
+             actually arrived, signed or initialled by site staff, not the
+             supplier. If it carries a vendor letterhead and GST details, it
+             is a DELIVERY challan instead, not this.
+  OTHER      a document you can positively identify as a specific different
+             genre — most often a works-contract / RA bill: a lump sum against
+             a BOQ or Work Order with no quantity and no unit rate, which is
+             how you recognise it. That absence is the test — a page listing
+             material, quantity, rate and amount is never OTHER by this test,
+             no matter how it's formatted. OTHER is a positive identification
+             of a specific genre, never a fallback for "not sure" — a messy
+             page, handwriting, no letterhead, or no printed heading is not by
+             itself grounds for OTHER. That case is null, below.
+  null       the correct answer whenever you cannot confidently place a
+             document as INVOICE, PO, DELIVERY, QUOTATION, INWARD, or
+             positively as OTHER — illegible handwriting, no letterhead, no
+             printed heading, torn, ambiguous, blank, or otherwise carrying
+             nothing that identifies which kind it is. A human reviewer
+             decides instead. This is not rare and not a last resort: if you
+             are genuinely unsure, null is the right answer, not OTHER —
+             when torn between OTHER and null specifically, choose null. The
+             only wrong use of null is ducking a page that legibly *is* one
+             of the six above.
+
+  Example: a handwritten notebook page listing materials with quantity, rate
+  and amount, no letterhead, no vendor name, no "Invoice"/"PO"/"Delivery"
+  heading — this is null. It has the qty+rate+amount shape the OTHER/RA-bill
+  test rules out, and nothing on the page says which named kind it is, so
+  OTHER and every named kind are wrong; only null is correct.
 
 Rules:
 - Transcribe what is printed. Never infer, calculate or complete a value. If a
@@ -346,6 +459,21 @@ def _blocks(image_paths: list[str]) -> list[dict]:
     return blocks
 
 
+# A batch upload (several files picked at once) queues one background task
+# per document. Starlette's own BackgroundTasks awaits them one at a time —
+# see venv/starlette/background.py — but a real, reproduced incident this
+# session (3 genuinely different invoices uploaded together; 2 of the 3 came
+# back from the vision model carrying the third one's vendor/invoice number,
+# byte-for-byte, until each was individually re-extracted and immediately
+# came back correct) shows something in this path still lets two engine
+# calls overlap in practice. This lock makes that structurally impossible
+# regardless of where the overlap actually comes from — at most one call
+# into the vision model runs at a time, for both documents and quotations.
+# The cost is a batch extracting one-by-one instead of in parallel, which
+# for this app's volume is a small price for never mixing up two invoices.
+ENGINE_LOCK = threading.Lock()
+
+
 def run_engine(image_paths: list[str], document_type: str) -> dict:
     """All pages of one document in, structured fields out.
 
@@ -374,7 +502,86 @@ def run_engine(image_paths: list[str], document_type: str) -> dict:
     return _run_anthropic(image_paths, prompt)
 
 
-def _run_anthropic(image_paths: list[str], prompt: str) -> dict:
+# ── quotations ───────────────────────────────────────────────────────────────
+# A vendor's price quotation, not a purchase document — same one-call vision
+# read as run_engine, but its own schema and prompt: no doc_kind (the caller
+# already knows what this is) and a grade/brand field the invoice schema has
+# no use for.
+
+class QuotationLine(BaseModel):
+    description_raw: str | None
+    # Brand/grade/spec called out separately, e.g. "Fe550D" or "UltraTech OPC
+    # 53" — kept out of description_raw so it doesn't corrupt the material
+    # alias match every other document type relies on.
+    grade_raw: str | None
+    hsn_code: str | None
+    quantity: float | None
+    unit: str | None
+    rate: float | None
+    amount: float | None
+    tax_rate: float | None
+
+
+class QuotationExtraction(BaseModel):
+    vendor_name_raw: str | None
+    vendor_gstin: str | None
+    quote_number: str | None
+    quote_date_raw: str | None
+    lines: list[QuotationLine]
+
+
+SYSTEM_QUOTATION = """You read photographs and scans of a vendor's price quotation for \
+construction materials and transcribe them. You are a transcriber, not an analyst — \
+this is an offer letter or rate quotation, not a tax invoice, so it may carry no GST \
+breakup at all.
+
+Rules:
+- Transcribe what is printed. Never infer, calculate or complete a value. If a
+  field is not on the page, return null. A wrong value is far worse than null:
+  null is visibly missing and gets fixed in review, a wrong value is not.
+- Dates: copy the characters exactly as printed into quote_date_raw. Do not
+  reformat or reorder them — Indian documents are day-first and the server
+  parses them; reordering here corrupts the date silently.
+- Amounts: digits only. No currency symbol, no thousands separator. Keep the
+  decimals as printed.
+- quote_number is this quotation's own reference number, if it has one.
+- Line items: one entry per row of the item table. description_raw is the
+  material as named on the line. grade_raw is any brand, grade or spec called
+  out for that line — "Fe550D", "53 Grade", "UltraTech", "ISI marked" — kept
+  separate from description_raw rather than appended to it. Not every line
+  carries one; leave it null rather than inventing one.
+- rate is the quoted unit price; amount is the line total if the document
+  prints one. Do not calculate amount from rate x quantity if it is not
+  printed — leave it null.
+- Ignore terms and conditions, validity periods, bank details and signature
+  blocks.
+
+If a value is genuinely unreadable — blur, glare, a fold across the digits —
+return null rather than a guess."""
+
+
+def run_quotation_engine(image_paths: list[str]) -> dict:
+    """All pages of one vendor's quotation in, structured fields out.
+
+    Unlike run_engine there is no document_type hint to pass along — the
+    caller already knows this is a quotation, only the model needs telling.
+    """
+    if not image_paths:
+        raise ValueError("a document with no pages cannot be extracted")
+
+    prompt = (
+        "Transcribe every field you can read from this vendor quotation."
+        f" This is one document, {len(image_paths)} page(s), in order."
+    )
+
+    if PROVIDER == "openai":
+        return _run_openai(image_paths, prompt, system=SYSTEM_QUOTATION, output_format=QuotationExtraction)
+    return _run_anthropic(image_paths, prompt, system=SYSTEM_QUOTATION, output_format=QuotationExtraction)
+
+
+def _run_anthropic(
+    image_paths: list[str], prompt: str, *, system: str = SYSTEM, output_format=Extraction
+) -> dict:
     if anthropic is None:
         raise EngineNotConfigured(
             "The anthropic package is not installed — pip install -r requirements.txt"
@@ -391,13 +598,13 @@ def _run_anthropic(image_paths: list[str], prompt: str) -> dict:
     with client.messages.stream(
         model=MODEL,
         max_tokens=16000,
-        system=SYSTEM,
+        system=system,
         thinking={"type": "adaptive"},
         messages=[{
             "role": "user",
             "content": [*_blocks(image_paths), {"type": "text", "text": prompt}],
         }],
-        output_format=Extraction,
+        output_format=output_format,
     ) as stream:
         response = stream.get_final_message()
 
@@ -438,7 +645,9 @@ def _image_data_urls(image_paths: list[str]) -> list[dict]:
     return blocks
 
 
-def _run_openai(image_paths: list[str], prompt: str) -> dict:
+def _run_openai(
+    image_paths: list[str], prompt: str, *, system: str = SYSTEM, output_format=Extraction
+) -> dict:
     if openai is None:
         raise EngineNotConfigured(
             "The openai package is not installed — pip install -r requirements.txt"
@@ -452,13 +661,13 @@ def _run_openai(image_paths: list[str], prompt: str) -> dict:
     response = client.chat.completions.parse(
         model=MODEL,
         messages=[
-            {"role": "system", "content": SYSTEM},
+            {"role": "system", "content": system},
             {
                 "role": "user",
                 "content": [{"type": "text", "text": prompt}, *_image_data_urls(image_paths)],
             },
         ],
-        response_format=Extraction,
+        response_format=output_format,
     )
     message = response.choices[0].message
     if message.refusal:
@@ -554,7 +763,8 @@ def process(document_id: str) -> None:
         document_type = row["document_type"]
 
     try:
-        data = run_engine(paths, document_type)
+        with ENGINE_LOCK:
+            data = run_engine(paths, document_type)
     except Exception as exc:
         with db() as con:
             con.execute(
@@ -565,6 +775,82 @@ def process(document_id: str) -> None:
 
     with db() as con:
         save_extraction(con, document_id, data)
+
+
+_QUOTATION_HEADER_FIELDS = (
+    "vendor_id", "vendor_name_raw", "vendor_gstin", "quote_number", "quote_date", "quote_date_raw",
+)
+
+
+def save_quotation_extraction(con: sqlite3.Connection, quotation_id: str, data: dict) -> None:
+    """Persist engine output into quotations + quotation_lines, mapping as it
+    goes — same shape as save_extraction, minus everything that only makes
+    sense for a purchase document (doc_kind, tax breakup, duplicate check)."""
+    vendor_id = match_vendor(con, data.get("vendor_name_raw"), data.get("vendor_gstin"))
+
+    header = {
+        "vendor_id": vendor_id,
+        "vendor_name_raw": data.get("vendor_name_raw"),
+        "vendor_gstin": find_gstin(data.get("vendor_gstin")),
+        "quote_number": data.get("quote_number"),
+        "quote_date": parse_date(data.get("quote_date_raw")),
+        "quote_date_raw": data.get("quote_date_raw"),
+    }
+    assignments = ", ".join(f"{field} = ?" for field in _QUOTATION_HEADER_FIELDS)
+    con.execute(
+        f"UPDATE quotations SET {assignments} WHERE id = ?",
+        (*(header[field] for field in _QUOTATION_HEADER_FIELDS), quotation_id),
+    )
+
+    con.execute("DELETE FROM quotation_lines WHERE quotation_id = ?", (quotation_id,))
+    for index, line in enumerate(data.get("lines") or [], start=1):
+        description = line.get("description_raw") or ""
+        con.execute(
+            "INSERT INTO quotation_lines (quotation_id, line_no, description_raw, material_id,"
+            " grade_raw, hsn_code, quantity, unit, rate, amount, tax_rate)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                quotation_id, index, description,
+                match_material(con, description, line.get("unit")),
+                line.get("grade_raw"), line.get("hsn_code"), line.get("quantity"), line.get("unit"),
+                line.get("rate"), line.get("amount"), line.get("tax_rate"),
+            ),
+        )
+
+    con.execute("UPDATE quotations SET status = 'EXTRACTED', error = NULL WHERE id = ?", (quotation_id,))
+
+
+def process_quotation(quotation_id: str) -> None:
+    """Background task: PENDING -> PROCESSING -> EXTRACTED, or FAILED with a
+    reason. Mirrors process() — see there for why the PROCESSING flip is
+    conditioned in the UPDATE's WHERE clause rather than checked beforehand."""
+    with db() as con:
+        row = con.execute(
+            "SELECT file_paths FROM quotations WHERE id = ?", (quotation_id,)
+        ).fetchone()
+        if row is None:
+            return
+        cur = con.execute(
+            "UPDATE quotations SET status = 'PROCESSING' WHERE id = ? AND status = 'PENDING'",
+            (quotation_id,),
+        )
+        if cur.rowcount == 0:
+            return
+        paths = json.loads(row["file_paths"])
+
+    try:
+        with ENGINE_LOCK:
+            data = run_quotation_engine(paths)
+    except Exception as exc:
+        with db() as con:
+            con.execute(
+                "UPDATE quotations SET status = 'FAILED', error = ? WHERE id = ?",
+                (str(exc)[:500], quotation_id),
+            )
+        return
+
+    with db() as con:
+        save_quotation_extraction(con, quotation_id, data)
 
 
 # ── review: edit, approve, reject ───────────────────────────────────────────
@@ -578,6 +864,8 @@ EDITABLE_HEADER_FIELDS = (
     "place_of_supply", "delivery_address_raw",
     "basic_value", "tax_type", "igst_amount", "cgst_amount", "sgst_amount",
     "tcs_amount", "rounding_off", "total_value", "irn",
+    # Reviewer-set, never extracted — see doc_headers.invoice_channel in db.py.
+    "invoice_channel",
 )
 
 EDITABLE_LINE_FIELDS = (
@@ -634,11 +922,98 @@ def claim_for_edit(con: sqlite3.Connection, document_id: str) -> bool:
     return cur.rowcount > 0
 
 
+# ── quotations: edit ─────────────────────────────────────────────────────────
+# No approve/reject to protect against here — a quotation has no decision to
+# preserve, only a re-extraction in flight, which claim_quotation_for_edit
+# guards against the same way claim_for_edit does above.
+
+EDITABLE_QUOTATION_HEADER_FIELDS = (
+    "vendor_name_raw", "vendor_gstin", "quote_number", "quote_date_raw",
+)
+
+EDITABLE_QUOTATION_LINE_FIELDS = (
+    "description_raw", "material_id", "grade_raw", "hsn_code",
+    "quantity", "unit", "rate", "amount", "tax_rate",
+)
+
+
+def apply_quotation_edits(
+    con: sqlite3.Connection, quotation_id: str, header: dict, lines: list[dict]
+) -> None:
+    """Persist reviewer corrections to an already-extracted quotation."""
+    edits = {f: header[f] for f in header if f in EDITABLE_QUOTATION_HEADER_FIELDS}
+    if "quote_date_raw" in edits:
+        con.execute(
+            "UPDATE quotations SET quote_date_raw = ?, quote_date = ? WHERE id = ?",
+            (edits.pop("quote_date_raw"), parse_date(header["quote_date_raw"]), quotation_id),
+        )
+    if edits:
+        assignments = ", ".join(f"{field} = ?" for field in edits)
+        con.execute(
+            f"UPDATE quotations SET {assignments} WHERE id = ?",
+            (*edits.values(), quotation_id),
+        )
+
+    for line in lines:
+        line_no = line.get("line_no")
+        if not line_no:
+            raise ValueError("each line edit needs line_no")
+        line_edits = {f: line[f] for f in line if f in EDITABLE_QUOTATION_LINE_FIELDS}
+        if not line_edits:
+            continue
+        if line_edits.get("material_id") and line.get("description_raw"):
+            learn_material_alias(con, line["description_raw"], line_edits["material_id"])
+        assignments = ", ".join(f"{field} = ?" for field in line_edits)
+        con.execute(
+            f"UPDATE quotation_lines SET {assignments} WHERE quotation_id = ? AND line_no = ?",
+            (*line_edits.values(), quotation_id, line_no),
+        )
+
+
+def claim_quotation_for_edit(con: sqlite3.Connection, quotation_id: str) -> bool:
+    """Atomically confirms the quotation is still EXTRACTED right before
+    applying edits — guards against a concurrent retry re-running extraction
+    (which deletes and rewrites quotation_lines) out from under an edit."""
+    cur = con.execute(
+        "UPDATE quotations SET status = 'EXTRACTED' WHERE id = ? AND status = 'EXTRACTED'",
+        (quotation_id,),
+    )
+    return cur.rowcount > 0
+
+
 def mark_approved(con: sqlite3.Connection, document_id: str, approved_by: str) -> bool:
     """EXTRACTED -> APPROVED, atomically. False (no write at all) if the
-    document was not EXTRACTED — already decided, or not yet extracted."""
+    document was not EXTRACTED — already decided, not yet extracted, sitting
+    at UNCLASSIFIED because the classifier couldn't tell, or sitting at
+    OTHER. Neither is a real business document type here — a reviewer has
+    to actively pick one of the real kinds (or reject it, if none of those
+    genuinely fit — an RA bill, say) before it can be filed as approved.
+    Approval is the one place that has to matter, since it's what files the
+    document.
+
+    INVOICE, DELIVERY and INWARD additionally need a po_number — each one
+    describes a specific delivery against a specific PO, and without that
+    number it can never be grouped under that PO or cross-checked against
+    the other documents for the same delivery (see po_reconciliation).
+    PO and QUOTATION are exempt: a PO doesn't reference another PO, and a
+    quotation predates one existing at all.
+
+    INVOICE also needs invoice_channel (SITE or VENDOR) — the vendor hands
+    one copy to the site and mails a separate one to the office, and
+    nothing on the page says which; a reviewer has to say so, since the
+    delivery-completeness check (po_reconciliation) can't tell the two
+    apart otherwise."""
     cur = con.execute(
-        "UPDATE documents SET status = 'APPROVED' WHERE id = ? AND status = 'EXTRACTED'",
+        "UPDATE documents SET status = 'APPROVED'"
+        " WHERE id = ? AND status = 'EXTRACTED' AND document_type NOT IN ('UNCLASSIFIED', 'OTHER')"
+        " AND (document_type NOT IN ('INVOICE', 'DELIVERY', 'INWARD') OR EXISTS ("
+        "   SELECT 1 FROM doc_headers h WHERE h.document_id = documents.id"
+        "     AND h.po_number IS NOT NULL AND TRIM(h.po_number) != ''"
+        " ))"
+        " AND (document_type != 'INVOICE' OR EXISTS ("
+        "   SELECT 1 FROM doc_headers h WHERE h.document_id = documents.id"
+        "     AND h.invoice_channel IN ('SITE', 'VENDOR')"
+        " ))",
         (document_id,),
     )
     if cur.rowcount == 0:
@@ -696,6 +1071,41 @@ if __name__ == "__main__":
     assert find_gstin("no identifier here") is None
 
     assert normalise("  OPC   Cement 53 Grade. ") == "opc cement 53 grade"
+
+    # compare_document_lines: two documents believed to be the same delivery
+    # billed twice (site copy, office copy) — pure function, no DB needed.
+    _site = [
+        {"material_id": "MAT-STEEL", "material_name": "TMT Steel Bar 12mm", "quantity": 50, "rate": 62000},
+        {"material_id": "MAT-CEMENT", "material_name": "OPC Cement 53", "quantity": 100, "rate": 380},
+    ]
+    _office_mismatched = [
+        {"material_id": "MAT-STEEL", "material_name": "TMT Steel Bar 12mm", "quantity": 45, "rate": 62000},
+        {"material_id": "MAT-CEMENT", "material_name": "OPC Cement 53", "quantity": 100, "rate": 380},
+    ]
+    _diff = compare_document_lines(_site, _office_mismatched)
+    assert _diff["clean"] is False
+    _steel = next(l for l in _diff["lines"] if l["material_id"] == "MAT-STEEL")
+    _cement = next(l for l in _diff["lines"] if l["material_id"] == "MAT-CEMENT")
+    assert _steel["match"] is False and _steel["qty_a"] == 50 and _steel["qty_b"] == 45
+    assert _cement["match"] is True
+
+    _diff_clean = compare_document_lines(_site, [dict(l) for l in _site])
+    assert _diff_clean["clean"] is True and all(l["match"] for l in _diff_clean["lines"])
+
+    # A material present on only one side is a mismatch, not silently skipped.
+    _diff_missing = compare_document_lines(_site, [_site[0]])
+    _cement_missing = next(l for l in _diff_missing["lines"] if l["material_id"] == "MAT-CEMENT")
+    assert _cement_missing["match"] is False and _cement_missing["qty_b"] is None
+    assert _diff_missing["clean"] is False
+
+    # Same material split across two rows on one side must still compare
+    # clean against one consolidated row on the other — sum, not first-wins.
+    _site_split = [
+        {"material_id": "MAT-STEEL", "material_name": "TMT Steel Bar 12mm", "quantity": 20, "rate": 62000},
+        {"material_id": "MAT-STEEL", "material_name": "TMT Steel Bar 12mm", "quantity": 30, "rate": 62000},
+    ]
+    _office_single = [{"material_id": "MAT-STEEL", "material_name": "TMT Steel Bar 12mm", "quantity": 50, "rate": 62000}]
+    assert compare_document_lines(_site_split, _office_single)["clean"] is True
 
     _db.init()
     with _db.db() as con:
@@ -848,8 +1258,64 @@ if __name__ == "__main__":
         assert row["status"] == "REJECTED"
         assert row["rejection_reason"] == "wrong vendor"
 
+        # A document the classifier couldn't place — document_type still
+        # UNCLASSIFIED — must not be approvable, and the attempt must not have
+        # written anything (status stays EXTRACTED, not silently rejected).
+        _doc_id_3 = "DOC-selfcheck-3"
+        con.execute(
+            "INSERT INTO documents (id, project_id, source, document_type, file_paths,"
+            " page_count, status) VALUES (?, ?, 'UPLOAD', 'UNCLASSIFIED', '[]', 1, 'EXTRACTED')",
+            (_doc_id_3, _prj_id),
+        )
+        con.execute("INSERT INTO doc_headers (document_id) VALUES (?)", (_doc_id_3,))
+        assert mark_approved(con, _doc_id_3, "selfcheck") is False, \
+            "an UNCLASSIFIED document must not be approvable"
+        assert con.execute(
+            "SELECT status FROM documents WHERE id = ?", (_doc_id_3,)
+        ).fetchone()["status"] == "EXTRACTED", "a failed approve must not have changed the status"
+        # OTHER is blocked the same way — it isn't a real business type
+        # either, just the RA-bill/works-contract bucket, so it needs the
+        # same active reclassification (or a reject) before it can be filed.
+        _doc_id_4 = "DOC-selfcheck-4"
+        con.execute(
+            "INSERT INTO documents (id, project_id, source, document_type, file_paths,"
+            " page_count, status) VALUES (?, ?, 'UPLOAD', 'OTHER', '[]', 1, 'EXTRACTED')",
+            (_doc_id_4, _prj_id),
+        )
+        con.execute("INSERT INTO doc_headers (document_id) VALUES (?)", (_doc_id_4,))
+        assert mark_approved(con, _doc_id_4, "selfcheck") is False, \
+            "an OTHER document must not be approvable either"
+
+        # Picking a type is exactly what unblocks it — apply_edits already
+        # syncs documents.document_type from doc_kind (see the edit above).
+        apply_edits(con, _doc_id_3, {"doc_kind": "DELIVERY"}, [])
+        assert mark_approved(con, _doc_id_3, "selfcheck") is True, \
+            "approval must succeed once a type is picked"
+        # QUOTATION is a real pick too, not just the original three.
+        apply_edits(con, _doc_id_4, {"doc_kind": "QUOTATION"}, [])
+        assert mark_approved(con, _doc_id_4, "selfcheck") is True, \
+            "approval must succeed once reclassified to QUOTATION"
+
+        # An INVOICE additionally needs a po_number before it can be filed —
+        # without one it can never be grouped with its PO or its other copy.
+        _doc_id_5 = "DOC-selfcheck-5"
+        con.execute(
+            "INSERT INTO documents (id, project_id, source, document_type, file_paths,"
+            " page_count, status) VALUES (?, ?, 'UPLOAD', 'INVOICE', '[]', 1, 'EXTRACTED')",
+            (_doc_id_5, _prj_id),
+        )
+        con.execute("INSERT INTO doc_headers (document_id, doc_kind) VALUES (?, 'INVOICE')", (_doc_id_5,))
+        assert mark_approved(con, _doc_id_5, "selfcheck") is False, \
+            "an INVOICE with no po_number must not be approvable"
+        con.execute("UPDATE doc_headers SET po_number = 'PO-1042' WHERE document_id = ?", (_doc_id_5,))
+        assert mark_approved(con, _doc_id_5, "selfcheck") is True, \
+            "approval must succeed once po_number is filled in"
+
         con.execute("DELETE FROM material_aliases WHERE alias = 'old description'")
-        con.execute("DELETE FROM documents WHERE id IN (?, ?)", (_doc_id, _doc_id_2))
+        con.execute(
+            "DELETE FROM documents WHERE id IN (?, ?, ?, ?, ?)",
+            (_doc_id, _doc_id_2, _doc_id_3, _doc_id_4, _doc_id_5),
+        )
         con.execute("DELETE FROM projects WHERE id = ?", (_prj_id,))
 
     # A classified kind files the document; anything unexpected stays

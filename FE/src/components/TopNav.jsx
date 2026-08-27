@@ -30,7 +30,7 @@ export function TopNav({ active, search, onSearch, onAddProject }) {
   return (
     <div className="nav-rail">
       <nav className="nav" aria-label="Sections">
-        <div className="brand">Purchase<i>Division</i></div>
+        <div className="brand"><span className="brand-red">Purchase</span>Division</div>
 
         <div className="nav-links">
           {ITEMS.map(({ tab, label, Icon }) => (

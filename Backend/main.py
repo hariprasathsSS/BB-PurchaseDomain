@@ -17,8 +17,8 @@ these can live there instead of the real environment):
     SESSION_TTL        token lifetime in seconds          (default: 900)
     HOST_IP            LAN IP to advertise in the QR      (default: auto-detected)
     PORT               port to advertise in the QR        (default: 8000)
-    OPENROUTER_API_KEY OpenRouter credentials             (required for /api/v1/chat)
-    CHAT_MODEL         model the chatbot writes SQL with  (default: google/gemini-2.0-flash-001)
+    CHAT_PROVIDER      "openai" or "groq" — see chat.py    (default: openai, reuses OPENAI_API_KEY above)
+    CHAT_MODEL         override the chat model            (default: gpt-4o-mini / llama-3.3-70b-versatile)
 """
 
 from __future__ import annotations
@@ -340,9 +340,11 @@ def row_to_document(row: sqlite3.Row) -> dict:
         "uploaded_at": row["uploaded_at"],
         # Null until extraction has run — the console shows a placeholder.
         "vendor_name": row["vendor_name_raw"],
+        "vendor_gstin": row["vendor_gstin"],
         "doc_number": row["doc_number"],
         "po_number": row["po_number"],
         "total_value": row["total_value"],
+        "invoice_channel": row["invoice_channel"],
     }
 
 
@@ -439,6 +441,42 @@ def create_project(body: dict):
     else:
         raise HTTPException(500, "could not generate a unique project code — try again")
     return project_dict(get_project(project_id))
+
+
+@app.delete("/api/v1/projects/{project_id}")
+def delete_project(project_id: str):
+    """Removes the project and everything filed under it — every document
+    (and its header/lines), every quotation, sites, quote picks, scanner
+    sessions. Irreversible; the caller is expected to have already confirmed
+    with a person before calling this.
+
+    sites/quotations/quotation_lines/quote_picks cascade on their own
+    (ON DELETE CASCADE from project_id/quotation_id). documents and
+    scanner_sessions don't — deleted explicitly here, in dependency order,
+    same as the one-off cleanup scripts this session leaned on before this
+    endpoint existed. duplicate_of has no ON DELETE clause either, and
+    find_duplicate matches across the whole database, not just one project,
+    so a document *outside* this project can legitimately point at one
+    *inside* it — that pointer is cleared first, or deleting the document it
+    names would violate that foreign key.
+    """
+    get_project(project_id)  # 404 before anything is touched
+    with db.db() as con:
+        doc_ids = [r["id"] for r in con.execute(
+            "SELECT id FROM documents WHERE project_id = ?", (project_id,)
+        ).fetchall()]
+        if doc_ids:
+            placeholders = ",".join("?" for _ in doc_ids)
+            con.execute(
+                f"UPDATE documents SET duplicate_of = NULL WHERE duplicate_of IN ({placeholders})",
+                doc_ids,
+            )
+            con.execute(f"DELETE FROM doc_lines WHERE document_id IN ({placeholders})", doc_ids)
+            con.execute(f"DELETE FROM doc_headers WHERE document_id IN ({placeholders})", doc_ids)
+            con.execute(f"DELETE FROM documents WHERE id IN ({placeholders})", doc_ids)
+        con.execute("DELETE FROM scanner_sessions WHERE project_id = ?", (project_id,))
+        con.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+    return {"deleted": project_id}
 
 
 @app.get("/api/v1/projects/{project_id}/sites")
@@ -557,9 +595,28 @@ def store_documents(
     return documents
 
 
+def _extract_all(document_ids: list[str]) -> None:
+    """Runs every document in a batch through extract.process one at a time,
+    as one plain synchronous loop — not one background task per document.
+
+    Queueing N separate background tasks relied on Starlette awaiting them
+    strictly in order (BackgroundTasks.__call__ does, by its own source —
+    see venv/starlette/background.py), plus extract.ENGINE_LOCK as a second
+    line of defence against any two calls actually overlapping. Both were in
+    place and a real incident still happened: a 4-file batch uploaded
+    through the browser came back with all four documents carrying one of
+    the four's data, even though the identical files replayed through curl
+    immediately after came back correct every time — a timing-sensitive
+    interaction with real upload latency neither of those two guards
+    reliably caught. A single task iterating a plain Python list needs
+    neither guarantee: there is only one call stack, so there is nothing
+    left to interleave."""
+    for document_id in document_ids:
+        extract.process(document_id)
+
+
 def queue_extraction(background: BackgroundTasks, documents: list[dict]) -> None:
-    for document in documents:
-        background.add_task(extract.process, document["document_id"])
+    background.add_task(_extract_all, [d["document_id"] for d in documents])
 
 
 @app.post("/api/v1/documents/batch-upload")
@@ -647,6 +704,201 @@ def web_upload(
     return {"project_id": project_id, "total": len(documents), "documents": documents}
 
 
+# ── quotations ───────────────────────────────────────────────────────────────
+# A vendor's price quotation for materials — kept out of documents entirely
+# (see db.py's SCHEMA comment on the quotations table for why). No session, no
+# document-type hint: this is always a browser upload against one project, and
+# the model reads the vendor off the page itself, same as it already does for
+# invoices.
+
+def quotation_to_dict(row: sqlite3.Row, lines: list[sqlite3.Row]) -> dict:
+    return dict(row) | {"file_paths": json.loads(row["file_paths"]), "lines": [dict(l) for l in lines]}
+
+
+def fetch_quotation_lines(con: sqlite3.Connection, quotation_id: str) -> list[sqlite3.Row]:
+    """material_name/material_unit joined in — the review screen and the
+    comparison matrix both want the material's own name, not just its id."""
+    return con.execute(
+        "SELECT l.*, m.name AS material_name, m.unit AS material_unit"
+        " FROM quotation_lines l LEFT JOIN materials m ON m.id = l.material_id"
+        " WHERE l.quotation_id = ? ORDER BY l.line_no",
+        (quotation_id,),
+    ).fetchall()
+
+
+@app.post("/api/v1/projects/{project_id}/quotations", status_code=201)
+def upload_quotation(project_id: str, background: BackgroundTasks, files: list[UploadFile] = File(...)):
+    """One upload is one vendor's quotation — one or more pages/files, same
+    multi-page accumulation as store_documents, just against a different
+    table since a quotation isn't a purchase document."""
+    if not files:
+        raise HTTPException(400, "no files were sent")
+    get_project(project_id)          # 404 before anything touches the disk
+
+    quotation_id = new_id("QUOTE")
+    # stored_path() records only directory.name, not the full relative path —
+    # single-level nesting under UPLOAD_DIR, same as session uploads
+    # (UPLOAD_DIR / session_id). The QUOTE- prefix already keeps this from
+    # colliding with a document's DOC- directory in the same root.
+    directory = UPLOAD_DIR / quotation_id
+    directory.mkdir(parents=True, exist_ok=True)
+
+    rel_paths: list[str] = []
+    for upload in files:
+        rel_paths.extend(store_upload(upload, directory, quotation_id, start_page=len(rel_paths) + 1))
+
+    with db.db() as con:
+        con.execute(
+            "INSERT INTO quotations (id, project_id, file_paths, page_count)"
+            " VALUES (?, ?, ?, ?)",
+            (quotation_id, project_id, json.dumps(rel_paths), len(rel_paths)),
+        )
+
+    background.add_task(extract.process_quotation, quotation_id)
+    return {"quotation_id": quotation_id, "page_count": len(rel_paths), "status": "PENDING"}
+
+
+@app.get("/api/v1/projects/{project_id}/quotations")
+def list_quotations(project_id: str):
+    """Every quotation for a project, lines embedded — the comparison view
+    needs every line up front, and the expected count per project is small
+    enough that pagination would be solving a problem that doesn't exist."""
+    get_project(project_id)
+    with db.db() as con:
+        rows = con.execute(
+            "SELECT * FROM quotations WHERE project_id = ? ORDER BY uploaded_at DESC, rowid DESC",
+            (project_id,),
+        ).fetchall()
+        quotations = [quotation_to_dict(row, fetch_quotation_lines(con, row["id"])) for row in rows]
+    return {"total": len(quotations), "quotations": quotations}
+
+
+@app.get("/api/v1/quotations/{quotation_id}")
+def get_quotation(quotation_id: str):
+    """One quotation plus its lines, for the review screen — same shape as
+    get_document, and polled the same way while extraction is in flight."""
+    with db.db() as con:
+        row = con.execute("SELECT * FROM quotations WHERE id = ?", (quotation_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "No such quotation")
+        lines = fetch_quotation_lines(con, quotation_id)
+    return quotation_to_dict(row, lines)
+
+
+@app.post("/api/v1/quotations/{quotation_id}/extract")
+def reextract_quotation(quotation_id: str, background: BackgroundTasks):
+    """Re-run extraction — for a FAILED quotation, or after the engine
+    changes. No decision to protect here (see claim_quotation_for_edit),
+    just re-running while an edit is in flight, which extract.process_quotation
+    guards against the same way process() does."""
+    with db.db() as con:
+        row = con.execute("SELECT status FROM quotations WHERE id = ?", (quotation_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "No such quotation")
+    background.add_task(extract.process_quotation, quotation_id)
+    return {"quotation_id": quotation_id, "status": "PROCESSING"}
+
+
+@app.put("/api/v1/quotations/{quotation_id}")
+def update_quotation(quotation_id: str, body: dict):
+    """Save reviewer corrections to the extracted header/line fields — a
+    quotation can be edited any number of times while it sits at EXTRACTED."""
+    with db.db() as con:
+        if not extract.claim_quotation_for_edit(con, quotation_id):
+            row = con.execute("SELECT status FROM quotations WHERE id = ?", (quotation_id,)).fetchone()
+            if row is None:
+                raise HTTPException(404, "No such quotation")
+            raise HTTPException(409, f"Quotation is {row['status']} — cannot edit")
+
+        try:
+            extract.apply_quotation_edits(
+                con, quotation_id,
+                (body or {}).get("header") or {}, (body or {}).get("lines") or [],
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+        row = con.execute("SELECT * FROM quotations WHERE id = ?", (quotation_id,)).fetchone()
+        lines = fetch_quotation_lines(con, quotation_id)
+    return quotation_to_dict(row, lines)
+
+
+@app.delete("/api/v1/quotations/{quotation_id}")
+def delete_quotation(quotation_id: str):
+    """Uploading five quotes and pruning a duplicate or misfire is a normal
+    part of this workflow — unlike documents, a quotation is never the
+    business's own record of a decision, so removing one loses nothing."""
+    with db.db() as con:
+        row = con.execute("SELECT id FROM quotations WHERE id = ?", (quotation_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "No such quotation")
+        con.execute("DELETE FROM quotations WHERE id = ?", (quotation_id,))  # cascades to lines
+
+    shutil.rmtree(UPLOAD_DIR / quotation_id, ignore_errors=True)
+    return {"quotation_id": quotation_id, "deleted": True}
+
+
+# ── quote picks ──────────────────────────────────────────────────────────────
+# Which vendor to actually buy each material from — cheapest by default, but
+# a person can override it (grade/quality isn't something extraction can
+# rank, so the final call is theirs). See db.py's quote_picks comment.
+
+@app.get("/api/v1/projects/{project_id}/quote-picks")
+def list_quote_picks(project_id: str):
+    get_project(project_id)
+    with db.db() as con:
+        rows = con.execute(
+            "SELECT * FROM quote_picks WHERE project_id = ?", (project_id,)
+        ).fetchall()
+    return {"picks": {r["material_id"]: dict(r) for r in rows}}
+
+
+@app.put("/api/v1/projects/{project_id}/quote-picks/{material_id}")
+def set_quote_pick(project_id: str, material_id: str, body: dict):
+    """Pick a specific quotation as the one to buy this material from,
+    overriding whatever the cheapest-quote default would show."""
+    quotation_id = str((body or {}).get("quotation_id", "")).strip()
+    if not quotation_id:
+        raise HTTPException(400, "quotation_id is required")
+    picked_by = str((body or {}).get("picked_by", "")).strip() or None
+
+    with db.db() as con:
+        get_project(project_id)
+        quotation = con.execute(
+            "SELECT project_id FROM quotations WHERE id = ?", (quotation_id,)
+        ).fetchone()
+        if quotation is None:
+            raise HTTPException(404, "No such quotation")
+        if quotation["project_id"] != project_id:
+            raise HTTPException(400, "That quotation belongs to a different project")
+
+        con.execute(
+            "INSERT INTO quote_picks (project_id, material_id, quotation_id, picked_by, picked_at)"
+            " VALUES (?, ?, ?, ?, datetime('now'))"
+            " ON CONFLICT(project_id, material_id) DO UPDATE SET"
+            "   quotation_id = excluded.quotation_id,"
+            "   picked_by = excluded.picked_by,"
+            "   picked_at = excluded.picked_at",
+            (project_id, material_id, quotation_id, picked_by),
+        )
+        row = con.execute(
+            "SELECT * FROM quote_picks WHERE project_id = ? AND material_id = ?",
+            (project_id, material_id),
+        ).fetchone()
+    return dict(row)
+
+
+@app.delete("/api/v1/projects/{project_id}/quote-picks/{material_id}")
+def clear_quote_pick(project_id: str, material_id: str):
+    """Back to the cheapest-quote default for this material."""
+    with db.db() as con:
+        con.execute(
+            "DELETE FROM quote_picks WHERE project_id = ? AND material_id = ?",
+            (project_id, material_id),
+        )
+    return {"project_id": project_id, "material_id": material_id, "cleared": True}
+
+
 # ── reads ────────────────────────────────────────────────────────────────────
 
 # Every read joins projects, so row_to_document always has the project columns.
@@ -654,7 +906,8 @@ def web_upload(
 # header fields a list needs are joined in rather than fetched per row.
 DOC_SELECT = """
 SELECT d.*, p.code AS project_code, p.name AS project_name,
-       h.vendor_name_raw, h.doc_number, h.po_number, h.total_value
+       h.vendor_name_raw, h.vendor_gstin, h.doc_number, h.po_number, h.total_value,
+       h.invoice_channel
   FROM documents d
   LEFT JOIN projects p    ON p.id = d.project_id
   LEFT JOIN doc_headers h ON h.document_id = d.id
@@ -701,6 +954,350 @@ def get_document(document_id: str):
         "header": dict(header) if header else None,
         "lines": [dict(line) for line in lines],
     }
+
+
+@app.delete("/api/v1/documents/{document_id}")
+def delete_document(document_id: str):
+    """Removes one document — any type (PO, invoice, delivery challan, inward
+    report, quotation-as-document, other, unclassified). Irreversible; the
+    caller is expected to have already confirmed with a person.
+
+    duplicate_of has no ON DELETE clause, so a document that's currently the
+    site/office pair-match target for another one gets that pointer cleared
+    first — otherwise deleting it would violate that foreign key. The
+    now-unpaired copy is left alone; its own duplicate-diff banner just goes
+    back to showing nothing, same as any invoice with no matching copy.
+
+    Scanned image files on disk are removed too, best-effort — a failure to
+    unlink one (already gone, permissions) doesn't block the delete."""
+    with db.db() as con:
+        row = con.execute("SELECT file_paths FROM documents WHERE id = ?", (document_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "No such document")
+        file_paths = json.loads(row["file_paths"])
+        con.execute("UPDATE documents SET duplicate_of = NULL WHERE duplicate_of = ?", (document_id,))
+        con.execute("DELETE FROM doc_lines WHERE document_id = ?", (document_id,))
+        con.execute("DELETE FROM doc_headers WHERE document_id = ?", (document_id,))
+        con.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+
+    for path in file_paths:
+        try:
+            (BASE_DIR / path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    return {"deleted": document_id}
+
+
+def fetch_doc_lines_with_materials(con: sqlite3.Connection, document_id: str) -> list[sqlite3.Row]:
+    """doc_lines with the material's own name joined in — compare_document_lines
+    needs it for its report and does no DB access of its own."""
+    return con.execute(
+        "SELECT l.*, m.name AS material_name FROM doc_lines l"
+        " LEFT JOIN materials m ON m.id = l.material_id"
+        " WHERE l.document_id = ? ORDER BY l.line_no",
+        (document_id,),
+    ).fetchall()
+
+
+@app.get("/api/v1/documents/{document_id}/duplicate-diff")
+def duplicate_diff(document_id: str):
+    """Line-by-line comparison against this document's paired copy — same
+    vendor + document number, found by find_duplicate at extraction time and
+    stored as documents.duplicate_of. Typically the site and office copies
+    of the same delivery, billed twice through two different channels.
+
+    duplicate_of only ever points from the second upload back to the first
+    — find_duplicate runs once, at extraction time, against whatever already
+    exists. Reviewing the first-uploaded copy needs the reverse lookup, or
+    it would never show the warning the second copy gets."""
+    with db.db() as con:
+        row = con.execute(
+            "SELECT duplicate_of FROM documents WHERE id = ?", (document_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "No such document")
+        other_id = row["duplicate_of"]
+        if not other_id:
+            reverse = con.execute(
+                "SELECT id FROM documents WHERE duplicate_of = ? ORDER BY rowid LIMIT 1",
+                (document_id,),
+            ).fetchone()
+            other_id = reverse["id"] if reverse else None
+        if not other_id:
+            return {"duplicate_of": None}
+
+        other = con.execute(
+            "SELECT d.id AS document_id, h.doc_number, d.uploaded_at FROM documents d"
+            " LEFT JOIN doc_headers h ON h.document_id = d.id WHERE d.id = ?",
+            (other_id,),
+        ).fetchone()
+        lines_a = [dict(l) for l in fetch_doc_lines_with_materials(con, document_id)]
+        lines_b = [dict(l) for l in fetch_doc_lines_with_materials(con, other_id)]
+
+    diff = extract.compare_document_lines(lines_a, lines_b)
+    return diff | {"duplicate_of": other_id, "other_document": dict(other) if other else None}
+
+
+@app.get("/api/v1/documents/{po_document_id}/reconciliation")
+def po_reconciliation(po_document_id: str):
+    """For a PO document: every invoice, delivery challan and inward report
+    that references its number, grouped into deliveries (same vendor +
+    invoice number = one delivery, possibly billed twice — see
+    duplicate_diff), which of the four required documents a delivery is
+    still missing, its three-way verification against the PO's own lines.
+    See docs/PROJECT_PLAN.md §7 for the matching logic this is a scoped-down
+    version of.
+
+    A complete delivery has all four: a Site Invoice and a Vendor Invoice
+    (the same invoice, two copies — one to the site, one mailed straight to
+    the office; doc_headers.invoice_channel says which is which, since
+    nothing on the page itself does), a Delivery Challan, and an Inward
+    Report (the site's own record of what arrived — DELIVERY covers the
+    vendor's challan, INWARD covers this).
+
+    A delivery challan and an inward report don't carry the invoice number —
+    each carries its own number, which shows up on the invoice's own lines
+    as dc_number. That's the only thread connecting them to an invoice
+    group; one no invoice has claimed yet still gets its own group, by its
+    own number, rather than being silently dropped from the page.
+
+    Fulfillment is gated on a three-way match, not just "an invoice showed
+    up": a delivery's quantities only count toward the PO's delivered total
+    once its Site Invoice, Vendor Invoice and Inward Report all exist AND
+    agree on material, quantity and rate line for line — the Delivery
+    Challan isn't part of this specific check (it's usually unpriced, so
+    there's nothing to compare there beyond presence, already covered by
+    `missing`). A PO is fulfilled by several such deliveries over time (a
+    100 MT order arriving as 50 today, 50 next week), each independently
+    three-way-verified and summed — never by trusting one invoice's say-so.
+    A delivery that hasn't cleared the check contributes nothing to
+    delivered_qty; its claimed quantity (site copy's, falling back to
+    vendor's, then inward's — whichever exists first) is reported separately
+    as pending_qty, so it's still visible without silently counting as
+    received."""
+    with db.db() as con:
+        po_raw = con.execute(DOC_SELECT + " WHERE d.id = ?", (po_document_id,)).fetchone()
+        if po_raw is None:
+            raise HTTPException(404, "No such document")
+        po_row = row_to_document(po_raw)
+        if po_row["document_type"] != "PO":
+            raise HTTPException(400, "Reconciliation is only meaningful for a PO document")
+
+        po_lines = [dict(l) for l in fetch_doc_lines_with_materials(con, po_document_id)]
+
+        related = [
+            row_to_document(r) for r in con.execute(
+                DOC_SELECT + " WHERE d.document_type IN ('INVOICE', 'DELIVERY', 'INWARD')"
+                " AND d.project_id = ? AND h.po_number = ?",
+                (po_row["project_id"], po_row["doc_number"]),
+            ).fetchall()
+        ]
+        invoices = [d for d in related if d["document_type"] == "INVOICE"]
+        notes = [d for d in related if d["document_type"] == "DELIVERY"]
+        inward = [d for d in related if d["document_type"] == "INWARD"]
+
+        # One delivery = same vendor GSTIN + invoice number — exactly what
+        # find_duplicate already treats as "the same document, different
+        # scan" at extraction time.
+        def new_group(doc_number, vendor_name):
+            return {
+                "doc_number": doc_number, "vendor_name": vendor_name,
+                "invoices": [], "notes": [], "inward": [],
+            }
+
+        groups: dict[tuple, dict] = {}
+        for inv in invoices:
+            key = (inv["vendor_gstin"] or "", inv["doc_number"] or inv["document_id"])
+            g = groups.setdefault(key, new_group(key[1], inv["vendor_name"]))
+            g["invoices"].append(inv)
+
+        # Fold delivery challans and inward reports in via the dc_number an
+        # invoice line names — built from whichever invoices are already
+        # grouped, before one with no claimant yet falls back to its own
+        # standalone group.
+        dc_to_key: dict[str, tuple] = {}
+        for key, g in groups.items():
+            for inv in g["invoices"]:
+                for line in fetch_doc_lines_with_materials(con, inv["document_id"]):
+                    if line["dc_number"]:
+                        dc_to_key[line["dc_number"]] = key
+
+        for slot, docs_of_type in (("notes", notes), ("inward", inward)):
+            for d in docs_of_type:
+                key = dc_to_key.get(d["doc_number"])
+                if key is None:
+                    key = (d["vendor_gstin"] or "", d["doc_number"] or d["document_id"])
+                    groups.setdefault(key, new_group(key[1], d["vendor_name"]))
+                groups[key][slot].append(d)
+
+        deliveries = []
+        delivered_by_material: dict[str, dict] = {}
+        pending_by_material: dict[str, dict] = {}
+        for g in groups.values():
+            g["invoices"].sort(key=lambda d: d["uploaded_at"])
+            g["notes"].sort(key=lambda d: d["uploaded_at"])
+            g["inward"].sort(key=lambda d: d["uploaded_at"])
+
+            # The four documents a complete delivery needs. Site/Vendor is
+            # read off invoice_channel, not upload order — a reviewer sets it
+            # (see extract.mark_approved), since nothing on the page says
+            # which copy is which. An invoice with no channel set yet (an
+            # older document, or one still mid-review) satisfies neither.
+            site_invoice = next((inv for inv in g["invoices"] if inv["invoice_channel"] == "SITE"), None)
+            vendor_invoice = next((inv for inv in g["invoices"] if inv["invoice_channel"] == "VENDOR"), None)
+            inward_report = g["inward"][0] if g["inward"] else None
+
+            missing = []
+            if site_invoice is None:
+                missing.append("Site Invoice")
+            if vendor_invoice is None:
+                missing.append("Vendor Invoice")
+            if not g["notes"]:
+                missing.append("Delivery Challan")
+            if inward_report is None:
+                missing.append("Inward Report")
+
+            def lines_of(doc):
+                return [dict(l) for l in fetch_doc_lines_with_materials(con, doc["document_id"])]
+
+            # Fulfillment is a three-way match, not "an invoice showed up" —
+            # Site Invoice, Vendor Invoice and Inward Report all have to
+            # exist AND agree line for line on material, quantity and rate
+            # before this delivery's quantities count toward the PO at all.
+            # The Delivery Challan isn't part of this specific check (see
+            # the function docstring) — its presence is covered by `missing`
+            # above only.
+            missing_for_match = [
+                label for label, doc in (
+                    ("Site Invoice", site_invoice), ("Vendor Invoice", vendor_invoice),
+                    ("Inward Report", inward_report),
+                ) if doc is None
+            ]
+
+            site_lines = lines_of(site_invoice) if site_invoice else None
+            vendor_lines = lines_of(vendor_invoice) if vendor_invoice else None
+            inward_lines = lines_of(inward_report) if inward_report else None
+
+            if missing_for_match:
+                status, match_diffs = "incomplete", None
+            else:
+                match_diffs = {
+                    "site_vs_vendor": extract.compare_document_lines(site_lines, vendor_lines),
+                    "site_vs_inward": extract.compare_document_lines(site_lines, inward_lines),
+                    "vendor_vs_inward": extract.compare_document_lines(vendor_lines, inward_lines),
+                }
+                status = "verified" if all(d["clean"] for d in match_diffs.values()) else "mismatch"
+
+            verification = {
+                "status": status,                    # "verified" | "incomplete" | "mismatch"
+                "missing_for_match": missing_for_match,
+                "diffs": match_diffs,
+                "site_invoice_document_id": site_invoice["document_id"] if site_invoice else None,
+                "vendor_invoice_document_id": vendor_invoice["document_id"] if vendor_invoice else None,
+                "inward_document_id": inward_report["document_id"] if inward_report else None,
+            }
+
+            # Verified deliveries feed delivered_qty (what actually counts
+            # against the PO); anything else — missing a document, or the
+            # three disagreeing — feeds pending_qty instead, so a claimed
+            # amount is still visible without ever being trusted as received.
+            # The claimed amount itself, when unverified, is whichever of
+            # the three exists first in Site > Vendor > Inward priority —
+            # there's no single correct number to show when they disagree,
+            # so this is a stated "best guess," not a reconciled figure.
+            if status == "verified":
+                pool, rep_id, rep_lines = delivered_by_material, site_invoice["document_id"], site_lines
+            elif site_invoice:
+                pool, rep_id, rep_lines = pending_by_material, site_invoice["document_id"], site_lines
+            elif vendor_invoice:
+                pool, rep_id, rep_lines = pending_by_material, vendor_invoice["document_id"], vendor_lines
+            elif inward_report:
+                pool, rep_id, rep_lines = pending_by_material, inward_report["document_id"], inward_lines
+            else:
+                pool, rep_id, rep_lines = pending_by_material, None, None
+
+            if rep_lines:
+                rep_by_material, _ = extract.aggregate_by_material(rep_lines)
+                for material_id, entry in rep_by_material.items():
+                    total = pool.setdefault(
+                        material_id,
+                        {"material_id": material_id, "material_name": entry["material_name"],
+                         "unit": entry.get("unit"), "qty": 0.0, "entries": []},
+                    )
+                    if not total["unit"]:
+                        total["unit"] = entry.get("unit")
+                    total["qty"] += entry["qty"]
+                    total["entries"].append({
+                        "document_id": rep_id,
+                        "doc_number": g["doc_number"],
+                        "vendor_name": g["vendor_name"],
+                        "quantity": entry["qty"],
+                        "status": status,
+                    })
+
+            documents = [
+                {"document_id": d["document_id"], "document_type": "INVOICE",
+                 "invoice_channel": d["invoice_channel"],
+                 "status": d["status"], "uploaded_at": d["uploaded_at"]}
+                for d in g["invoices"]
+            ] + [
+                {"document_id": d["document_id"], "document_type": "DELIVERY",
+                 "status": d["status"], "uploaded_at": d["uploaded_at"]}
+                for d in g["notes"]
+            ] + [
+                {"document_id": d["document_id"], "document_type": "INWARD",
+                 "status": d["status"], "uploaded_at": d["uploaded_at"]}
+                for d in g["inward"]
+            ]
+
+            deliveries.append({
+                "doc_number": g["doc_number"],
+                "vendor_name": g["vendor_name"],
+                "documents": documents,
+                "missing": missing,
+                "verification": verification,
+                # Kept for the FE's existing "Mismatch" pill — true only for
+                # an actual disagreement, not for a still-incomplete delivery.
+                "mismatch": status == "mismatch",
+            })
+
+    po_by_material, _ = extract.aggregate_by_material(po_lines)
+    # Every material this PO ordered, plus every material any delivery
+    # (verified or still pending) has claimed against it — a material billed
+    # but never actually on the PO is still worth surfacing, not silently
+    # dropped for having no ordered_qty to compare against.
+    all_material_ids = set(po_by_material) | set(delivered_by_material) | set(pending_by_material)
+
+    materials = []
+    for material_id in all_material_ids:
+        po_entry = po_by_material.get(material_id)
+        delivered_entry = delivered_by_material.get(material_id)
+        pending_entry = pending_by_material.get(material_id)
+        ordered = po_entry["qty"] if po_entry else 0.0
+        delivered = delivered_entry["qty"] if delivered_entry else 0.0
+        pending = pending_entry["qty"] if pending_entry else 0.0
+        name = (po_entry or delivered_entry or pending_entry)["material_name"]
+        unit = (po_entry or delivered_entry or pending_entry).get("unit")
+        materials.append({
+            "material_id": material_id,
+            "material_name": name,
+            "unit": unit,
+            "ordered_qty": ordered,
+            "delivered_qty": delivered,
+            "pending_qty": pending,
+            "remaining_qty": round(ordered - delivered, 3),
+            "over_delivered": delivered > ordered,
+            "po_entries": (
+                [{"doc_number": po_row["doc_number"], "quantity": ordered}] if po_entry else []
+            ),
+            "invoice_entries": (
+                (delivered_entry["entries"] if delivered_entry else [])
+                + (pending_entry["entries"] if pending_entry else [])
+            ),
+        })
+
+    return {"materials": materials, "deliveries": deliveries}
 
 
 @app.post("/api/v1/documents/{document_id}/extract")
@@ -763,10 +1360,35 @@ def approve_document(document_id: str, body: dict):
     with db.db() as con:
         if not extract.mark_approved(con, document_id, approved_by):
             row = con.execute(
-                "SELECT status FROM documents WHERE id = ?", (document_id,)
+                "SELECT d.status, d.document_type, h.po_number, h.invoice_channel FROM documents d"
+                " LEFT JOIN doc_headers h ON h.document_id = d.id WHERE d.id = ?",
+                (document_id,),
             ).fetchone()
             if row is None:
                 raise HTTPException(404, "No such document")
+            doc_type, waiting = row["document_type"], row["status"] == "EXTRACTED"
+            if waiting and doc_type == "UNCLASSIFIED":
+                raise HTTPException(
+                    400, "Document type could not be read automatically — pick one before approving"
+                )
+            if waiting and doc_type == "OTHER":
+                raise HTTPException(
+                    400,
+                    "OTHER isn't a real document type — pick Invoice, PO, Delivery, Quotation or "
+                    "Inward Report before approving, or reject it if none of those genuinely fit",
+                )
+            if waiting and doc_type in ("INVOICE", "DELIVERY", "INWARD") and not (row["po_number"] or "").strip():
+                raise HTTPException(
+                    400,
+                    "This document has no PO number — enter the purchase order it belongs to "
+                    "before approving",
+                )
+            if waiting and doc_type == "INVOICE" and row["invoice_channel"] not in ("SITE", "VENDOR"):
+                raise HTTPException(
+                    400,
+                    "This invoice doesn't say whether it's the Site copy or the Vendor copy — "
+                    "pick one before approving",
+                )
             raise HTTPException(409, f"Cannot approve a document that is {row['status']}")
 
     return get_document(document_id)

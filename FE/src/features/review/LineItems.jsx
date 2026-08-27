@@ -2,8 +2,12 @@ import { LINE_FIELDS } from "./schema.js";
 import { inr } from "../../lib/format.js";
 
 /* The extracted line items. The material column is the important one: a bad
-   automatic match is corrected here, which is what teaches the alias table. */
-export function LineItems({ lines, materials, locked, onChange }) {
+   automatic match is corrected here, which is what teaches the alias table.
+
+   fields defaults to the document schema (LINE_FIELDS) — quote review passes
+   QUOTE_LINE_FIELDS instead, so the same table, material picker and locked/
+   editable Cell logic serve both without a second copy of any of it. */
+export function LineItems({ lines, materials, locked, onChange, fields = LINE_FIELDS }) {
   if (!lines.length) {
     return (
       <div className="field-section">
@@ -21,14 +25,14 @@ export function LineItems({ lines, materials, locked, onChange }) {
           <thead>
             <tr>
               <th>#</th>
-              {LINE_FIELDS.map((f) => <th key={f.key}>{f.label}</th>)}
+              {fields.map((f) => <th key={f.key}>{f.label}</th>)}
             </tr>
           </thead>
           <tbody>
             {lines.map((line) => (
               <tr key={line.line_no}>
                 <td className="num">{line.line_no}</td>
-                {LINE_FIELDS.map((field) => (
+                {fields.map((field) => (
                   <td key={field.key}>
                     <Cell
                       field={field}

@@ -12,14 +12,21 @@ schema, and the whole schema is ten tables — roughly 1.5k tokens — so the an
 to "which tables matter" is always "all of them".
 ponytail: send the whole DDL; index it if the schema ever passes ~40 tables.
 
-Groq serves an OpenAI-shaped API, so the `openai` package below is only the
-HTTP client — the credential and the model are Groq's. The OpenAI key this
-project uses for document extraction is deliberately not reachable from here.
+Groq and OpenAI both serve an OpenAI-shaped API, so the `openai` package below
+is only the HTTP client — which credential and base URL it points at is
+CHAT_PROVIDER's call. Defaults to reusing the same OPENAI_API_KEY the document
+reader already has configured, so a deployment with only an OpenAI key needs
+nothing extra to get the chat working; set CHAT_PROVIDER=groq (and
+GROQ_API_KEY) to go back to a separate, free-tier credential instead — useful
+if extraction is on Anthropic and this would otherwise be the only OpenAI
+spend in the project.
 
 Env overrides (main.py loads .env before importing this module):
-    GROQ_API_KEY    required
-    CHAT_MODEL      default: llama-3.3-70b-versatile
-    CHAT_BASE_URL   default: https://api.groq.com/openai/v1
+    CHAT_PROVIDER   "openai" or "groq"                  (default: openai)
+    OPENAI_API_KEY  required if CHAT_PROVIDER=openai     (same key extraction uses)
+    GROQ_API_KEY    required if CHAT_PROVIDER=groq
+    CHAT_MODEL      overrides the provider's own default (gpt-4o-mini / llama-3.3-70b-versatile)
+    CHAT_BASE_URL   overrides the provider's own default endpoint
 """
 
 from __future__ import annotations
@@ -46,8 +53,21 @@ class ModelUnavailable(RuntimeError):
     """The provider accepted the request but returned no completion."""
 
 
-BASE_URL = os.environ.get("CHAT_BASE_URL", "https://api.groq.com/openai/v1")
-MODEL = os.environ.get("CHAT_MODEL", "llama-3.3-70b-versatile")
+# base_url=None means "the openai package's own default" (api.openai.com) —
+# passing it explicitly here anyway would work too, but None is what the SDK
+# itself treats as "use the default", so this stays exactly one code path
+# rather than an if/else between "pass a URL" and "don't".
+_CHAT_PROVIDERS = {
+    "openai": {"key_env": "OPENAI_API_KEY", "base_url": None, "model": "gpt-4o-mini"},
+    "groq": {"key_env": "GROQ_API_KEY", "base_url": "https://api.groq.com/openai/v1",
+              "model": "llama-3.3-70b-versatile"},
+}
+
+CHAT_PROVIDER = os.environ.get("CHAT_PROVIDER", "openai").strip().lower()
+_PROVIDER_CFG = _CHAT_PROVIDERS.get(CHAT_PROVIDER, _CHAT_PROVIDERS["openai"])
+
+BASE_URL = os.environ.get("CHAT_BASE_URL", _PROVIDER_CFG["base_url"])
+MODEL = os.environ.get("CHAT_MODEL", _PROVIDER_CFG["model"])
 
 MAX_ROWS = 200          # never fetchall() — one bad GROUP BY should not fill a response
 QUERY_TIMEOUT = 5.0     # seconds before an accidental cartesian join is aborted
@@ -61,15 +81,13 @@ def _client():
         raise EngineNotConfigured(
             "The openai package is not installed — pip install -r requirements.txt"
         )
-    # Only GROQ_API_KEY. The extraction key is not consulted here, on purpose:
-    # the chat and the document reader stay on separate credentials.
-    key = os.environ.get("GROQ_API_KEY")
+    key = os.environ.get(_PROVIDER_CFG["key_env"])
     if not key:
         raise EngineNotConfigured(
-            "No Groq credentials found. Set GROQ_API_KEY in Backend/.env and "
-            "restart the server."
+            f"No {_PROVIDER_CFG['key_env']} found. Set it in Backend/.env and restart "
+            "the server — or set CHAT_PROVIDER to switch which credential this reads."
         )
-    return openai.OpenAI(base_url=BASE_URL, api_key=key)
+    return openai.OpenAI(base_url=BASE_URL, api_key=key) if BASE_URL else openai.OpenAI(api_key=key)
 
 
 # ── the read-only connection ─────────────────────────────────────────────────

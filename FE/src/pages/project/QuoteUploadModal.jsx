@@ -4,25 +4,19 @@ import { IconUpload } from "../../components/Icons.jsx";
 import { api } from "../../lib/api.js";
 import { ALLOWED_UPLOAD_RE, kb } from "../../lib/format.js";
 
-/* Browser intake: loose files against a project, and a site when the project
-   has any — otherwise the document lands unfiled and nothing can group it.
-
-   No document-type hint from here — the classifier reads every upload itself
-   (see extract.py's SYSTEM prompt), and a wrong hint from a human filing it
-   as the wrong kind is worse than no hint at all.
-
-   Upload used to fire-and-forget: close this dialog, show a toast, and leave
-   extraction to finish silently in the background. It doesn't anymore — the
-   moment the upload succeeds, this closes and hands the new document ids
-   back so the caller can open each one straight into Review, the same way
-   clicking an existing document does. Review's own polling already covers
-   the "extraction is still running" wait, so nothing here needs to. */
-export function UploadModal({ project, onClose, onUploaded }) {
-  const sites = project.sites ?? [];
-  const [siteId, setSiteId] = useState(sites[0]?.id ?? "");
+/* One vendor, one quotation, always — a vendor doesn't send several
+   quotations, so every file picked here becomes its own quotation upload,
+   whether there's one file or ten. A multi-page quotation from a single
+   vendor is one PDF file (its pages render server-side, unchanged), not
+   several separate image files — the ambiguous case that used to prompt a
+   choice here was several *photos*, and in practice that's always been
+   different vendors' letters photographed in one go, never one vendor's
+   letter split across loose photos. */
+export function QuoteUploadModal({ project, onClose, onUploaded }) {
   const [picked, setPicked] = useState([]);
   const [over, setOver] = useState(false);
   const [err, setErr] = useState("");
+  const [ok, setOk] = useState("");
   const [busy, setBusy] = useState(false);
   const fileInput = useRef(null);
 
@@ -45,20 +39,37 @@ export function UploadModal({ project, onClose, onUploaded }) {
     if (!picked.length) return;
     setBusy(true);
     setErr("");
+    setOk("");
     try {
-      const result = await api.uploadFiles({ projectId: project.id, siteId, files: picked });
-      const ids = (result.documents ?? []).map((d) => d.document_id);
-      onUploaded(ids);
-      onClose();
+      const results = await Promise.allSettled(
+        picked.map((f) => api.uploadQuotation({ projectId: project.id, files: [f] }))
+      );
+      const failed = results.filter((r) => r.status === "rejected");
+      if (failed.length === picked.length) {
+        setErr(`Upload failed — ${failed[0].reason?.message ?? "unknown error"}. Nothing was saved; try again.`);
+      } else {
+        setOk(
+          failed.length
+            ? `${picked.length - failed.length} of ${picked.length} quotations uploaded — ${failed.length} failed`
+              + ` (${failed[0].reason?.message ?? "unknown error"}). Reading the rest now.`
+            : picked.length > 1
+              ? `${picked.length} quotations uploaded. Reading them now — this updates automatically below.`
+              : "Quotation uploaded. Reading it now — this updates automatically below."
+        );
+        setPicked([]);
+        if (fileInput.current) fileInput.current.value = "";
+      }
+      await onUploaded();
     } catch (e) {
       setErr(`Upload failed — ${e.message}. Nothing was saved; try again.`);
+    } finally {
       setBusy(false);
     }
   };
 
   return (
     <Modal
-      title="Upload files"
+      title="Upload quotation"
       subtitle={`${project.code} — ${project.name}`}
       onClose={onClose}
       footer={
@@ -68,23 +79,13 @@ export function UploadModal({ project, onClose, onUploaded }) {
           <button className="btn btn-ink" onClick={send} disabled={busy || !picked.length}>
             {busy
               ? "Uploading…"
-              : picked.length > 1 ? `Upload ${picked.length} files` : "Upload"}
+              : picked.length > 1 ? `Upload ${picked.length} quotations` : "Upload"}
           </button>
         </>
       }
     >
       {err ? <div className="banner banner-err">{err}</div> : null}
-
-      {sites.length ? (
-        <div className="form" style={{ marginBottom: 24 }}>
-          <label>
-            <span>Site</span>
-            <select className="input" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
-              {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </label>
-        </div>
-      ) : null}
+      {ok ? <div className="banner banner-ok">{ok}</div> : null}
 
       <div
         className={`drop ${over ? "over" : ""}`}
@@ -102,8 +103,8 @@ export function UploadModal({ project, onClose, onUploaded }) {
         <IconUpload width={26} height={26} />
         <div className="t">Choose files</div>
         <div className="d">
-          Photos or PDFs of invoices, purchase orders and delivery challans. Drag them here or
-          click to browse — the document type is read automatically.
+          A photo or PDF per vendor — pick several at once to upload that many quotations, one
+          per file. Vendor, rates and grades are read automatically.
         </div>
       </div>
 

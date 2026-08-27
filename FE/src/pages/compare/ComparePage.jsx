@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
-import { StatusPill } from "../../components/Pills.jsx";
-import { IconArrow, IconBack } from "../../components/Icons.jsx";
+import { Fragment, useCallback, useEffect, useState } from "react";
+import { StatusPill, TypePill } from "../../components/Pills.jsx";
+import { IconArrow, IconBack, IconChevron, IconTrash } from "../../components/Icons.jsx";
 import { HeaderFields } from "../../features/review/HeaderFields.jsx";
 import { LineItems } from "../../features/review/LineItems.jsx";
 import { HEADER_KEYS, LINE_FIELDS } from "../../features/review/schema.js";
 import { api } from "../../lib/api.js";
 import { go } from "../../lib/useHashRoute.js";
-import { isLocked, isWaiting, money, shortDate } from "../../lib/format.js";
+import { isLocked, isWaiting, money, qty, shortDate } from "../../lib/format.js";
 
 const blank = (v) => (typeof v === "string" && v.trim() === "" ? null : v === "" ? null : v);
 
@@ -23,6 +23,256 @@ function buildEdits(draft) {
   return { header, lines };
 }
 
+/* This PO's own materials against what's actually turned up across its
+   deliveries — same Material/Unit/Ordered/Delivered shape as the project's
+   own Materials rollup (MaterialsRollup.jsx), just scoped to one PO's lines
+   and fed by the server-computed reconciliation instead of a client-side sum
+   across every INVOICE in the project (which would double-count a site and
+   office copy of the same delivery — the reconciliation endpoint already
+   dedupes that per delivery group). */
+function PoMaterialsSection({ materials, loading, onOpenDocument }) {
+  const [open, setOpen] = useState(() => new Set());
+
+  if (loading) {
+    return <div className="card"><div className="empty">Reading line items…</div></div>;
+  }
+  if (!materials?.length) {
+    return (
+      <div className="card">
+        <div className="empty">No materials on this PO yet — they appear once it's been read.</div>
+      </div>
+    );
+  }
+
+  const deliveredClass = (m) => {
+    if (!m.ordered_qty) return "";
+    if (m.delivered_qty >= m.ordered_qty) return "ok";
+    if (m.delivered_qty > 0) return "warn";
+    return "mute";
+  };
+
+  const toggle = (key) => setOpen((prev) => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
+
+  return (
+    <div className="card">
+      <div className={`table-wrap rollup-wrap ${materials.length > 12 ? "is-tall" : ""}`}>
+        <table className="data rollup">
+          <colgroup>
+            <col />
+            <col style={{ width: "11ch" }} />
+            <col style={{ width: "13ch" }} />
+            <col style={{ width: "13ch" }} />
+            <col style={{ width: "13ch" }} />
+            <col style={{ width: "13ch" }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Material</th>
+              <th>Unit</th>
+              <th className="right">Ordered</th>
+              <th className="right">Delivered</th>
+              <th className="right">Pending</th>
+              <th className="right">Remaining</th>
+            </tr>
+          </thead>
+          <tbody>
+            {materials.map((m) => {
+              const isOpen = open.has(m.material_id);
+              return (
+                <Fragment key={m.material_id}>
+                  <tr>
+                    <td className="c-mat" title={m.material_name}>
+                      <div className="rollup-mat-cell">
+                        <button
+                          className={`rollup-toggle ${isOpen ? "is-open" : ""}`}
+                          type="button"
+                          onClick={() => toggle(m.material_id)}
+                          aria-expanded={isOpen}
+                          aria-label={`${isOpen ? "Hide" : "Show"} order and delivery breakdown for ${m.material_name ?? "this material"}`}
+                        >
+                          <IconChevron width={16} height={16} />
+                        </button>
+                        <span>{m.material_name ?? "Unrecognised material"}</span>
+                      </div>
+                    </td>
+                    <td className="c-unit">{m.unit ?? "—"}</td>
+                    <td className="num strong">{m.ordered_qty ? qty(m.ordered_qty) : "—"}</td>
+                    <td className={`num strong ${deliveredClass(m)}`}>
+                      {m.delivered_qty ? qty(m.delivered_qty) : "—"}
+                      {m.over_delivered ? " ⚠" : ""}
+                    </td>
+                    {/* Claimed by a delivery whose Site Invoice, Vendor
+                        Invoice and Inward Report haven't all agreed yet —
+                        not counted above, not silently dropped either. */}
+                    <td className="num mute">{m.pending_qty ? qty(m.pending_qty) : "—"}</td>
+                    <td className={`num strong ${m.remaining_qty < 0 ? "is-over" : ""}`}>
+                      {qty(Math.abs(m.remaining_qty))}{m.remaining_qty < 0 ? " over" : ""}
+                    </td>
+                  </tr>
+
+                  {isOpen ? (
+                    <tr className="rollup-detail">
+                      <td colSpan={6}>
+                        <div className="rollup-breakdown">
+                          <div>
+                            <h4>Purchase order</h4>
+                            {m.po_entries?.length ? (
+                              <ul>
+                                {m.po_entries.map((e, i) => (
+                                  <li key={i}>
+                                    <span>{e.doc_number}</span>
+                                    <span className="qty">{qty(e.quantity)} {m.unit}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <div className="empty-mini">Not on this PO — delivered against it anyway.</div>
+                            )}
+                          </div>
+                          <div>
+                            <h4>Deliveries</h4>
+                            {m.invoice_entries?.length ? (
+                              <ul>
+                                {m.invoice_entries.map((e, i) => (
+                                  <li key={i}>
+                                    <button
+                                      type="button"
+                                      className="link-btn"
+                                      onClick={() => onOpenDocument?.(e.document_id)}
+                                    >
+                                      {e.doc_number}{e.vendor_name ? ` — ${e.vendor_name}` : ""}
+                                    </button>
+                                    <span className="qty">
+                                      {qty(e.quantity)} {m.unit}
+                                      {e.status !== "verified" ? " · pending" : ""}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <div className="empty-mini">No delivery has claimed this material yet.</div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* The three-way match's verdict, worn right on the delivery row — verified
+   is deliberately shown too, not just the problem states, since it's what
+   actually makes a delivery's quantity count toward the PO (see
+   po_reconciliation's docstring in main.py). */
+function VerificationPill({ status }) {
+  if (status === "verified") return <span className="pill s-approved">Verified</span>;
+  if (status === "mismatch") return <span className="pill s-rejected">Mismatch</span>;
+  return <span className="pill s-pending">Awaiting verification</span>;
+}
+
+/* One delivery's diff line between two named documents — labelA/labelB are
+   "Site Invoice", "Vendor Invoice" or "Inward Report", now that
+   invoice_channel means the app actually knows which is which, rather than
+   the generic "first copy"/"second copy" a plain duplicate-scan comparison
+   has to settle for. */
+function describeDiffLine(l, labelA, labelB) {
+  const name = l.material_name ?? "Unrecognised material";
+  if (l.qty_a == null) {
+    return `${name} — not on ${labelA} (${labelB} has ${qty(l.qty_b)} @ ${money(l.rate_b)})`;
+  }
+  if (l.qty_b == null) {
+    return `${name} — not on ${labelB} (${labelA} has ${qty(l.qty_a)} @ ${money(l.rate_a)})`;
+  }
+  return `${name} — ${labelA}: ${qty(l.qty_a)} @ ${money(l.rate_a)}, ${labelB}: ${qty(l.qty_b)} @ ${money(l.rate_b)}`;
+}
+
+/* Same slot the PO tab uses for the scanned image — here it's the thing a
+   reviewer actually needs while looking at a list of deliveries: which ones
+   disagree with themselves. Missing documents and "not verified yet" are
+   both shown elsewhere (the delivery's own "Missing documents:" line and
+   its Verified/Awaiting verification/Mismatch pill in the list to the
+   left) — this panel is only for an actual disagreement: all three of
+   Site Invoice, Vendor Invoice and Inward Report exist but don't match on
+   material, quantity or rate. Each disagreeing pair (site vs vendor, site
+   vs inward, vendor vs inward) gets its own block, named by which two
+   documents disagree. */
+function DeliveryIssuesPanel({ deliveries, loading, onOpenDocument }) {
+  if (loading) {
+    return <div className="card compare-links"><div className="empty-mini">Loading…</div></div>;
+  }
+
+  const flagged = (deliveries ?? []).filter((d) => d.verification.status === "mismatch");
+
+  return (
+    <div className="card compare-links">
+      <h3>Issues</h3>
+      {!flagged.length ? (
+        <div className="empty-mini">
+          {deliveries?.length
+            ? "No mismatches — every Site Invoice, Vendor Invoice and Inward Report checked so far agree."
+            : "Nothing to check yet."}
+        </div>
+      ) : (
+        flagged.map((delivery) => {
+          const v = delivery.verification;
+          const pairs = [
+            ["site_vs_vendor", "Site Invoice", "Vendor Invoice", v.site_invoice_document_id, v.vendor_invoice_document_id],
+            ["site_vs_inward", "Site Invoice", "Inward Report", v.site_invoice_document_id, v.inward_document_id],
+            ["vendor_vs_inward", "Vendor Invoice", "Inward Report", v.vendor_invoice_document_id, v.inward_document_id],
+          ].filter(([key]) => !v.diffs[key].clean);
+
+          return (
+            <div key={delivery.doc_number} className="delivery-issue">
+              <div className="delivery-issue-head">
+                <span className="compare-link-num">{delivery.doc_number}</span>
+                <span className="compare-link-meta">{delivery.vendor_name ?? "Vendor not read"}</span>
+              </div>
+              {pairs.map(([key, labelA, labelB, idA, idB]) => {
+                const diff = v.diffs[key];
+                const badLines = (diff.lines ?? []).filter((l) => !l.match);
+                return (
+                  <div key={key}>
+                    <p className="delivery-issue-lead">
+                      <button type="button" className="link-btn" onClick={() => onOpenDocument(idA)}>
+                        {labelA}
+                      </button>
+                      {" and "}
+                      <button type="button" className="link-btn" onClick={() => onOpenDocument(idB)}>
+                        {labelB}
+                      </button>
+                      {" disagree:"}
+                    </p>
+                    <ul className="delivery-issue-lines">
+                      {badLines.map((l) => <li key={l.material_id}>{describeDiffLine(l, labelA, labelB)}</li>)}
+                      {(diff.unmatched_a ?? []).map((l, i) => (
+                        <li key={`ua-${i}`}>Unrecognised line on {labelA} — "{l.description_raw}"</li>
+                      ))}
+                      {(diff.unmatched_b ?? []).map((l, i) => (
+                        <li key={`ub-${i}`}>Unrecognised line on {labelB} — "{l.description_raw}"</li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 /* The PO is why this page was opened — it keeps the full width and its full
    edit/approve/reject workflow. The scanned page and whatever invoices
    already carry its number are supporting material, not equal billing: a
@@ -30,19 +280,29 @@ function buildEdits(draft) {
    its own full review, not reproduced here — a summary line is what's needed
    to recognise it, not its whole line-item table a second time.
 
-   Matching is a direct po_number == this PO's own doc_number lookup, not
-   the fuller materials/qty/price reconciliation described in
-   docs/PROJECT_PLAN.md Phase 3 — that engine doesn't exist yet, so this
-   shows what can honestly be shown today: which invoices already claim
-   this PO, for a human to open and compare. */
+   The reconciliation itself — materials/qty delivered-so-far against what
+   was ordered, and each delivery's site/office cross-check — comes from
+   GET .../reconciliation (see main.py), computed server-side against the
+   same po_number == this PO's own doc_number match this page always used;
+   `matches` below is only the fallback while that call is still loading. */
 export function ComparePage({ documentId, docs, materials, onOpenDocument, reload }) {
+  const [section, setSection] = useState("po");
   const [po, setPo] = useState(null);
   const [draft, setDraft] = useState(null);
+  const [recon, setRecon] = useState(null);
   const [reviewer, setReviewer] = useState(() => localStorage.getItem("reviewerName") ?? "");
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmingDeletePo, setConfirmingDeletePo] = useState(false);
+  const [deletingPo, setDeletingPo] = useState(false);
+  // Which document, or which whole delivery (by its doc_number), is mid
+  // delete-confirmation in the Delivery info tab — at most one at a time,
+  // so confirming one doesn't leave a stray "are you sure" open elsewhere.
+  const [confirmingDeleteDoc, setConfirmingDeleteDoc] = useState(null);
+  const [confirmingDeleteDelivery, setConfirmingDeleteDelivery] = useState(null);
+  const [deletingKey, setDeletingKey] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +328,20 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
       lines: (po.lines ?? []).map((l) => ({ ...l })),
     });
   }, [po]);
+
+  const reloadRecon = useCallback(async () => {
+    const fresh = await api.getPoReconciliation(documentId).catch(() => null);
+    setRecon(fresh);
+  }, [documentId]);
+
+  /* Only meaningful once the PO itself has actually been read — reruns
+     whenever docs changes (an invoice being uploaded, extracted, or edited
+     all move that list), so a newly-matched invoice shows up without
+     needing its own poll loop. */
+  useEffect(() => {
+    if (!po || isWaiting(po)) return;
+    reloadRecon();
+  }, [po, docs, reloadRecon]);
 
   const setHeader = (key, value) => setDraft((d) => ({ ...d, header: { ...d.header, [key]: value } }));
   const setLine = (lineNo, key, value) =>
@@ -115,6 +389,51 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
     reload();
   };
 
+  const deletePo = async () => {
+    setDeletingPo(true);
+    try {
+      await api.deleteDocument(documentId);
+      reload();
+      go(`/project/${po.project_id}`);
+    } catch (e) {
+      setErr(`Could not delete — ${e.message}`);
+      setDeletingPo(false);
+    }
+  };
+
+  /* One document out of a delivery — a wrong upload, most often. Removing
+     it never touches the others in its group; the delivery just goes back
+     to missing whichever slot that document filled. */
+  const deleteOneDoc = async (docId) => {
+    setDeletingKey(docId);
+    try {
+      await api.deleteDocument(docId);
+      setConfirmingDeleteDoc(null);
+      await reloadRecon();
+      reload();
+    } catch (e) {
+      setErr(`Could not delete — ${e.message}`);
+    } finally {
+      setDeletingKey(null);
+    }
+  };
+
+  /* The whole delivery at once — every document currently grouped under it
+     (invoices, challan, inward report alike). */
+  const deleteDelivery = async (delivery) => {
+    setDeletingKey(delivery.doc_number);
+    try {
+      await Promise.all(delivery.documents.map((d) => api.deleteDocument(d.document_id)));
+      setConfirmingDeleteDelivery(null);
+      await reloadRecon();
+      reload();
+    } catch (e) {
+      setErr(`Could not delete — ${e.message}`);
+    } finally {
+      setDeletingKey(null);
+    }
+  };
+
   if (!po) {
     return <div className="band"><div className="col"><div className="empty">Loading…</div></div></div>;
   }
@@ -144,6 +463,15 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
             </div>
             <div className="spacer" />
             <StatusPill status={po.status} />
+            <button
+              className="btn btn-out btn-sm"
+              type="button"
+              onClick={() => setConfirmingDeletePo(true)}
+              style={{ marginLeft: 10 }}
+            >
+              <IconTrash width={16} height={16} />
+              Delete
+            </button>
           </div>
 
           <div className="phead-meta">
@@ -157,12 +485,49 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
               </>
             ) : null}
           </div>
+
+          {confirmingDeletePo ? (
+            <div className="banner banner-err" style={{ marginTop: 16 }}>
+              <div>
+                Delete this PO ({po.doc_number ?? po.document_id})? This doesn't remove the
+                invoices, challans or inward reports referencing it — only the PO document
+                itself. This can't be undone.
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                <button className="btn btn-signal btn-sm" type="button" onClick={deletePo} disabled={deletingPo}>
+                  {deletingPo ? "Deleting…" : "Delete PO"}
+                </button>
+                <button
+                  className="btn btn-out btn-sm"
+                  type="button"
+                  onClick={() => setConfirmingDeletePo(false)}
+                  disabled={deletingPo}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
 
-        <div className="section-head" style={{ marginTop: 28 }}>
-          <span className="eyebrow">Overview</span>
+        <div className="ptabs">
+          {[
+            { id: "po", label: "PO" },
+            { id: "delivery", label: `Delivery info${recon?.deliveries?.length ? ` (${recon.deliveries.length})` : ""}` },
+            { id: "materials", label: "Materials" },
+          ].map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              aria-current={section === t.id}
+              onClick={() => setSection(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
+        {section === "po" ? (
         <div className="compare-layout">
           <div className="card compare-main">
             {isWaiting(po) ? (
@@ -237,36 +602,132 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
                 </a>
               ))}
             </div>
-
-            <div className="card compare-links">
-              <h3>{matches.length ? `Matching invoice${matches.length === 1 ? "" : "s"}` : "Matching invoice"}</h3>
-
-              {matches.length ? matches.map((inv) => (
-                <button
-                  key={inv.document_id}
-                  className="compare-link-row"
-                  type="button"
-                  onClick={() => onOpenDocument(inv.document_id)}
-                >
-                  <div className="compare-link-main">
-                    <div className="compare-link-num">{inv.doc_number ?? inv.document_id.slice(0, 8)}</div>
-                    <div className="compare-link-meta">
-                      {inv.vendor_name ?? "Vendor not read"}
-                      {money(inv.total_value) ? ` · ${money(inv.total_value)}` : ""}
-                    </div>
-                  </div>
-                  <StatusPill status={inv.status} />
-                  <IconArrow width={16} height={16} />
-                </button>
-              )) : (
-                <div className="empty-mini">
-                  No invoice yet references PO {po.doc_number ?? "this document"} — once one is scanned and
-                  read, it will show up here automatically.
-                </div>
-              )}
-            </div>
           </div>
         </div>
+        ) : section === "delivery" ? (
+        <div className="compare-layout">
+          <div className="card compare-main">
+            <h3 style={{ padding: "var(--s3) var(--s3) 0" }}>
+              {recon?.deliveries?.length
+                ? `${recon.deliveries.length} deliver${recon.deliveries.length === 1 ? "y" : "ies"}`
+                : matches.length ? `Matching invoice${matches.length === 1 ? "" : "s"}` : "Deliveries"}
+            </h3>
+
+            {err ? (
+              <div className="banner banner-err" style={{ margin: "0 var(--s3) var(--s3)" }}>{err}</div>
+            ) : null}
+
+            {recon?.deliveries?.length ? recon.deliveries.map((delivery) => (
+              <div key={delivery.doc_number} className="compare-delivery">
+                <div className="compare-delivery-head">
+                  <span className="compare-link-num">{delivery.doc_number}</span>
+                  <span className="compare-link-meta">{delivery.vendor_name ?? "Vendor not read"}</span>
+                  <div className="spacer" />
+                  <VerificationPill status={delivery.verification.status} />
+                  {confirmingDeleteDelivery === delivery.doc_number ? (
+                    <span className="row-actions">
+                      Delete all {delivery.documents.length}?
+                      <button
+                        className="row-link warn"
+                        type="button"
+                        onClick={() => deleteDelivery(delivery)}
+                        disabled={deletingKey === delivery.doc_number}
+                      >
+                        {deletingKey === delivery.doc_number ? "…" : "Confirm"}
+                      </button>
+                      <button
+                        className="row-link"
+                        type="button"
+                        onClick={() => setConfirmingDeleteDelivery(null)}
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="compare-link-delete"
+                      aria-label="Delete this whole delivery"
+                      title="Delete every document in this delivery"
+                      onClick={() => setConfirmingDeleteDelivery(delivery.doc_number)}
+                    >
+                      <IconTrash width={15} height={15} />
+                    </button>
+                  )}
+                </div>
+                {delivery.missing?.length ? (
+                  <div className="compare-missing">
+                    Missing documents: {delivery.missing.join(", ")}
+                  </div>
+                ) : null}
+                {delivery.documents.map((d) => (
+                  <div key={d.document_id} className="compare-link-row">
+                    <button
+                      type="button"
+                      className="compare-link-open"
+                      onClick={() => onOpenDocument(d.document_id)}
+                    >
+                      <div className="compare-link-main">
+                        <div className="compare-link-meta">{shortDate(d.uploaded_at)}</div>
+                      </div>
+                      {d.invoice_channel ? (
+                        <span className="compare-link-meta">
+                          {d.invoice_channel === "SITE" ? "Site copy" : "Vendor copy"}
+                        </span>
+                      ) : null}
+                      <TypePill type={d.document_type} />
+                      <StatusPill status={d.status} />
+                      <IconArrow width={16} height={16} />
+                    </button>
+                    {confirmingDeleteDoc === d.document_id ? (
+                      <span className="row-actions">
+                        Delete?
+                        <button
+                          className="row-link warn"
+                          type="button"
+                          onClick={() => deleteOneDoc(d.document_id)}
+                          disabled={deletingKey === d.document_id}
+                        >
+                          {deletingKey === d.document_id ? "…" : "Confirm"}
+                        </button>
+                        <button
+                          className="row-link"
+                          type="button"
+                          onClick={() => setConfirmingDeleteDoc(null)}
+                        >
+                          Cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="compare-link-delete"
+                        aria-label="Delete this document"
+                        onClick={() => setConfirmingDeleteDoc(d.document_id)}
+                      >
+                        <IconTrash width={15} height={15} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )) : !recon ? (
+              <div className="empty-mini" style={{ padding: "0 var(--s3) var(--s3)" }}>Loading…</div>
+            ) : (
+              <div className="empty-mini" style={{ padding: "0 var(--s3) var(--s3)" }}>
+                No invoice or delivery note yet references PO {po.doc_number ?? "this document"} — once
+                one is scanned and read, it will show up here automatically.
+              </div>
+            )}
+          </div>
+
+          <div className="compare-aside">
+            <DeliveryIssuesPanel deliveries={recon?.deliveries} loading={!recon} onOpenDocument={onOpenDocument} />
+          </div>
+        </div>
+        ) : (
+        <PoMaterialsSection materials={recon?.materials} loading={!recon} onOpenDocument={onOpenDocument} />
+        )}
       </div>
     </div>
   );

@@ -6,6 +6,7 @@ import { ProjectTab } from "./pages/project/ProjectTab.jsx";
 import { DocumentsTab } from "./pages/documents/DocumentsTab.jsx";
 import { ComparePage } from "./pages/compare/ComparePage.jsx";
 import { UploadModal } from "./pages/home/UploadModal.jsx";
+import { ScanModal } from "./pages/home/ScanModal.jsx";
 import { AddProjectModal } from "./pages/home/AddProjectModal.jsx";
 import { ReviewModal } from "./features/review/ReviewModal.jsx";
 import { useConsoleData } from "./lib/useConsoleData.js";
@@ -22,9 +23,32 @@ export default function App() {
 
   /* Reachable from every tab, so they live up here rather than in one of them. */
   const [reviewId, setReviewId] = useState(null);
+  // Freshly-uploaded documents queued to open into Review one after another —
+  // see openReviewQueue/closeReview below and UploadModal's onUploaded.
+  const [reviewQueue, setReviewQueue] = useState([]);
   const [addingProject, setAddingProject] = useState(false);
   const [uploadFor, setUploadFor] = useState(null);
-  const [scanPoFor, setScanPoFor] = useState(null);
+  const [scanFor, setScanFor] = useState(null);
+
+  const openReviewQueue = (ids) => {
+    if (!ids?.length) return;
+    setReviewId(ids[0]);
+    setReviewQueue(ids.slice(1));
+  };
+
+  /* An upload no longer closes into a toast — it opens straight into Review,
+     the same screen clicking an existing document opens. Closing that (once
+     its own required fields are filled in — see ReviewModal's attemptClose)
+     advances to the next freshly-uploaded document instead of just
+     vanishing, so a multi-file upload walks through all of them in turn. */
+  const closeReview = () => {
+    if (reviewQueue.length) {
+      setReviewId(reviewQueue[0]);
+      setReviewQueue((q) => q.slice(1));
+    } else {
+      setReviewId(null);
+    }
+  };
 
   return (
     <div className="shell">
@@ -43,6 +67,7 @@ export default function App() {
             search={search}
             reload={reload}
             onOpenDocument={setReviewId}
+            onDocumentsUploaded={openReviewQueue}
             addingProject={addingProject}
             setAddingProject={setAddingProject}
           />
@@ -55,10 +80,11 @@ export default function App() {
             docs={docs}
             materials={materials}
             search={search}
+            reload={reload}
             onOpenDocument={setReviewId}
             onAddProject={() => setAddingProject(true)}
             onAddDocument={setUploadFor}
-            onScanPo={setScanPoFor}
+            onScan={setScanFor}
           />
         ) : null}
 
@@ -86,7 +112,7 @@ export default function App() {
         <ReviewModal
           docId={reviewId}
           materials={materials}
-          onClose={() => setReviewId(null)}
+          onClose={closeReview}
           onChanged={reload}
         />
       ) : null}
@@ -101,23 +127,14 @@ export default function App() {
         <UploadModal
           project={uploadFor}
           onClose={() => setUploadFor(null)}
-          onUploaded={reload}
+          onUploaded={(ids) => { setUploadFor(null); reload(); openReviewQueue(ids); }}
         />
       ) : null}
 
-      {/* Same capture flow as "Add document" — reused rather than duplicated
-          — just hinted as a PO so extraction is told what to expect and the
-          Purchase Orders section on the project page picks it up. */}
-      {scanPoFor ? (
-        <UploadModal
-          project={scanPoFor}
-          documentType="PO"
-          title="Scan PO"
-          hint="A photo or PDF of the purchase order. Materials, quantities and the PO number are read automatically — drag it here or click to browse."
-          onClose={() => setScanPoFor(null)}
-          onUploaded={reload}
-        />
-      ) : null}
+      {/* Same QR-connect flow as the home tiles — reused rather than
+          duplicated — reachable from the projects grid and a project's own
+          page too, not just home. */}
+      {scanFor ? <ScanModal project={scanFor} onClose={() => setScanFor(null)} /> : null}
 
       {/* Shell-level like the modals: a question outlives a tab switch. */}
       <ChatDock />

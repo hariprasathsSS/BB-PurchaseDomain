@@ -5,9 +5,9 @@ import { IconChat, IconClose, IconSend } from "./Icons.jsx";
 /* Ask-the-data panel. Lives in the shell rather than a tab so a question
    survives navigating away to check the answer.
 
-   Answers arrive with the SQL that produced them, kept behind a <details>: an
-   operator who half-trusts a number needs to see what was actually counted, and
-   folded away it costs nothing to everyone else. */
+   The server still returns the SQL it ran with every answer (see api.ask),
+   this panel just doesn't show it — turn.sql stays on each turn's state in
+   case a future "how was this counted" affordance wants it back. */
 
 const SUGGESTIONS = [
   "How many documents are waiting to be reviewed?",
@@ -77,6 +77,7 @@ export function ChatDock() {
   const [turns, setTurns] = useState([]);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
+  const [confirmingClose, setConfirmingClose] = useState(false);
   const log = useRef(null);
   const field = useRef(null);
 
@@ -87,10 +88,21 @@ export function ChatDock() {
   useEffect(() => {
     if (!open) return;
     field.current?.focus();
-    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") requestClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, turns.length]);
+
+  /* The X asks first rather than just closing — an emptied conversation
+     cannot be gotten back, so which the click meant needs to be explicit.
+     Nothing to lose (an already-empty chat) skips the question entirely. */
+  const requestClose = () => {
+    if (turns.length === 0) { setOpen(false); return; }
+    setConfirmingClose(true);
+  };
+  const clearAndClose = () => { setTurns([]); setConfirmingClose(false); setOpen(false); };
+  const keepAndClose = () => { setConfirmingClose(false); setOpen(false); };
 
   async function ask(question) {
     if (!question || pending) return;
@@ -123,7 +135,7 @@ export function ChatDock() {
         className="chat-bubble"
         type="button"
         onClick={() => setOpen(true)}
-        aria-label="Ask the data"
+        aria-label="Purchase Bot"
       >
         <IconChat width={22} height={22} />
       </button>
@@ -131,16 +143,26 @@ export function ChatDock() {
   }
 
   return (
-    <aside className="chat-dock" role="dialog" aria-label="Ask the data">
+    <aside className="chat-dock" role="dialog" aria-label="Purchase Bot">
       <header className="chat-head">
-        <div>
-          <h2>Ask the data</h2>
-          <div className="for">Reads only — it cannot change anything</div>
-        </div>
-        <div className="spacer" />
-        <button className="close-x" onClick={() => setOpen(false)} aria-label="Close">
-          <IconClose />
-        </button>
+        {confirmingClose ? (
+          <div className="chat-close-confirm">
+            <span>Clear this conversation?</span>
+            <div className="spacer" />
+            <button className="row-link" type="button" onClick={clearAndClose}>Yes, clear it</button>
+            <button className="row-link" type="button" onClick={keepAndClose}>Cancel</button>
+          </div>
+        ) : (
+          <>
+            <div>
+              <h2><span className="brand-red">Purchase</span> Bot</h2>
+            </div>
+            <div className="spacer" />
+            <button className="close-x" onClick={requestClose} aria-label="Close">
+              <IconClose />
+            </button>
+          </>
+        )}
       </header>
 
       <div className="chat-log" ref={log}>
@@ -174,13 +196,6 @@ export function ChatDock() {
                   {turn.truncated ? " · first 200 only" : ""}
                 </div>
               </div>
-            ) : null}
-
-            {turn.sql ? (
-              <details className="chat-sql">
-                <summary>How this was counted</summary>
-                <pre>{turn.sql}</pre>
-              </details>
             ) : null}
           </div>
         ))}

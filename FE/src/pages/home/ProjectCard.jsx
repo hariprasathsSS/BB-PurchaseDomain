@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { IconArrow, IconPhone, IconPlus, IconUpload } from "../../components/Icons.jsx";
+import { IconArrow } from "../../components/Icons.jsx";
+import { AddDocumentMenu } from "../../components/AddDocumentMenu.jsx";
 import { go } from "../../lib/useHashRoute.js";
 import { projectStatus, projectTally } from "../../lib/format.js";
 
@@ -7,22 +7,12 @@ import { projectStatus, projectTally } from "../../lib/format.js";
    in, and a way through to the project itself. The status label is what makes
    the grid scannable — without it every card looks the same. */
 export function ProjectCard({ project, docs, onScan, onUpload }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [open]);
-
   const status = projectStatus(project, docs);
   const tally = projectTally(project, docs);
   const sites = project.sites ?? [];
 
   return (
-    <div className={`tile ${status.cls === "st-action" ? "is-hot" : ""}`} ref={ref}>
+    <div className={`tile ${status.cls === "st-action" ? "is-hot" : ""}`}>
       <div>
         <span className={`tile-status ${status.cls}`}>{status.label}</span>
         <div className="code">{project.code}</div>
@@ -43,11 +33,11 @@ export function ProjectCard({ project, docs, onScan, onUpload }) {
         </div>
       </div>
 
-      <div className="tile-actions" style={{ position: "relative" }}>
-        <button className="btn btn-ink btn-sm" type="button" onClick={() => setOpen((v) => !v)}>
-          <IconPlus width={17} height={17} />
-          Add document
-        </button>
+      <div className="tile-actions">
+        <AddDocumentMenu
+          onScan={() => onScan(project)}
+          onUpload={() => onUpload(project)}
+        />
         <div className="spacer" />
         <button
           className="open-round"
@@ -57,25 +47,6 @@ export function ProjectCard({ project, docs, onScan, onUpload }) {
         >
           <IconArrow />
         </button>
-
-        {open ? (
-          <div className="menu">
-            <button onClick={() => { setOpen(false); onScan(project); }}>
-              <span className="ico"><IconPhone /></span>
-              <span>
-                <span className="t">Scan with phone</span>
-                <span className="d">Show a QR code the site phone can scan</span>
-              </span>
-            </button>
-            <button onClick={() => { setOpen(false); onUpload(project); }}>
-              <span className="ico"><IconUpload /></span>
-              <span>
-                <span className="t">Upload files</span>
-                <span className="d">Choose photos or PDFs from this computer</span>
-              </span>
-            </button>
-          </div>
-        ) : null}
       </div>
     </div>
   );

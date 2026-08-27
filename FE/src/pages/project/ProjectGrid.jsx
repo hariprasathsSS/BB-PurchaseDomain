@@ -1,11 +1,12 @@
 import { IconArrow, IconPlus } from "../../components/Icons.jsx";
+import { AddDocumentMenu } from "../../components/AddDocumentMenu.jsx";
 import { go } from "../../lib/useHashRoute.js";
 import { projectStatus, projectTally } from "../../lib/format.js";
 
 /* The portfolio. Same tile as the home page, so a project looks like itself
    wherever it appears — including the status label, which is what makes the
    grid scannable without opening anything. */
-export function ProjectGrid({ projects, docs, search, onAddProject, onAddDocument }) {
+export function ProjectGrid({ projects, docs, search, onAddProject, onAddDocument, onScan }) {
   const term = search.trim().toLowerCase();
   const shown = !term
     ? projects
@@ -60,10 +61,10 @@ export function ProjectGrid({ projects, docs, search, onAddProject, onAddDocumen
                   </div>
 
                   <div className="tile-actions">
-                    <button className="btn btn-ink btn-sm" type="button" onClick={() => onAddDocument(p)}>
-                      <IconPlus width={17} height={17} />
-                      Add document
-                    </button>
+                    <AddDocumentMenu
+                      onScan={() => onScan(p)}
+                      onUpload={() => onAddDocument(p)}
+                    />
                     <div className="spacer" />
                     <button
                       className="open-round"

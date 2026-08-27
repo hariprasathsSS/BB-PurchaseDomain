@@ -6,8 +6,18 @@ export const HEADER_SECTIONS = [
   {
     title: "Classification",
     fields: [
+      /* UNCLASSIFIED is not a pickable option — it's the absence of one. The
+         blank placeholder in Editor already covers it; see ReviewModal's
+         Approve gate, which reads the same absence. */
       { key: "doc_kind", label: "Document type", type: "select",
-        options: ["UNCLASSIFIED", "INVOICE", "PO", "DELIVERY", "OTHER"] },
+        options: ["INVOICE", "PO", "DELIVERY", "QUOTATION", "INWARD", "OTHER"] },
+      // Which physical copy an invoice is — the vendor hands one to the site
+      // and mails a separate one straight to the office; nothing on the page
+      // says which, so a reviewer has to. Meaningless for every other
+      // document type, so it only shows up once doc_kind is INVOICE.
+      { key: "invoice_channel", label: "Invoice type", type: "select",
+        options: ["SITE", "VENDOR"],
+        showIf: (h) => h.doc_kind === "INVOICE" },
     ],
   },
   {
@@ -65,3 +75,31 @@ export const LINE_FIELDS = [
 ];
 
 export const HEADER_KEYS = HEADER_SECTIONS.flatMap((s) => s.fields.map((f) => f.key));
+
+/* Quote review's own small schema — a quotation has no doc_kind, tax breakup
+   or dc_* fields, and a grade/brand column the document schema has no use
+   for. One section, since there are only four header fields — HeaderFields
+   still expects a list of sections, just a list of one. */
+export const QUOTE_HEADER_SECTIONS = [
+  {
+    title: "Quotation",
+    fields: [
+      { key: "vendor_name_raw", label: "Vendor name" },
+      { key: "vendor_gstin", label: "Vendor GSTIN" },
+      { key: "quote_number", label: "Quote no." },
+      { key: "quote_date_raw", label: "Quote date (as printed)" },
+    ],
+  },
+];
+
+export const QUOTE_HEADER_FIELDS = QUOTE_HEADER_SECTIONS.flatMap((s) => s.fields);
+
+export const QUOTE_LINE_FIELDS = [
+  { key: "description_raw", label: "Description" },
+  { key: "material_id", label: "Material", type: "material" },
+  { key: "grade_raw", label: "Grade / brand" },
+  { key: "quantity", label: "Qty", type: "number" },
+  { key: "unit", label: "Unit" },
+  { key: "rate", label: "Rate", type: "number" },
+  { key: "amount", label: "Amount", type: "number" },
+];

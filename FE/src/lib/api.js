@@ -22,15 +22,27 @@ export const api = {
 
   listProjects: () => get("/api/v1/projects").then((d) => d.projects ?? []),
   createProject: (name, sites) => send("/api/v1/projects", "POST", { name, sites }),
+  deleteProject: (id) => fetch(`/api/v1/projects/${id}`, { method: "DELETE" }).then(json),
 
   listDocuments: () => get("/api/v1/documents").then((d) => d.documents ?? []),
   getDocument: (id) => get(`/api/v1/documents/${id}`),
   saveDocument: (id, edits) => send(`/api/v1/documents/${id}`, "PUT", edits),
+  deleteDocument: (id) => fetch(`/api/v1/documents/${id}`, { method: "DELETE" }).then(json),
   approveDocument: (id, approvedBy) =>
     send(`/api/v1/documents/${id}/approve`, "POST", { approved_by: approvedBy }),
   rejectDocument: (id, rejectedBy, reason) =>
     send(`/api/v1/documents/${id}/reject`, "POST", { rejected_by: rejectedBy, reason }),
   retryExtraction: (id) => fetch(`/api/v1/documents/${id}/extract`, { method: "POST" }),
+
+  /* Same delivery billed twice through two channels (site copy, office
+     copy) — found automatically by vendor + invoice number at extraction
+     time. duplicate_of is null in the response when this document has no
+     paired copy on file (yet). */
+  getDuplicateDiff: (id) => get(`/api/v1/documents/${id}/duplicate-diff`),
+  /* Only meaningful for a PO document: every invoice referencing it,
+     grouped into deliveries, and the running delivered-vs-ordered total
+     per material. */
+  getPoReconciliation: (id) => get(`/api/v1/documents/${id}/reconciliation`),
 
   listMaterials: () => get("/api/v1/materials").then((d) => d.materials ?? []),
 
@@ -48,15 +60,39 @@ export const api = {
      gets the filename the server chose, which a blob round-trip would lose. */
   exportUrl: (projectId) => `/api/v1/projects/${projectId}/export`,
 
-  /* Multipart, so it does not go through send(). One file is one document.
-     documentType is only a hint ("PO" from the Scan PO button) — the
-     classifier's own read of the pixels still decides what gets stored. */
-  uploadFiles: ({ projectId, siteId, documentType, files }) => {
+  /* Multipart, so it does not go through send(). One file is one document —
+     no document-type hint from the console; the classifier's own read of the
+     pixels is what decides what gets stored. */
+  uploadFiles: ({ projectId, siteId, files }) => {
     const form = new FormData();
     form.append("project_id", projectId);
     if (siteId) form.append("site_id", siteId);
-    if (documentType) form.append("document_type", documentType);
     files.forEach((f) => form.append("files", f, f.name));
     return fetch("/api/v1/documents/upload", { method: "POST", body: form }).then(json);
   },
+
+  /* Quote analysis — a vendor's price quotation, not a purchase document, so
+     it lives on its own small set of endpoints rather than /documents. */
+  listQuotations: (projectId) =>
+    get(`/api/v1/projects/${projectId}/quotations`).then((d) => d.quotations ?? []),
+  getQuotation: (id) => get(`/api/v1/quotations/${id}`),
+  uploadQuotation: ({ projectId, files }) => {
+    const form = new FormData();
+    files.forEach((f) => form.append("files", f, f.name));
+    return fetch(`/api/v1/projects/${projectId}/quotations`, { method: "POST", body: form }).then(json);
+  },
+  saveQuotation: (id, edits) => send(`/api/v1/quotations/${id}`, "PUT", edits),
+  retryQuotationExtraction: (id) => fetch(`/api/v1/quotations/${id}/extract`, { method: "POST" }),
+  deleteQuotation: (id) => fetch(`/api/v1/quotations/${id}`, { method: "DELETE" }).then(json),
+
+  /* Which vendor to actually buy each material from — cheapest by default,
+     overridable per material since grade/quality isn't a number the app can
+     rank on its own. */
+  listQuotePicks: (projectId) =>
+    get(`/api/v1/projects/${projectId}/quote-picks`).then((d) => d.picks ?? {}),
+  setQuotePick: (projectId, materialId, quotationId, pickedBy) =>
+    send(`/api/v1/projects/${projectId}/quote-picks/${materialId}`, "PUT",
+      { quotation_id: quotationId, picked_by: pickedBy }),
+  clearQuotePick: (projectId, materialId) =>
+    fetch(`/api/v1/projects/${projectId}/quote-picks/${materialId}`, { method: "DELETE" }).then(json),
 };

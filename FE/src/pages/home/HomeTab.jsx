@@ -14,7 +14,7 @@ import { projectStatus } from "../../lib/format.js";
    of floating boxes. Intake is deliberately not here: a document needs a
    project, and every route to one starts from a project card below. */
 export function HomeTab({
-  projects, docs, search, reload, onOpenDocument,
+  projects, docs, search, reload, onOpenDocument, onDocumentsUploaded,
   addingProject, setAddingProject,
 }) {
   const [scanFor, setScanFor] = useState(null);
@@ -127,7 +127,7 @@ export function HomeTab({
           <UploadModal
             project={uploadFor}
             onClose={() => setUploadFor(null)}
-            onUploaded={reload}
+            onUploaded={(ids) => { setUploadFor(null); reload(); onDocumentsUploaded(ids); }}
           />
         ) : null}
       </div>

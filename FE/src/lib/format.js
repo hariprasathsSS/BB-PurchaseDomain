@@ -35,7 +35,7 @@ export const refOf = (doc) => doc.doc_number || doc.po_number || null;
 export const IMAGE_RE = /\.(png|jpe?g|gif|webp)$/i;
 export const ALLOWED_UPLOAD_RE = /\.(pdf|jpe?g|png)$/i;
 
-export const DOC_TYPES = ["INVOICE", "PO", "DELIVERY", "OTHER", "UNCLASSIFIED"];
+export const DOC_TYPES = ["INVOICE", "PO", "DELIVERY", "QUOTATION", "INWARD", "OTHER", "UNCLASSIFIED"];
 export const DOC_STATUSES = [
   "PENDING", "PROCESSING", "EXTRACTED", "APPROVED", "REJECTED", "FAILED",
 ];

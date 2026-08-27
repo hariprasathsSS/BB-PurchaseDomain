@@ -16,8 +16,15 @@ DB_PATH = BASE_DIR / "poc.db"
 UPLOAD_DIR = BASE_DIR / "uploads"
 
 # OTHER is the works-contract / RA-bill bucket: classified so it never enters
-# the material three-way-match path.
-DOC_TYPES = {"UNCLASSIFIED", "INVOICE", "PO", "DELIVERY", "OTHER"}
+# the material three-way-match path. Unlike UNCLASSIFIED, a reviewer can't
+# approve a document sitting at OTHER either — see extract.mark_approved —
+# so a genuine RA bill is filed via reject, not a silent approve, and the
+# only way through approval is one of the five real kinds.
+#
+# INWARD is the site's own material-inward / goods-received report — not
+# something the vendor sends, so it never shows up with a vendor GSTIN the
+# way INVOICE/DELIVERY do (see po_reconciliation in main.py).
+DOC_TYPES = {"UNCLASSIFIED", "INVOICE", "PO", "DELIVERY", "QUOTATION", "INWARD", "OTHER"}
 SOURCES = {"SCAN", "UPLOAD"}
 # APPROVED/REJECTED are an accuracy gate on the OCR read, not a business
 # validation verdict — the 3-way match (Phase 6) doesn't exist yet. See
@@ -95,7 +102,7 @@ CREATE TABLE IF NOT EXISTS documents (
   source         TEXT NOT NULL CHECK (source IN ('SCAN','UPLOAD')),
 
   document_type  TEXT NOT NULL DEFAULT 'UNCLASSIFIED'
-                 CHECK (document_type IN ('UNCLASSIFIED','INVOICE','PO','DELIVERY','OTHER')),
+                 CHECK (document_type IN ('UNCLASSIFIED','INVOICE','PO','DELIVERY','QUOTATION','INWARD','OTHER')),
   file_paths     TEXT NOT NULL,
   page_count     INTEGER NOT NULL,
   notes          TEXT,
@@ -118,6 +125,12 @@ CREATE TABLE IF NOT EXISTS doc_headers (
   doc_number   TEXT,
   po_number    TEXT,
   dc_number    TEXT,
+  -- Which physical copy an INVOICE is — the vendor hands one to the site and
+  -- mails a separate one to the office; nothing on the page itself says
+  -- which, so this is set by the reviewer, not read by the extractor. Blank
+  -- for every other document type. See extract.mark_approved for where this
+  -- becomes mandatory.
+  invoice_channel TEXT CHECK (invoice_channel IN ('SITE','VENDOR')),
 
   doc_date     TEXT,
   doc_date_raw TEXT,
@@ -165,9 +178,73 @@ CREATE TABLE IF NOT EXISTS doc_lines (
   dc_date   TEXT
 );
 
+-- quote analysis -------------------------------------------------------------
+-- A vendor's price quotation, not a purchase document — kept out of
+-- documents/doc_headers entirely so document_type's CHECK constraint never
+-- has to grow (SQLite can't ALTER a CHECK; a fresh table sidesteps it). No
+-- approve/reject: comparison across vendors is read-only, so the lifecycle
+-- is just PENDING -> PROCESSING -> EXTRACTED/FAILED, same shape as documents
+-- minus the review-decision states.
+
+CREATE TABLE IF NOT EXISTS quotations (
+  id              TEXT PRIMARY KEY,
+  project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  vendor_id       TEXT REFERENCES vendors(id),
+  vendor_name_raw TEXT,
+  vendor_gstin    TEXT,
+  quote_number    TEXT,
+  quote_date      TEXT,
+  quote_date_raw  TEXT,
+  file_paths      TEXT NOT NULL,
+  page_count      INTEGER NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'PENDING'
+                  CHECK (status IN ('PENDING','PROCESSING','EXTRACTED','FAILED')),
+  error           TEXT,
+  uploaded_at     TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS quotation_lines (
+  id              INTEGER PRIMARY KEY,
+  quotation_id    TEXT NOT NULL REFERENCES quotations(id) ON DELETE CASCADE,
+  line_no         INTEGER NOT NULL,
+
+  description_raw TEXT NOT NULL,
+  material_id     TEXT REFERENCES materials(id),
+  -- Brand/grade/spec called out separately from the material itself, e.g.
+  -- "Fe550D" or "UltraTech OPC 53" — two vendors quoting the same material
+  -- can differ here, and folding it into description_raw would break the
+  -- alias match every other document type relies on.
+  grade_raw       TEXT,
+  hsn_code        TEXT,
+
+  quantity REAL,
+  unit     TEXT,
+  rate     REAL,
+  amount   REAL,
+  tax_rate REAL
+);
+
+-- Which vendor to actually buy a material from, per project — cheapest by
+-- default (computed client-side from quotation_lines, nothing stored), but
+-- overridable: quality/grade isn't a number extraction can rank, so the
+-- person comparing quotes gets the final say per material, not just a
+-- reference to look at. One row per (project, material); replacing a pick
+-- is an upsert, and cascades away if the picked quotation is deleted.
+CREATE TABLE IF NOT EXISTS quote_picks (
+  project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  material_id  TEXT NOT NULL REFERENCES materials(id),
+  quotation_id TEXT NOT NULL REFERENCES quotations(id) ON DELETE CASCADE,
+  picked_by    TEXT,
+  picked_at    TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (project_id, material_id)
+);
+
 CREATE INDEX IF NOT EXISTS ix_headers_date ON doc_headers(doc_date);
 CREATE INDEX IF NOT EXISTS ix_documents_project ON documents(project_id);
 CREATE INDEX IF NOT EXISTS ix_sites_project ON sites(project_id);
+CREATE INDEX IF NOT EXISTS ix_quotations_project ON quotations(project_id);
+CREATE INDEX IF NOT EXISTS ix_quotation_lines_quotation ON quotation_lines(quotation_id);
+CREATE INDEX IF NOT EXISTS ix_quote_picks_project ON quote_picks(project_id);
 """
 
 
@@ -243,6 +320,9 @@ _MIGRATIONS = {
         ("duplicate_of", "TEXT REFERENCES documents(id)"),
         ("error", "TEXT"),
     ],
+    "doc_headers": [
+        ("invoice_channel", "TEXT CHECK (invoice_channel IN ('SITE','VENDOR'))"),
+    ],
 }
 
 
@@ -253,6 +333,78 @@ def migrate(con: sqlite3.Connection) -> None:
         for name, ddl in columns:
             if name not in existing:
                 con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+
+
+# The columns documents actually has, by name — not the order SCHEMA lists
+# them in above. ALTER TABLE ADD COLUMN always appends, so a database that
+# predates some of _MIGRATIONS' columns has them in whatever order they were
+# added, not SCHEMA's idealised one. migrate_document_type_check rebuilds by
+# name for exactly that reason — a positional `SELECT *` would silently
+# scramble columns on any database older than the newest migration.
+_DOCUMENT_COLUMNS = (
+    "id", "project_id", "site_id", "session_id", "source", "document_type",
+    "file_paths", "page_count", "notes", "is_handwritten", "status",
+    "extracted_json", "duplicate_of", "error", "uploaded_at",
+)
+
+
+def migrate_document_type_check(con: sqlite3.Connection) -> None:
+    """SQLite can't ALTER a CHECK constraint — adding a new valid
+    document_type needs the table rebuilt. Idempotent: a no-op once the
+    table's own stored CREATE TABLE text already allows every type DOC_TYPES
+    lists (checked via the newest one added, 'INWARD', so a database that
+    already has 'QUOTATION' but predates 'INWARD' still gets rebuilt once
+    more). Must run after migrate() — depends on every column above already
+    existing under its real name.
+
+    Builds the replacement under a temporary name, copies into it, drops the
+    original, then renames the temp table into place — deliberately not the
+    other order (rename original out of the way first). Renaming a table
+    also rewrites *other* tables' FOREIGN KEY clauses that reference it by
+    name, so renaming the original documents table first would repoint
+    doc_headers/doc_lines at the soon-to-be-dropped copy instead of the new
+    one. This order never renames the table anything else has a live FK to
+    — "documents" is only ever the original, or (after the swap) the new
+    one, from doc_headers/doc_lines' point of view.
+    """
+    row = con.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'documents'"
+    ).fetchone()
+    if row is None or "INWARD" in row["sql"]:
+        return
+
+    cols = ", ".join(_DOCUMENT_COLUMNS)
+    con.execute("PRAGMA foreign_keys = OFF")
+    con.execute("""
+        CREATE TABLE documents_new (
+          id             TEXT PRIMARY KEY,
+          project_id     TEXT NOT NULL REFERENCES projects(id),
+          site_id        TEXT REFERENCES sites(id),
+          session_id     TEXT REFERENCES scanner_sessions(id),
+          source         TEXT NOT NULL CHECK (source IN ('SCAN','UPLOAD')),
+          document_type  TEXT NOT NULL DEFAULT 'UNCLASSIFIED'
+                         CHECK (document_type IN
+                           ('UNCLASSIFIED','INVOICE','PO','DELIVERY','QUOTATION','INWARD','OTHER')),
+          file_paths     TEXT NOT NULL,
+          page_count     INTEGER NOT NULL,
+          notes          TEXT,
+          is_handwritten INTEGER NOT NULL DEFAULT 0,
+          status         TEXT NOT NULL DEFAULT 'PENDING'
+                         CHECK (status IN
+                           ('PENDING','PROCESSING','EXTRACTED','APPROVED','REJECTED','FAILED')),
+          extracted_json TEXT,
+          duplicate_of   TEXT REFERENCES documents(id),
+          error          TEXT,
+          uploaded_at    TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    con.execute(f"INSERT INTO documents_new ({cols}) SELECT {cols} FROM documents")
+    con.execute("DROP TABLE documents")
+    con.execute("ALTER TABLE documents_new RENAME TO documents")
+    # The rename carries this index's definition with it, but not its
+    # existence if it wasn't created yet — belt and braces either way.
+    con.execute("CREATE INDEX IF NOT EXISTS ix_documents_project ON documents(project_id)")
+    con.execute("PRAGMA foreign_keys = ON")
 
 
 def seed_materials(con) -> int:
@@ -282,4 +434,5 @@ def init() -> None:
     with db() as con:
         con.executescript(SCHEMA)
         migrate(con)
+        migrate_document_type_check(con)
         seed_materials(con)

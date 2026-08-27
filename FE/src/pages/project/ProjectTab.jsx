@@ -4,8 +4,8 @@ import { ProjectDetail } from "./ProjectDetail.jsx";
 /* #/project shows the grid, #/project/<id> the detail page — so a project is
    a real, linkable location with a working back button. */
 export function ProjectTab({
-  projectId, projects, docs, materials, search,
-  onOpenDocument, onAddProject, onAddDocument, onScanPo,
+  projectId, projects, docs, materials, search, reload,
+  onOpenDocument, onAddProject, onAddDocument, onScan,
 }) {
   if (!projectId) {
     return (
@@ -15,6 +15,7 @@ export function ProjectTab({
         search={search}
         onAddProject={onAddProject}
         onAddDocument={onAddDocument}
+        onScan={onScan}
       />
     );
   }
@@ -41,9 +42,10 @@ export function ProjectTab({
       project={project}
       docs={docs}
       materials={materials}
+      reload={reload}
       onOpenDocument={onOpenDocument}
       onAddDocument={onAddDocument}
-      onScanPo={onScanPo}
+      onScan={onScan}
     />
   );
 }
