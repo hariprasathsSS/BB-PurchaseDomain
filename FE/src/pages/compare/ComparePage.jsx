@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { StatusPill, TypePill } from "../../components/Pills.jsx";
 import { IconArrow, IconBack, IconChevron, IconTrash } from "../../components/Icons.jsx";
+import { AddDocumentMenu } from "../../components/AddDocumentMenu.jsx";
 import { HeaderFields } from "../../features/review/HeaderFields.jsx";
 import { LineItems } from "../../features/review/LineItems.jsx";
 import { HEADER_KEYS, LINE_FIELDS } from "../../features/review/schema.js";
@@ -285,7 +286,7 @@ function DeliveryIssuesPanel({ deliveries, loading, onOpenDocument }) {
    GET .../reconciliation (see main.py), computed server-side against the
    same po_number == this PO's own doc_number match this page always used;
    `matches` below is only the fallback while that call is still loading. */
-export function ComparePage({ documentId, docs, materials, onOpenDocument, reload }) {
+export function ComparePage({ documentId, docs, materials, onOpenDocument, reload, onAddDocument, onScan }) {
   const [section, setSection] = useState("po");
   const [po, setPo] = useState(null);
   const [draft, setDraft] = useState(null);
@@ -443,6 +444,12 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
       && d.po_number && d.po_number === po.doc_number
   );
 
+  // AddDocumentMenu/UploadModal/ScanModal only ever read id/code/name off
+  // this — the PO itself already carries all three of its own project's,
+  // so a new invoice, challan or inward report added from here lands in
+  // the same project as the PO, same as adding one from the project page.
+  const project = { id: po.project_id, code: po.project_code, name: po.project_name };
+
   const locked = isLocked(po);
   const header = locked ? (po.header ?? {}) : draft?.header;
   const lines = locked ? (po.lines ?? []) : draft?.lines;
@@ -463,6 +470,10 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
             </div>
             <div className="spacer" />
             <StatusPill status={po.status} />
+            <AddDocumentMenu
+              onScan={() => onScan(project)}
+              onUpload={() => onAddDocument(project)}
+            />
             <button
               className="btn btn-out btn-sm"
               type="button"
@@ -668,7 +679,24 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
                       onClick={() => onOpenDocument(d.document_id)}
                     >
                       <div className="compare-link-main">
-                        <div className="compare-link-meta">{shortDate(d.uploaded_at)}</div>
+                        <div className="compare-link-num-row">
+                          {/* The document's own number — a Delivery Note or
+                              Inward Report carries the D.C. number, not the
+                              invoice number the group above is named after,
+                              so this is the one place that actually says so. */}
+                          <span className="compare-link-num">{d.doc_number || "Document not yet numbered"}</span>
+                          {/* Every document in a delivery is the same vendor
+                              by construction (see po_reconciliation's
+                              grouping) — repeated per row anyway, since a row
+                              reads as its own document, not just a slot in
+                              the group above it. */}
+                          <span className="compare-link-vendor">{delivery.vendor_name ?? "Vendor not read"}</span>
+                        </div>
+                        <div className="compare-link-meta">
+                          {shortDate(d.uploaded_at)}
+                          {money(d.total_value) ? ` · ${money(d.total_value)}` : ""}
+                          {d.page_count > 1 ? ` · ${d.page_count} pages` : ""}
+                        </div>
                       </div>
                       {d.invoice_channel ? (
                         <span className="compare-link-meta">

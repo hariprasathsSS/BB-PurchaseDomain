@@ -44,7 +44,7 @@ function gatesFor(header) {
   };
 }
 
-export function ReviewModal({ docId, materials, onClose, onChanged }) {
+export function ReviewModal({ docId, docs, materials, onClose, onChanged }) {
   const [doc, setDoc] = useState(null);
   const [draft, setDraft] = useState(null);
   const [reviewer, setReviewer] = useState(() => localStorage.getItem("reviewerName") ?? "");
@@ -203,6 +203,19 @@ export function ReviewModal({ docId, materials, onClose, onChanged }) {
   const gates = header ? gatesFor(header) : gatesFor({});
   const showFooter = doc && !isWaiting(doc) && doc.status !== "FAILED" && !locked && Boolean(header);
 
+  /* Every PO already on file in this same document's project — not other
+     projects, since a PO number only ever means something within the one
+     project it was raised for. Offered as suggestions, not a restriction:
+     the field stays free text (see HeaderFields' fieldOptions), so typing a
+     number that genuinely isn't uploaded yet still works. */
+  const poNumberOptions = doc
+    ? [...new Set(
+        (docs ?? [])
+          .filter((d) => d.project_id === doc.project_id && d.document_type === "PO" && d.doc_number)
+          .map((d) => d.doc_number)
+      )]
+    : [];
+
   return (
     <Modal
       title="Review document"
@@ -242,11 +255,13 @@ export function ReviewModal({ docId, materials, onClose, onChanged }) {
           {isWaiting(doc) || doc.status === "FAILED" ? null : (
             <>
               <DuplicateDiffBanner diff={diff} />
+              <PoNumberBanner header={header} poNumberOptions={poNumberOptions} />
               <Body
                 header={header}
                 lines={locked ? (doc.lines ?? []) : draft?.lines}
                 locked={locked}
                 gates={gates}
+                poNumberOptions={poNumberOptions}
                 materials={materials}
                 rejecting={rejecting}
                 reason={reason}
@@ -344,6 +359,27 @@ function DuplicateDiffBanner({ diff }) {
   );
 }
 
+/* A referenced PO number that doesn't match any PO actually on file in this
+   document's own project — a typo, a number carried over from the wrong job,
+   or simply the PO not uploaded here yet. Informational, not a gate: unlike
+   poNumberMissing (an empty field) this never blocks Save/Approve, since the
+   PO showing up five minutes later is completely normal and shouldn't force
+   a reviewer to babysit the upload order. poNumberOptions is already scoped
+   to this project (see ReviewModal), so "not in that list" here already
+   means "not in this project", not "not anywhere". */
+function PoNumberBanner({ header, poNumberOptions }) {
+  const referencesPo = ["INVOICE", "DELIVERY", "INWARD"].includes(header?.doc_kind);
+  const poNumber = String(header?.po_number ?? "").trim();
+  if (!referencesPo || !poNumber || poNumberOptions.includes(poNumber)) return null;
+
+  return (
+    <div className="banner banner-warn">
+      PO number "{poNumber}" is not present in the current project — double-check it's
+      correct, or upload that PO here first.
+    </div>
+  );
+}
+
 /* Reviewer name + Save/Approve/Reject, right-aligned in the modal's own
    footer strip rather than inline in the scrolling body — the actions that
    finish a review stay in the same place regardless of how long the body
@@ -403,7 +439,7 @@ function fieldErrorsFor(gates) {
 }
 
 function Body({
-  header, lines, locked, gates, materials, rejecting, reason, setReason, err, busy, onHeader, onLine, onDecide,
+  header, lines, locked, gates, poNumberOptions, materials, rejecting, reason, setReason, err, busy, onHeader, onLine, onDecide,
 }) {
   if (!header) return <div className="empty">Loading…</div>;
 
@@ -414,6 +450,7 @@ function Body({
         locked={locked}
         onChange={onHeader}
         fieldErrors={locked ? {} : fieldErrorsFor(gates)}
+        fieldOptions={{ po_number: poNumberOptions }}
       />
       <LineItems lines={lines ?? []} materials={materials} locked={locked} onChange={onLine} />
 

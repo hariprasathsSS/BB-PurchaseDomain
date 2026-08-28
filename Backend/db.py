@@ -126,10 +126,11 @@ CREATE TABLE IF NOT EXISTS doc_headers (
   po_number    TEXT,
   dc_number    TEXT,
   -- Which physical copy an INVOICE is — the vendor hands one to the site and
-  -- mails a separate one to the office; nothing on the page itself says
-  -- which, so this is set by the reviewer, not read by the extractor. Blank
-  -- for every other document type. See extract.mark_approved for where this
-  -- becomes mandatory.
+  -- mails a separate one to the office. The extractor sets this from a
+  -- "VENDOR INVOICE"/"SITE INVOICE" heading when the page prints one; when
+  -- it doesn't, this stays blank and the reviewer sets it by hand instead.
+  -- Blank for every other document type. See extract.mark_approved for
+  -- where this becomes mandatory.
   invoice_channel TEXT CHECK (invoice_channel IN ('SITE','VENDOR')),
 
   doc_date     TEXT,

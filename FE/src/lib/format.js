@@ -24,11 +24,6 @@ export const shortDate = (stamp) => {
 export const projectOf = (doc) =>
   doc.project_code ? `${doc.project_code} — ${doc.project_name}` : "—";
 
-export const siteNameOf = (doc, projects) =>
-  projects
-    .find((p) => p.id === doc.project_id)
-    ?.sites?.find((s) => s.id === doc.site_id)?.name ?? "—";
-
 /* The reference printed on the paper, whichever kind of paper it is. */
 export const refOf = (doc) => doc.doc_number || doc.po_number || null;
 
@@ -85,7 +80,6 @@ export function projectTally(project, docs) {
     documents: mine.length,
     pages: mine.reduce((n, d) => n + (d.page_count ?? 0), 0),
     awaiting: mine.filter(needsDecision).length,
-    sites: (project.sites ?? []).length,
     // Rejected documents are excluded: the project did not buy that.
     booked: counted.reduce((sum, d) => sum + (Number(d.total_value) || 0), 0),
     reading: mine.filter(isWaiting).length,
@@ -114,7 +108,6 @@ export function activityOf(doc) {
 /* Shared by the project detail and material tabs so both filter identically. */
 export function matchesFilter(doc, f = {}) {
   if (f.project && doc.project_id !== f.project) return false;
-  if (f.site && doc.site_id !== f.site) return false;
   if (f.type && doc.document_type !== f.type) return false;
   if (f.status && doc.status !== f.status) return false;
   const day = (doc.uploaded_at || "").slice(0, 10);

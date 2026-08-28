@@ -18,9 +18,6 @@ export default function App() {
   const { tab, projectId, documentId } = useHashRoute();
   const { projects, docs, materials, reload } = useConsoleData();
 
-  /* Search lives in the nav, so it belongs to the shell and is handed down. */
-  const [search, setSearch] = useState("");
-
   /* Reachable from every tab, so they live up here rather than in one of them. */
   const [reviewId, setReviewId] = useState(null);
   // Freshly-uploaded documents queued to open into Review one after another —
@@ -54,8 +51,6 @@ export default function App() {
     <div className="shell">
       <TopNav
         active={tab}
-        search={search}
-        onSearch={setSearch}
         onAddProject={() => setAddingProject(true)}
       />
 
@@ -64,10 +59,8 @@ export default function App() {
           <HomeTab
             projects={projects}
             docs={docs}
-            search={search}
+            materials={materials}
             reload={reload}
-            onOpenDocument={setReviewId}
-            onDocumentsUploaded={openReviewQueue}
             addingProject={addingProject}
             setAddingProject={setAddingProject}
           />
@@ -79,7 +72,6 @@ export default function App() {
             projects={projects}
             docs={docs}
             materials={materials}
-            search={search}
             reload={reload}
             onOpenDocument={setReviewId}
             onAddProject={() => setAddingProject(true)}
@@ -92,7 +84,6 @@ export default function App() {
           <DocumentsTab
             docs={docs}
             projects={projects}
-            search={search}
             onOpenDocument={setReviewId}
           />
         ) : null}
@@ -104,6 +95,8 @@ export default function App() {
             materials={materials}
             onOpenDocument={setReviewId}
             reload={reload}
+            onAddDocument={setUploadFor}
+            onScan={setScanFor}
           />
         ) : null}
       </main>
@@ -111,6 +104,7 @@ export default function App() {
       {reviewId ? (
         <ReviewModal
           docId={reviewId}
+          docs={docs}
           materials={materials}
           onClose={closeReview}
           onChanged={reload}

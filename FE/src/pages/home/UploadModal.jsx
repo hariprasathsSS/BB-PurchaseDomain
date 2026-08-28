@@ -4,12 +4,10 @@ import { IconUpload } from "../../components/Icons.jsx";
 import { api } from "../../lib/api.js";
 import { ALLOWED_UPLOAD_RE, kb } from "../../lib/format.js";
 
-/* Browser intake: loose files against a project, and a site when the project
-   has any — otherwise the document lands unfiled and nothing can group it.
-
-   No document-type hint from here — the classifier reads every upload itself
-   (see extract.py's SYSTEM prompt), and a wrong hint from a human filing it
-   as the wrong kind is worse than no hint at all.
+/* Browser intake: loose files against a project — no document-type hint
+   from here — the classifier reads every upload itself (see extract.py's
+   SYSTEM prompt), and a wrong hint from a human filing it as the wrong kind
+   is worse than no hint at all.
 
    Upload used to fire-and-forget: close this dialog, show a toast, and leave
    extraction to finish silently in the background. It doesn't anymore — the
@@ -18,8 +16,6 @@ import { ALLOWED_UPLOAD_RE, kb } from "../../lib/format.js";
    clicking an existing document does. Review's own polling already covers
    the "extraction is still running" wait, so nothing here needs to. */
 export function UploadModal({ project, onClose, onUploaded }) {
-  const sites = project.sites ?? [];
-  const [siteId, setSiteId] = useState(sites[0]?.id ?? "");
   const [picked, setPicked] = useState([]);
   const [over, setOver] = useState(false);
   const [err, setErr] = useState("");
@@ -46,7 +42,7 @@ export function UploadModal({ project, onClose, onUploaded }) {
     setBusy(true);
     setErr("");
     try {
-      const result = await api.uploadFiles({ projectId: project.id, siteId, files: picked });
+      const result = await api.uploadFiles({ projectId: project.id, files: picked });
       const ids = (result.documents ?? []).map((d) => d.document_id);
       onUploaded(ids);
       onClose();
@@ -74,17 +70,6 @@ export function UploadModal({ project, onClose, onUploaded }) {
       }
     >
       {err ? <div className="banner banner-err">{err}</div> : null}
-
-      {sites.length ? (
-        <div className="form" style={{ marginBottom: 24 }}>
-          <label>
-            <span>Site</span>
-            <select className="input" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
-              {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </label>
-        </div>
-      ) : null}
 
       <div
         className={`drop ${over ? "over" : ""}`}

@@ -341,6 +341,9 @@ def row_to_document(row: sqlite3.Row) -> dict:
         # Null until extraction has run — the console shows a placeholder.
         "vendor_name": row["vendor_name_raw"],
         "vendor_gstin": row["vendor_gstin"],
+        # match_vendor's resolved identity, not this document's own raw GSTIN
+        # text — see po_reconciliation for why the two aren't the same thing.
+        "vendor_id": row["vendor_id"],
         "doc_number": row["doc_number"],
         "po_number": row["po_number"],
         "total_value": row["total_value"],
@@ -454,10 +457,10 @@ def delete_project(project_id: str):
     (ON DELETE CASCADE from project_id/quotation_id). documents and
     scanner_sessions don't — deleted explicitly here, in dependency order,
     same as the one-off cleanup scripts this session leaned on before this
-    endpoint existed. duplicate_of has no ON DELETE clause either, and
-    find_duplicate matches across the whole database, not just one project,
-    so a document *outside* this project can legitimately point at one
-    *inside* it — that pointer is cleared first, or deleting the document it
+    endpoint existed. duplicate_of has no ON DELETE clause either — find_duplicate
+    now scopes its match to one project, but a document extracted before that
+    fix can still carry a cross-project pointer, so this clears any such
+    pointer *into* this project before deleting, or deleting the document it
     names would violate that foreign key.
     """
     get_project(project_id)  # 404 before anything is touched
@@ -906,7 +909,7 @@ def clear_quote_pick(project_id: str, material_id: str):
 # header fields a list needs are joined in rather than fetched per row.
 DOC_SELECT = """
 SELECT d.*, p.code AS project_code, p.name AS project_name,
-       h.vendor_name_raw, h.vendor_gstin, h.doc_number, h.po_number, h.total_value,
+       h.vendor_name_raw, h.vendor_gstin, h.vendor_id, h.doc_number, h.po_number, h.total_value,
        h.invoice_channel
   FROM documents d
   LEFT JOIN projects p    ON p.id = d.project_id
@@ -1097,9 +1100,17 @@ def po_reconciliation(po_document_id: str):
         notes = [d for d in related if d["document_type"] == "DELIVERY"]
         inward = [d for d in related if d["document_type"] == "INWARD"]
 
-        # One delivery = same vendor GSTIN + invoice number — exactly what
+        # One delivery = same vendor + invoice number — exactly what
         # find_duplicate already treats as "the same document, different
-        # scan" at extraction time.
+        # scan" at extraction time. Keyed on vendor_id, not the document's
+        # own raw vendor_gstin text: match_vendor already resolves every
+        # document to one vendor row by GSTIN-or-name at extraction time, so
+        # it's the one identity guaranteed to agree across copies even when
+        # one page's GSTIN comes back unreadable (a blurry stamp, a scan the
+        # model just misses one field on) — a raw-GSTIN key would split that
+        # copy into its own phantom one-document "delivery" instead of
+        # folding it in with its siblings, which is exactly the bug this
+        # replaced.
         def new_group(doc_number, vendor_name):
             return {
                 "doc_number": doc_number, "vendor_name": vendor_name,
@@ -1108,7 +1119,7 @@ def po_reconciliation(po_document_id: str):
 
         groups: dict[tuple, dict] = {}
         for inv in invoices:
-            key = (inv["vendor_gstin"] or "", inv["doc_number"] or inv["document_id"])
+            key = (inv["vendor_id"] or "", inv["doc_number"] or inv["document_id"])
             g = groups.setdefault(key, new_group(key[1], inv["vendor_name"]))
             g["invoices"].append(inv)
 
@@ -1127,7 +1138,7 @@ def po_reconciliation(po_document_id: str):
             for d in docs_of_type:
                 key = dc_to_key.get(d["doc_number"])
                 if key is None:
-                    key = (d["vendor_gstin"] or "", d["doc_number"] or d["document_id"])
+                    key = (d["vendor_id"] or "", d["doc_number"] or d["document_id"])
                     groups.setdefault(key, new_group(key[1], d["vendor_name"]))
                 groups[key][slot].append(d)
 
@@ -1236,17 +1247,27 @@ def po_reconciliation(po_document_id: str):
                         "status": status,
                     })
 
+            # doc_number/total_value/page_count so each row in the Delivery
+            # info list reads as its own document, not just a bare date — a
+            # Delivery Note or Inward Report carries its own D.C. number,
+            # different from the invoice number the whole group is named
+            # after, and there's otherwise nothing on the row to say so.
             documents = [
                 {"document_id": d["document_id"], "document_type": "INVOICE",
-                 "invoice_channel": d["invoice_channel"],
+                 "invoice_channel": d["invoice_channel"], "doc_number": d["doc_number"],
+                 "total_value": d["total_value"], "page_count": d["page_count"],
                  "status": d["status"], "uploaded_at": d["uploaded_at"]}
                 for d in g["invoices"]
             ] + [
                 {"document_id": d["document_id"], "document_type": "DELIVERY",
+                 "doc_number": d["doc_number"], "total_value": d["total_value"],
+                 "page_count": d["page_count"],
                  "status": d["status"], "uploaded_at": d["uploaded_at"]}
                 for d in g["notes"]
             ] + [
                 {"document_id": d["document_id"], "document_type": "INWARD",
+                 "doc_number": d["doc_number"], "total_value": d["total_value"],
+                 "page_count": d["page_count"],
                  "status": d["status"], "uploaded_at": d["uploaded_at"]}
                 for d in g["inward"]
             ]

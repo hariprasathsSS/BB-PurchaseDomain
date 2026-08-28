@@ -6,6 +6,7 @@ venv/
 
 # backend runtime artifacts — regenerated on startup
 Backend/poc.db
+Backend/poc.db.backup-*
 Backend/server.log
 .env
 

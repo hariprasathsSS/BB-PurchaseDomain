@@ -40,7 +40,6 @@ export function ProjectDetail({ project, docs, materials, reload, onAddDocument,
     }
   };
 
-  const sites = project.sites ?? [];
   const projectDocs = useMemo(
     () => docs.filter((d) => d.project_id === project.id),
     [docs, project.id]
@@ -128,8 +127,6 @@ export function ProjectDetail({ project, docs, materials, reload, onAddDocument,
               be four more boxes on a page whose problem was boxes. */}
           <div className="phead-meta">
             <span><b>{tally.documents}</b> documents</span>
-            <span className="sep">·</span>
-            <span><b>{tally.sites}</b> sites</span>
             {tally.awaiting ? (
               <>
                 <span className="sep">·</span>
@@ -185,7 +182,7 @@ export function ProjectDetail({ project, docs, materials, reload, onAddDocument,
                 {projectDocs.filter((d) => d.document_type === "PO").length} total
               </span>
             </div>
-            <PurchaseOrdersSection docs={projectDocs} sites={sites} />
+            <PurchaseOrdersSection docs={projectDocs} />
           </div>
         ) : null}
 

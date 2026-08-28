@@ -7,17 +7,11 @@ const title = (s) => s.charAt(0) + s.slice(1).toLowerCase();
 export function FilterBar({
   value,
   onChange,
-  projects = null,   // pass a project list to show the project + site selects
+  projects = null,   // pass a project list to show the project select
   dates = false,
   placeholder = "Search document ID or project…",
 }) {
   const set = (patch) => onChange({ ...value, ...patch });
-
-  const sites = projects
-    ? (value.project
-        ? projects.find((p) => p.id === value.project)?.sites ?? []
-        : projects.flatMap((p) => p.sites ?? []))
-    : [];
 
   return (
     <div className="filter-bar">
@@ -31,28 +25,15 @@ export function FilterBar({
       />
 
       {projects ? (
-        <>
-          <select
-            className="input"
-            value={value.project ?? ""}
-            aria-label="Filter by project"
-            /* Changing project invalidates any site chosen under the old one. */
-            onChange={(e) => set({ project: e.target.value, site: "" })}
-          >
-            <option value="">All projects</option>
-            {projects.map((p) => <option key={p.id} value={p.id}>{p.code}</option>)}
-          </select>
-
-          <select
-            className="input"
-            value={value.site ?? ""}
-            aria-label="Filter by site"
-            onChange={(e) => set({ site: e.target.value })}
-          >
-            <option value="">All sites</option>
-            {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        </>
+        <select
+          className="input"
+          value={value.project ?? ""}
+          aria-label="Filter by project"
+          onChange={(e) => set({ project: e.target.value })}
+        >
+          <option value="">All projects</option>
+          {projects.map((p) => <option key={p.id} value={p.id}>{p.code}</option>)}
+        </select>
       ) : null}
 
       <select

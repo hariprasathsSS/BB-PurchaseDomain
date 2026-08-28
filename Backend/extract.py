@@ -210,20 +210,38 @@ def match_vendor(con: sqlite3.Connection, name: str | None, gstin: str | None) -
 
 
 def find_duplicate(
-    con: sqlite3.Connection, gstin: str | None, doc_number: str | None, exclude_id: str
+    con: sqlite3.Connection, vendor_id: str | None, doc_number: str | None, exclude_id: str
 ) -> str | None:
-    """Same vendor, same document number, different scan.
+    """Same project, same vendor, same document number, different scan.
 
     Invoice numbers are per-vendor sequences — "136" and "32" in the samples — so
-    the number alone collides constantly. Vendor plus number is the real key.
+    the number alone collides constantly. Vendor plus number is the real key —
+    but only within the one project exclude_id itself belongs to. Two entirely
+    different jobs can each legitimately have their own invoice sharing that
+    same vendor + number (or even be billed the exact same delivery under two
+    different POs), and pairing across that boundary previously showed a
+    reviewer on a brand-new project a "matches its other copy" banner pointing
+    at a completely unrelated project's document — scoped here the same way
+    po_reconciliation already scopes its own vendor+number grouping.
+
+    Matched on vendor_id — match_vendor's resolved identity — not the raw
+    vendor_gstin text this specific page happened to carry. A vendor+number
+    pairing has to survive the model simply missing the GSTIN on one of the
+    two copies (a blurry stamp, a scan it just drops a field on): match_vendor
+    already resolves that copy to the same vendor row by name, so keying off
+    vendor_id here still pairs the two, where matching on raw GSTIN text would
+    silently fail to pair them (see a real instance of exactly this in
+    po_reconciliation's own docstring).
     """
-    if not gstin or not doc_number:
+    if not vendor_id or not doc_number:
         return None
     row = con.execute(
-        "SELECT document_id FROM doc_headers"
-        " WHERE vendor_gstin = ? AND doc_number = ? AND document_id != ?"
-        " ORDER BY rowid LIMIT 1",
-        (gstin, doc_number, exclude_id),
+        "SELECT h.document_id FROM doc_headers h"
+        " JOIN documents d ON d.id = h.document_id"
+        " WHERE d.project_id = (SELECT project_id FROM documents WHERE id = ?)"
+        " AND h.vendor_id = ? AND h.doc_number = ? AND h.document_id != ?"
+        " ORDER BY h.rowid LIMIT 1",
+        (exclude_id, vendor_id, doc_number, exclude_id),
     ).fetchone()
     return row["document_id"] if row else None
 
@@ -364,6 +382,13 @@ class Extraction(BaseModel):
     total_value: float | None
 
     irn: str | None
+
+    # Which physical copy of an INVOICE this is — set only when the page
+    # itself says so (a "VENDOR INVOICE" / "SITE INVOICE" heading, or
+    # equivalent wording); null on every other page and null on an invoice
+    # that never says which. See save_extraction and mark_approved.
+    invoice_channel: Literal["SITE", "VENDOR"] | None
+
     lines: list[Line]
 
 
@@ -437,6 +462,20 @@ Rules:
 - Line items: one entry per row of the item table. Invoice line tables often
   carry their own D.C.No and D.C.Date columns — capture them per line.
 - Ignore terms and conditions, bank details, declarations and signature blocks.
+
+If doc_kind is INVOICE, also read invoice_channel — which physical copy this
+is. A vendor typically hands one copy to the site and mails a separate one
+to the office; some vendors print which is which, most don't.
+  VENDOR   the page carries wording naming it the vendor's/office copy —
+           e.g. a "VENDOR INVOICE" heading, "Vendor Copy", "Office Copy".
+  SITE     the page carries wording naming it the site's copy — e.g. a
+           "SITE INVOICE" heading, "Site Copy".
+  null     the page says only "TAX INVOICE" / "INVOICE" or anything else
+           with no wording identifying which copy it is. Do not guess from
+           context (who it's addressed to, a delivery address, a signature)
+           — only a page that actually prints which copy it is gets SITE or
+           VENDOR; everything else is null, same as any other unreadable
+           field, and a human reviewer picks it instead.
 
 If a value is genuinely unreadable — blur, glare, a fold across the digits —
 return null rather than a guess."""
@@ -685,6 +724,7 @@ _HEADER_FIELDS = (
     "place_of_supply", "delivery_address_raw",
     "basic_value", "tax_type", "igst_amount", "cgst_amount", "sgst_amount",
     "tcs_amount", "rounding_off", "total_value", "irn", "qr_verified",
+    "invoice_channel",
 )
 
 
@@ -699,6 +739,12 @@ def save_extraction(con: sqlite3.Connection, document_id: str, data: dict) -> No
     header["vendor_gstin"] = gstin
     header["buyer_gstin"] = find_gstin(data.get("buyer_gstin"))
     header["qr_verified"] = 1 if data.get("qr_verified") else 0
+    # Meaningless outside an invoice, and the model is only asked for it on
+    # one — belt-and-braces against a stray value landing on a PO/DELIVERY/
+    # etc. row, which the CHECK constraint alone wouldn't catch (it only
+    # rejects a value outside SITE/VENDOR, not a channel on the wrong kind).
+    if header["doc_kind"] != "INVOICE" or header["invoice_channel"] not in ("SITE", "VENDOR"):
+        header["invoice_channel"] = None
 
     columns = ", ".join(("document_id", *_HEADER_FIELDS))
     placeholders = ", ".join(["?"] * (len(_HEADER_FIELDS) + 1))
@@ -724,7 +770,7 @@ def save_extraction(con: sqlite3.Connection, document_id: str, data: dict) -> No
             ),
         )
 
-    duplicate = find_duplicate(con, gstin, header["doc_number"], document_id)
+    duplicate = find_duplicate(con, vendor_id, header["doc_number"], document_id)
     # The classifier's answer is what files the document. An unrecognised kind
     # leaves it UNCLASSIFIED rather than writing a value the CHECK would reject.
     doc_kind = data.get("doc_kind")
@@ -864,7 +910,11 @@ EDITABLE_HEADER_FIELDS = (
     "place_of_supply", "delivery_address_raw",
     "basic_value", "tax_type", "igst_amount", "cgst_amount", "sgst_amount",
     "tcs_amount", "rounding_off", "total_value", "irn",
-    # Reviewer-set, never extracted — see doc_headers.invoice_channel in db.py.
+    # Usually extracted from a "VENDOR INVOICE"/"SITE INVOICE" heading (see
+    # the engine's SYSTEM prompt), but stays reviewer-editable like every
+    # other field here — an invoice that doesn't print which copy it is
+    # needs a reviewer to set this by hand. See doc_headers.invoice_channel
+    # in db.py.
     "invoice_channel",
 )
 
@@ -999,10 +1049,11 @@ def mark_approved(con: sqlite3.Connection, document_id: str, approved_by: str) -
     quotation predates one existing at all.
 
     INVOICE also needs invoice_channel (SITE or VENDOR) — the vendor hands
-    one copy to the site and mails a separate one to the office, and
-    nothing on the page says which; a reviewer has to say so, since the
-    delivery-completeness check (po_reconciliation) can't tell the two
-    apart otherwise."""
+    one copy to the site and mails a separate one to the office. The
+    extractor sets this automatically when the page itself says which
+    ("VENDOR INVOICE"/"SITE INVOICE" or similar); when it doesn't print
+    that, a reviewer has to say so instead, since the delivery-completeness
+    check (po_reconciliation) can't tell the two apart otherwise."""
     cur = con.execute(
         "UPDATE documents SET status = 'APPROVED'"
         " WHERE id = ? AND status = 'EXTRACTED' AND document_type NOT IN ('UNCLASSIFIED', 'OTHER')"

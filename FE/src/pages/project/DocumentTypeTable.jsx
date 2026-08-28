@@ -10,13 +10,13 @@ import { money, shortDate } from "../../lib/format.js";
    grid class. Several columns share the extra width a wide viewport frees
    (minmax(floor, Nfr) on each), not just one — see the note beside .dgrid
    in app.css for why that matters at full page width. */
-const COLS = "minmax(150px, 1.6fr) 112px minmax(160px, 1.6fr) minmax(90px, .8fr) "
+const COLS = "minmax(150px, 1.6fr) 112px minmax(160px, 1.6fr) "
   + "minmax(110px, .9fr) minmax(110px, .9fr) 96px 40px";
 
-/* The shape behind both the Purchase Orders and Invoices tabs — same table,
-   filtered to one document_type, differing only in what the number column
-   is called, where a row opens to, and what an empty list says. */
-export function DocumentTypeTable({ docs, sites, type, numberLabel, emptyText, onOpenRow }) {
+/* The shape behind the Purchase Orders tab — filtered to one document_type,
+   differing only in what the number column is called, where a row opens
+   to, and what an empty list says. */
+export function DocumentTypeTable({ docs, type, numberLabel, emptyText, onOpenRow }) {
   const rows = useMemo(() => docs.filter((d) => d.document_type === type), [docs, type]);
   const [ready, setReady] = useState(false);
   const ids = rows.map((d) => d.document_id).join(",");
@@ -36,8 +36,6 @@ export function DocumentTypeTable({ docs, sites, type, numberLabel, emptyText, o
     return <div className="card"><div className="empty">{emptyText}</div></div>;
   }
 
-  const siteName = (id) => sites.find((s) => s.id === id)?.name ?? "Unfiled";
-
   return (
     <div className="card">
       <div className="table-wrap">
@@ -46,7 +44,6 @@ export function DocumentTypeTable({ docs, sites, type, numberLabel, emptyText, o
             <span>{numberLabel}</span>
             <span>Status</span>
             <span>Vendor</span>
-            <span>Site</span>
             <span>Materials</span>
             <span className="r">Amount</span>
             <span>Date</span>
@@ -66,7 +63,6 @@ export function DocumentTypeTable({ docs, sites, type, numberLabel, emptyText, o
                 <span className="c-vend">{d.doc_number ?? d.document_id.slice(0, 8)}</span>
                 <span><StatusPill status={d.status} /></span>
                 <span className="c-vend">{d.vendor_name ?? "—"}</span>
-                <span className="c-site">{siteName(d.site_id)}</span>
                 <span className="c-ref">
                   {!ready ? "…" : lineCount ? `${lineCount} item${lineCount === 1 ? "" : "s"}` : "—"}
                 </span>

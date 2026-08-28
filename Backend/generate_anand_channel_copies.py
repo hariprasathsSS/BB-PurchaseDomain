@@ -1,10 +1,17 @@
-"""Four variants of the Anand Enterprises invoice (INV-9088, against
+"""Variants of the Anand Enterprises invoice (INV-9088, against
 PO-BNB-2026-0001 / D.C. No DC-3103 — see generate_bnb_mock.py for the
 ground-truth data this reuses) for testing the Site/Vendor invoice channel
-tagging and the Inward Report side of the three-way delivery match:
+tagging and the Delivery Challan / Inward Report sides of the three-way
+delivery match:
 
   INV-9088_vendor-copy.png    — same invoice, retitled "VENDOR INVOICE"
   INV-9088_site-copy.png      — same invoice, retitled "SITE INVOICE"
+  DC-3103_delivery-note.png            — Delivery Note, both materials,
+                                          quantities matching the invoice
+                                          exactly (100 MT each)
+  DC-3103_inward-report.png            — Inward Report, both materials,
+                                          quantities matching the invoice
+                                          exactly — the clean pairing
   DC-3103_inward-missing-product.png   — Inward Report, only one of the two
                                           materials listed (M Sand dropped)
   DC-3103_inward-missing-quantity.png  — Inward Report, both materials
@@ -12,16 +19,22 @@ tagging and the Inward Report side of the three-way delivery match:
 
 The two invoice copies are identical in every material/quantity/rate — they
 exist to test that tagging one SITE and one VENDOR (see doc_headers.
-invoice_channel) still reads as a clean three-way match. The two Inward
-Report variants exist to each trigger a different kind of three-way
-mismatch once paired with the (clean) invoice copies above.
+invoice_channel) still reads as a clean three-way match. Paired with
+DC-3103_delivery-note.png and DC-3103_inward-report.png, all four documents
+of one delivery agree on every material and quantity — a fully verified
+delivery, not just an invoice pair. The two "missing" Inward Report variants
+exist instead to each trigger a different kind of three-way mismatch once
+paired with the (clean) invoice copies above.
 
-The Inward Report is deliberately not rendered like the invoice: it's the
-site's own record, not the vendor's — no vendor GSTIN or letterhead, a
-"Received by" line instead of "Authorised Signatory". Its own document
-number is the D.C. number (DC-3103), not a new number of its own — that's
-the field po_reconciliation actually matches an Inward Report against an
-invoice's lines by (see main.py's dc_to_key).
+The Delivery Note is the vendor's own document — same letterhead treatment
+as the invoice, "Consignee:" instead of "Buyer:", no rate/amount/tax
+columns (a challan is normally unpriced) — matching generate_sample_docs.py's
+DELIVERY CHALLAN rendering. The Inward Report is the opposite: the site's
+own record, not the vendor's — no vendor GSTIN or letterhead, a "Received
+by" line instead of "Authorised Signatory". Both carry the D.C. number
+(DC-3103) as their own document number rather than a new number of their
+own — that's the field po_reconciliation actually matches a delivery's
+documents against an invoice's lines by (see main.py's dc_to_key).
 
 Run: python generate_anand_channel_copies.py
 """
@@ -30,7 +43,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from generate_sample_docs import _draw_table, _font, money
+from generate_sample_docs import _draw_table, _font, money, render_document
 from PIL import Image, ImageDraw
 
 OUT_DIR = Path(__file__).resolve().parent.parent / "Sample" / "generated" / "anand_channel_copies"
@@ -54,6 +67,16 @@ DC_NUMBER, DC_DATE = "DC-3103", "15-08-2026"
 # The original's two lines — description, hsn, qty, unit, rate, tax%.
 CEMENT = ("OPC Cement 53 Grade", "2523", 100, "MT", 7200, 28)
 SAND = ("M Sand", "2505", 100, "MT", 1500, 5)
+
+# render_delivery_note/render_inward_report below default to this module's
+# own Anand/INV-9088/DC-3103 identity, but take an `ids` override so another
+# module (generate_sribalaji_channel_copies.py, so far) can reuse the same
+# two renderers for a different vendor's delivery instead of copy-pasting
+# them — everything else about the two document layouts stays identical.
+_DEFAULT_IDS = {
+    "vendor": VENDOR, "buyer": BUYER, "po_number": PO_NUMBER, "po_date": PO_DATE,
+    "inv_number": INV_NUMBER, "dc_number": DC_NUMBER, "dc_date": DC_DATE,
+}
 
 
 def render_invoice_copy(doc_type_label: str, out_path: Path) -> None:
@@ -126,36 +149,70 @@ def render_invoice_copy(doc_type_label: str, out_path: Path) -> None:
     img.save(out_path)
 
 
-def render_inward_report(lines: list[tuple], blank_qty_for: str | None, out_path: Path) -> None:
+def render_delivery_note(lines: list[tuple], out_path: Path, ids: dict | None = None) -> None:
+    """The vendor's own delivery challan for this shipment — same letterhead
+    treatment as the invoice (it's the vendor's document too), but no
+    rate/amount/tax columns, since a challan travels with the goods ahead of
+    billing and is normally unpriced. `lines` carries the same
+    description/hsn/qty/unit tuples the invoice and Inward Report use, so
+    passing (CEMENT, SAND) unmodified is what makes this "match properly on
+    product and quantity" against the invoice by construction, not by
+    coincidence. `ids` overrides this module's own Anand/INV-9088/DC-3103
+    identity — see _DEFAULT_IDS."""
+    v = {**_DEFAULT_IDS, **(ids or {})}
+    rows = [[desc, hsn, qty, unit] for desc, hsn, qty, unit, _rate, _tax in lines]
+    render_document(
+        doc_type="DELIVERY NOTE",
+        doc_number=v["dc_number"],
+        doc_date=v["dc_date"],
+        issuer={"name": v["vendor"]["name"], "address": v["vendor"]["address"], "gstin": v["vendor"]["gstin"]},
+        counterparty_lines=[
+            "Consignee:", v["buyer"]["name"], f"Site: {v['buyer']['site']}", f"GSTIN: {v['buyer']['gstin']}",
+        ],
+        ref_line=f"Against PO No: {v['po_number']} dt. {v['po_date']}   |   Invoice No: {v['inv_number']}",
+        table_header=["Description", "HSN", "Qty", "Unit"],
+        table_rows=rows,
+        col_widths=[460, 120, 150, 150],
+        totals=None,
+        out_path=out_path,
+    )
+
+
+def render_inward_report(
+    lines: list[tuple], blank_qty_for: str | None, out_path: Path, ids: dict | None = None,
+) -> None:
     """The site's own record of what arrived — no vendor letterhead or
     GSTIN, since the site prepares this, not the vendor. `lines` is which
     materials are on it at all; `blank_qty_for` (a description string, or
     None) leaves that one line's Qty cell empty rather than dropping the
     line — a different failure shape than the material being absent
-    entirely, and the two Inward Report variants each test one of these."""
+    entirely, and the two Inward Report variants each test one of these.
+    `ids` overrides this module's own Anand/INV-9088/DC-3103 identity — see
+    _DEFAULT_IDS."""
+    v = {**_DEFAULT_IDS, **(ids or {})}
     W, H = 1240, 1650
     img = Image.new("RGB", (W, H), "white")
     d = ImageDraw.Draw(img)
     f_title, f_h2, f_body = _font(bold=True, size=30), _font(bold=True, size=20), _font(size=17)
 
     y = 40
-    d.text((40, y), BUYER["name"], font=f_h2, fill="black"); y += 28
-    d.text((40, y), BUYER["site"], font=f_body, fill="black"); y += 40
+    d.text((40, y), v["buyer"]["name"], font=f_h2, fill="black"); y += 28
+    d.text((40, y), v["buyer"]["site"], font=f_body, fill="black"); y += 40
 
     d.line([40, y, W - 40, y], fill="black", width=2); y += 20
-    title = "MATERIAL INWARD REGISTER"
+    title = "INWARD REPORT"
     title_w = d.textlength(title, font=f_title)
     d.text(((W - title_w) / 2, y), title, font=f_title, fill="black"); y += 50
     d.line([40, y, W - 40, y], fill="black", width=2); y += 20
 
-    d.text((40, y), f"No: {DC_NUMBER}", font=f_h2, fill="black")
-    d.text((W - 340, y), f"Date: {DC_DATE}", font=f_h2, fill="black")
+    d.text((40, y), f"No: {v['dc_number']}", font=f_h2, fill="black")
+    d.text((W - 340, y), f"Date: {v['dc_date']}", font=f_h2, fill="black")
     y += 36
 
-    d.text((40, y), f"Against PO No: {PO_NUMBER} dt. {PO_DATE}   |   Invoice No: {INV_NUMBER}", font=f_h2, fill="black")
+    d.text((40, y), f"Against PO No: {v['po_number']} dt. {v['po_date']}   |   Invoice No: {v['inv_number']}", font=f_h2, fill="black")
     y += 32
 
-    for line in [f"Received from: {VENDOR['name']}", "Recorded by: Site Store Keeper"]:
+    for line in [f"Received from: {v['vendor']['name']}", "Recorded by: Site Store Keeper"]:
         d.text((40, y), line, font=f_body, fill="black")
         y += 24
     y += 20
@@ -186,6 +243,8 @@ def build_and_render():
 
     render_invoice_copy("VENDOR INVOICE", OUT_DIR / "INV-9088_vendor-copy.png")
     render_invoice_copy("SITE INVOICE", OUT_DIR / "INV-9088_site-copy.png")
+    render_delivery_note([CEMENT, SAND], OUT_DIR / "DC-3103_delivery-note.png")
+    render_inward_report([CEMENT, SAND], None, OUT_DIR / "DC-3103_inward-report.png")
     render_inward_report([CEMENT], None, OUT_DIR / "DC-3103_inward-missing-product.png")
     render_inward_report([CEMENT, SAND], "M Sand", OUT_DIR / "DC-3103_inward-missing-quantity.png")
 
@@ -195,6 +254,8 @@ def build_and_render():
         "variants": {
             "vendor_copy": {"file": "INV-9088_vendor-copy.png", "lines": [CEMENT, SAND]},
             "site_copy": {"file": "INV-9088_site-copy.png", "lines": [CEMENT, SAND]},
+            "delivery_note": {"file": "DC-3103_delivery-note.png", "lines": [CEMENT, SAND]},
+            "inward_report": {"file": "DC-3103_inward-report.png", "lines": [CEMENT, SAND]},
             "inward_missing_product": {
                 "file": "DC-3103_inward-missing-product.png", "lines": [CEMENT], "missing": "M Sand",
             },
@@ -205,7 +266,7 @@ def build_and_render():
         },
     }
     (OUT_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    print(f"Wrote 4 images + manifest.json to {OUT_DIR}")
+    print(f"Wrote 6 images + manifest.json to {OUT_DIR}")
 
 
 if __name__ == "__main__":

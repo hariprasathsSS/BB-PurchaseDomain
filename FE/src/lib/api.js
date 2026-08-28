@@ -21,7 +21,7 @@ export const api = {
   config: () => get("/api/v1/config"),
 
   listProjects: () => get("/api/v1/projects").then((d) => d.projects ?? []),
-  createProject: (name, sites) => send("/api/v1/projects", "POST", { name, sites }),
+  createProject: (name) => send("/api/v1/projects", "POST", { name }),
   deleteProject: (id) => fetch(`/api/v1/projects/${id}`, { method: "DELETE" }).then(json),
 
   listDocuments: () => get("/api/v1/documents").then((d) => d.documents ?? []),

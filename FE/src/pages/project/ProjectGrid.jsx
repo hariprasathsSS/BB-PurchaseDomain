@@ -6,12 +6,7 @@ import { projectStatus, projectTally } from "../../lib/format.js";
 /* The portfolio. Same tile as the home page, so a project looks like itself
    wherever it appears — including the status label, which is what makes the
    grid scannable without opening anything. */
-export function ProjectGrid({ projects, docs, search, onAddProject, onAddDocument, onScan }) {
-  const term = search.trim().toLowerCase();
-  const shown = !term
-    ? projects
-    : projects.filter((p) => `${p.code} ${p.name}`.toLowerCase().includes(term));
-
+export function ProjectGrid({ projects, docs, onAddProject, onAddDocument, onScan }) {
   return (
     <div className="band">
       <div className="col">
@@ -20,41 +15,33 @@ export function ProjectGrid({ projects, docs, search, onAddProject, onAddDocumen
             <span className="eyebrow">Explorer</span>
             <h1 style={{ marginTop: 14 }}>Projects</h1>
             <p className="lede">
-              Open a project to see its sites, what was captured at each, and the
-              materials they add up to.
+              Open a project to see what was captured for it and the materials they add up to.
             </p>
           </div>
         </div>
 
         <div className="section">
           <div className="section-head">
-            <span className="tag">
-              {term ? `${shown.length} of ${projects.length}` : `${projects.length} total`}
-            </span>
+            <span className="tag">{projects.length} total</span>
           </div>
 
           <div className="tiles">
-            {shown.map((p) => {
+            {projects.map((p) => {
               const status = projectStatus(p, docs);
               const tally = projectTally(p, docs);
-              const sites = p.sites ?? [];
               return (
                 <div key={p.id} className={`tile ${status.cls === "st-action" ? "is-hot" : ""}`}>
                   <div>
                     <span className={`tile-status ${status.cls}`}>{status.label}</span>
-                    <div className="code">{p.code}</div>
-                    <div className="name">{p.name}</div>
-                  </div>
-
-                  <div className="where">
-                    {sites.length
-                      ? `${sites.length} site${sites.length === 1 ? "" : "s"} · ${sites.map((s) => s.name).join(", ")}`
-                      : "No sites registered yet"}
+                    <div className="tile-head">
+                      <span className="name">{p.name}</span>
+                      <span className="code">{p.code}</span>
+                    </div>
                   </div>
 
                   <div className="tally">
                     <div><b>{tally.documents}</b><span>Documents</span></div>
-                    <div><b>{tally.sites}</b><span>Sites</span></div>
+                    <div><b>{tally.pages}</b><span>Pages</span></div>
                     <div className={tally.awaiting ? "hot" : ""}>
                       <b>{tally.awaiting}</b><span>Awaiting</span>
                     </div>
@@ -79,16 +66,10 @@ export function ProjectGrid({ projects, docs, search, onAddProject, onAddDocumen
               );
             })}
 
-            {term && !shown.length ? (
-              <div className="empty" style={{ gridColumn: "1 / -1" }}>
-                No project matches “{search}”.
-              </div>
-            ) : null}
-
             <button className={`tile-add ${projects.length === 0 ? "is-only" : ""}`} type="button" onClick={onAddProject}>
               <span className="ring"><IconPlus width={24} height={24} /></span>
               <span className="t">Add project</span>
-              <span className="d">Register a site before its documents start arriving.</span>
+              <span className="d">Its documents will start showing up here as soon as it exists.</span>
             </button>
           </div>
         </div>

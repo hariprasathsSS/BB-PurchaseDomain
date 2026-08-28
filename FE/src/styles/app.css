@@ -223,52 +223,136 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
    stack of floating boxes. */
 #tab-home .section { margin-top: var(--s6); }
 
-/* The pitch on the left, the state of the desk on the right. One panel, not
-   a hero snapshot plus a separate stat row: they carry the same numbers. */
-.hero-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
-  gap: var(--s8);
-  align-items: start;
-  margin-top: var(--s6);
-}
-@media (max-width: 1000px) { .hero-grid { grid-template-columns: 1fr; gap: var(--s4); } }
+/* A photo band behind the pitch only — taller than the text needs, so the
+   image stays visible (darkened, not faded) well past the copy and only
+   fades into the page's own canvas colour right at the bottom edge, close
+   to where Dashboard starts, instead of washing out immediately under the
+   paragraph. The gradient is layered over the image in one `background`,
+   not a separate overlay element, so there's nothing to keep in sync if the
+   image changes. Text sits toward the top (not vertically centred) so the
+   extra height reads as "more photo below the pitch," not as a bigger gap
+   above it.
 
-.hero-copy { padding-top: var(--s3); }
+   background-position is shifted toward the top of the source photo, not
+   centred — both crane jibs sit in the upper third of that image, and a
+   centred crop on a band this wide loses them, leaving only the mast
+   visible; nudged closer to the very top (8%, not 18%) so the jibs clear
+   the heading text instead of sitting behind it. Same background-size
+   (cover) throughout — this only re-centres which part of the image shows,
+   never a re-crop/re-zoom. The dark-to-canvas transition in the gradient
+   starts later (88%, not 78%) so the fade sits right at the bottom edge,
+   near Dashboard, instead of washing out mid-band — same two rgba
+   opacities as before, only their stop position moved. Drop the photo in
+   at FE/src/assets/home-hero.jpg — referenced here as a plain CSS url(),
+   not a JS import, so a missing file leaves the band looking plain (the
+   gradient alone) instead of breaking the build. */
+.home-hero {
+  min-height: 62vh;
+  display: flex; align-items: flex-start;
+  background:
+    linear-gradient(to bottom, rgba(10, 16, 24, .55) 0%, rgba(10, 16, 24, .55) 88%, var(--canvas) 100%),
+    url("../assets/home-hero.jpg") center 8% / cover no-repeat;
+}
+@media (max-width: 720px) { .home-hero { min-height: 54vh; } }
+
+.hero-copy { padding-top: var(--s5); margin-top: var(--s6); width: 100%; }
 .hero-copy h1 { margin-top: var(--s2); }
 .hero-copy .lede { margin-top: var(--s2); font-size: 17px; color: var(--slate); max-width: 46ch; }
 .hero-cta { display: flex; gap: 10px; margin-top: var(--s4); flex-wrap: wrap; }
 
-/* Actions outrank metrics: the one thing with a decision waiting on it gets
-   the numeral, the sentence and the button. The rest are quiet rows. */
-.attn {
-  background: var(--surface);
-  border: 1px solid var(--hair);
-  border-radius: var(--r-stad);
-  overflow: hidden;
-}
-.attn-top { padding: var(--s3) var(--s3) 22px; }
-.attn-lead { display: flex; align-items: flex-start; gap: 18px; margin-top: var(--s2); }
-.attn-lead .n {
-  font-family: var(--mono); font-size: 46px; font-weight: 500;
-  line-height: .86; letter-spacing: -0.04em; color: var(--clay);
-  font-variant-numeric: tabular-nums;
-}
-.attn-lead .n.calm { color: var(--ok-fg); }
-.attn-lead .t { font-size: 16.5px; font-weight: 500; }
-.attn-lead .d { font-size: 13.5px; color: var(--slate); margin-top: 4px; }
-.attn-act { margin-top: var(--s2); }
+/* Light text over the photo — same hero-copy markup the plain-background
+   version used, just re-coloured for a dark image behind it instead of the
+   cream page. The four document kinds named in the lede get picked out in
+   full white + bold rather than their own pill/tag treatment — enough to
+   read as "these are the things this app handles" at a glance without
+   turning one sentence into a row of badges. */
+.home-hero .eyebrow { color: rgba(255, 255, 255, .8); }
+.home-hero .eyebrow::before { background: #fff; }
+.home-hero .hero-copy h1 { color: #fff; }
+.home-hero .hero-copy .lede { color: rgba(255, 255, 255, .82); }
+.home-hero .hero-copy .lede strong { color: #fff; font-weight: 700; }
 
-.attn-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px var(--s3);
-  border-top: 1px solid var(--hair);
-  font-size: 14.5px;
+/* ── dashboard metrics ────────────────────────────────────────────────────── */
+/* Two tiers, the way a real ops dashboard reads: the totals first — bigger,
+   inked, a little weight to them — then the status breakdown as a lighter
+   row underneath. Same information as one flat grid would show, but the
+   hierarchy tells a reader which numbers are the headline and which are the
+   detail, instead of leaving all seven to read as equally important. */
+.metrics-primary {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--s3);
 }
-.attn-row .spacer { flex: 1; }
-.attn-row b {
-  font-family: var(--mono); font-weight: 500; font-size: 16px;
+.metric-card-primary {
+  background: var(--surface); border: 1px solid var(--hair); border-radius: var(--r-stad);
+  padding: var(--s4); box-shadow: var(--lift-1);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.metric-card-primary:hover { transform: translateY(-2px); box-shadow: var(--lift-2); }
+.metric-card-primary .metric-icon.tone-primary {
+  width: 42px; height: 42px; background: var(--ink); color: var(--text-invert);
+}
+.metric-card-primary .metric-value { font-size: 34px; }
+.metric-card-primary .metric-value.is-money { font-size: 26px; }
+.metric-card-primary .metric-label { font-size: 14px; }
+
+.metrics-status {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--s2);
+  margin-top: var(--s2);
+}
+.metric-card-status {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface); border: 1px solid var(--hair); border-radius: var(--r-btn);
+  padding: 14px var(--s3);
+}
+.metric-card-status .metric-value.is-compact { font-size: 22px; }
+.metric-card-status .metric-label { font-size: 12.5px; margin-top: 1px; }
+
+.metric-icon {
+  flex: none; margin-bottom: var(--s2);
+  display: grid; place-items: center; border-radius: 50%;
+}
+.metric-card-status .metric-icon { width: 36px; height: 36px; margin-bottom: 0; }
+.metric-icon.tone-ok    { background: var(--ok-bg);   color: var(--ok-fg); }
+.metric-icon.tone-bad   { background: var(--bad-bg);  color: var(--bad-fg); }
+.metric-icon.tone-warn  { background: var(--warn-bg); color: var(--warn-fg); }
+.metric-icon.tone-info  { background: var(--info-bg); color: var(--info-fg); }
+.metric-value {
+  font-family: var(--mono); font-size: 32px; font-weight: 500;
+  letter-spacing: -0.03em; line-height: 1; color: var(--ink);
   font-variant-numeric: tabular-nums;
+}
+.metric-label { margin-top: 6px; font-size: 13.5px; color: var(--slate); }
+
+/* ── materials pie chart (home) ───────────────────────────────────────────── */
+/* One ring per material (see MaterialsPieChart.jsx for why one combined
+   ring per project would be misleading — materials share a project, not a
+   unit), laid out as a small-multiples grid rather than one big chart. */
+.pie-card { padding: var(--s4); margin-top: var(--s3); }
+.pie-select { min-height: 38px; padding: 0 16px; font-size: 14px; max-width: 320px; }
+
+.pie-legend-key { display: flex; gap: var(--s4); margin-bottom: var(--s3); }
+.pie-legend-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--slate); }
+.pie-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+.pie-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--s3);
+}
+.pie-mat {
+  display: flex; align-items: center; gap: var(--s2);
+  padding: var(--s2); border: 1px solid var(--hair); border-radius: var(--r-btn);
+}
+.pie-svg { flex: none; }
+.pie-mat-info { min-width: 0; }
+.pie-mat-name {
+  font-size: 13.5px; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pie-mat-qty {
+  margin-top: 3px; font-family: var(--mono); font-size: 12.5px;
+  font-variant-numeric: tabular-nums; color: var(--slate);
+}
+@media (max-width: 640px) {
+  .metrics-primary { grid-template-columns: 1fr; }
+  .metrics-status { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* ── project tiles ────────────────────────────────────────────────────────── */
@@ -287,10 +371,17 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
    coloured rail down the side of a rounded card is a tell, not a design. */
 .tile.is-hot { background: var(--warn-tint); }
 
-/* The code is what people read off the paper and say out loud, so it leads. */
-.tile .code { font-family: var(--mono); font-size: 19px; font-weight: 500; letter-spacing: -0.02em; word-break: break-all; }
-.tile .name { font-size: 17px; font-weight: 500; margin-top: 6px; }
-.tile .where { font-size: 15px; color: var(--slate); }
+/* The name is what a person actually calls the project, so it leads — the
+   generated code is only ever an ID, printed small and muted right next to
+   it, the way a greyed-out/disabled field reads rather than a second
+   headline. */
+.tile-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.tile .name { font-size: 22px; font-weight: 700; letter-spacing: var(--tight); }
+.tile .code {
+  font-family: var(--mono); font-size: 12px; font-weight: 500;
+  letter-spacing: -0.01em; color: var(--slate); opacity: .6;
+  word-break: break-all;
+}
 
 /* Cards stop being interchangeable: this says whether the project needs you,
    so a portfolio can be scanned without opening anything. */
@@ -359,6 +450,28 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 .menu .ico { flex: none; color: var(--clay); padding-top: 2px; }
 .menu .t { font-size: 15px; font-weight: 500; display: block; }
 .menu .d { font-size: 13px; color: var(--slate); display: block; }
+
+/* A free-typing field with a suggestion list (Combobox.jsx) — a PO number
+   field offering every PO already on file in this project is the first use.
+   Same floating-card language as .menu above, just for a flat list of plain
+   values instead of icon+title+description rows. */
+.combo { position: relative; }
+.combo-menu {
+  position: absolute; z-index: 20;
+  top: calc(100% + 6px); left: 0; right: 0;
+  max-height: 220px; overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--hair); border-radius: var(--r-btn);
+  box-shadow: var(--lift-2);
+}
+.combo-menu button {
+  display: block; width: 100%; padding: 11px 16px;
+  border: 0; border-top: 1px solid var(--hair); background: none;
+  text-align: left; font: inherit; font-size: 15px; color: var(--text);
+  cursor: pointer;
+}
+.combo-menu button:first-child { border-top: 0; }
+.combo-menu button:hover { background: var(--hover); }
 
 /* ── recent activity ──────────────────────────────────────────────────────── */
 .activity {
@@ -546,7 +659,7 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
    The same row as a project's document list, plus the two columns a
    cross-project view needs — a page thumbnail and the project code. */
 .dgrid.reg {
-  --cols: 34px 92px 112px minmax(150px, 1.8fr) minmax(110px, .9fr) minmax(90px, .7fr)
+  --cols: 34px 92px 112px minmax(150px, 1.8fr) minmax(110px, .9fr)
           minmax(110px, .9fr) minmax(100px, .8fr) 96px minmax(110px, .8fr) 40px;
 }
 
@@ -814,6 +927,7 @@ table.data td.quote-cell { padding: 0; }
 .banner-err  { background: var(--bad-bg);  color: var(--bad-fg); }
 .banner-ok   { background: var(--ok-bg);   color: var(--ok-fg); }
 .banner-wait { background: var(--info-bg); color: var(--info-fg); }
+.banner-warn { background: var(--warn-bg); color: var(--warn-fg); }
 
 /* ── upload ───────────────────────────────────────────────────────────────── */
 .drop {
@@ -936,7 +1050,12 @@ table.lines .input { min-height: 36px; font-size: 13px; border-radius: var(--r-c
 }
 .compare-link-delete:hover { background: var(--bad-bg); color: var(--bad-fg); }
 .compare-link-main { flex: 1; min-width: 0; }
-.compare-link-num { font-size: 14.5px; font-weight: 500; }
+.compare-link-num-row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.compare-link-num { font-size: 14.5px; font-weight: 500; flex: none; }
+.compare-link-vendor {
+  font-size: 12.5px; color: var(--slate);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .compare-link-meta {
   font-size: 12.5px; color: var(--slate); margin-top: 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1066,7 +1185,7 @@ table.lines .input { min-height: 36px; font-size: 13px; border-radius: var(--r-c
   .toolbar, .filter-bar, .input, .open-round, .open-sm,
   .chat-bubble, .chat-dock { display: none !important; }
   .band { padding: 0; }
-  .tile, .card, .attn, .phead, .explorer, .activity {
+  .tile, .card, .phead, .explorer, .activity {
     box-shadow: none; border: 1px solid var(--line); break-inside: avoid;
   }
   table.data thead { display: table-header-group; }

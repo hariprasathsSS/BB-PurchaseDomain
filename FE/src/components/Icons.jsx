@@ -116,3 +116,7 @@ export const IconTrash = (p) => (
     <path d="M10 11v6" /><path d="M14 11v6" />
   </svg>
 );
+
+export const IconClock = (p) => (
+  <svg {...base} {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3.2 2" /></svg>
+);

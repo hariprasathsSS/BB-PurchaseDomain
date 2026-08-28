@@ -4,7 +4,7 @@ import { ProjectDetail } from "./ProjectDetail.jsx";
 /* #/project shows the grid, #/project/<id> the detail page — so a project is
    a real, linkable location with a working back button. */
 export function ProjectTab({
-  projectId, projects, docs, materials, search, reload,
+  projectId, projects, docs, materials, reload,
   onOpenDocument, onAddProject, onAddDocument, onScan,
 }) {
   if (!projectId) {
@@ -12,7 +12,6 @@ export function ProjectTab({
       <ProjectGrid
         projects={projects}
         docs={docs}
-        search={search}
         onAddProject={onAddProject}
         onAddDocument={onAddDocument}
         onScan={onScan}
