@@ -1,6 +1,6 @@
 import { DOC_STATUSES, DOC_TYPES } from "../lib/format.js";
 
-const title = (s) => s.charAt(0) + s.slice(1).toLowerCase();
+const title = (s) => { const w = s.replace(/_/g, " "); return w.charAt(0) + w.slice(1).toLowerCase(); };
 
 /* One filter bar for both the project detail and the material gallery — the
    caller says which controls it wants and owns the filter object. */

@@ -10,14 +10,7 @@ export const HEADER_SECTIONS = [
          blank placeholder in Editor already covers it; see ReviewModal's
          Approve gate, which reads the same absence. */
       { key: "doc_kind", label: "Document type", type: "select",
-        options: ["INVOICE", "PO", "DELIVERY", "QUOTATION", "INWARD", "OTHER"] },
-      // Which physical copy an invoice is — the vendor hands one to the site
-      // and mails a separate one straight to the office; nothing on the page
-      // says which, so a reviewer has to. Meaningless for every other
-      // document type, so it only shows up once doc_kind is INVOICE.
-      { key: "invoice_channel", label: "Invoice type", type: "select",
-        options: ["SITE", "VENDOR"],
-        showIf: (h) => h.doc_kind === "INVOICE" },
+        options: ["INVOICE", "PO", "DELIVERY", "QUOTATION", "INWARD", "PURCHASE_BILL", "OTHER"] },
     ],
   },
   {
@@ -25,7 +18,15 @@ export const HEADER_SECTIONS = [
     fields: [
       { key: "doc_number", label: "Document no." },
       { key: "po_number", label: "PO no." },
-      { key: "dc_number", label: "DC no." },
+      // A real delivery challan's own number on an INVOICE, but reused for
+      // "the invoice this references" on an INWARD (MIN Voucher) or
+      // PURCHASE_BILL page — see doc_headers.dc_number in db.py. Same field
+      // either way, so it's always shown, not gated behind a showIf.
+      { key: "dc_number", label: "DC / invoice no." },
+      // Which MIN Voucher a Purchase Bill was closed out from — meaningless
+      // for every other document type, so it only shows up once doc_kind
+      // is PURCHASE_BILL.
+      { key: "min_number", label: "MIN no.", showIf: (h) => h.doc_kind === "PURCHASE_BILL" },
     ],
   },
   {
@@ -68,6 +69,12 @@ export const LINE_FIELDS = [
   { key: "material_id", label: "Material", type: "material" },
   { key: "hsn_code", label: "HSN" },
   { key: "quantity", label: "Qty", type: "number" },
+  // A MIN Voucher's own split of "Qty" above — what was actually taken in
+  // vs. refused. Meaningless on every other document type (an invoice or
+  // PO line has no receiving outcome yet), so these only show up once
+  // doc_kind is INWARD — same showIf pattern min_number's header field uses.
+  { key: "accept_qty", label: "Accepted", type: "number", showIf: (h) => h.doc_kind === "INWARD" },
+  { key: "reject_qty", label: "Rejected", type: "number", showIf: (h) => h.doc_kind === "INWARD" },
   { key: "unit", label: "Unit" },
   { key: "rate", label: "Rate", type: "number" },
   { key: "amount", label: "Amount", type: "number" },

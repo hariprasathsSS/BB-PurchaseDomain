@@ -19,12 +19,20 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 # the material three-way-match path. Unlike UNCLASSIFIED, a reviewer can't
 # approve a document sitting at OTHER either — see extract.mark_approved —
 # so a genuine RA bill is filed via reject, not a silent approve, and the
-# only way through approval is one of the five real kinds.
+# only way through approval is one of the real kinds below.
 #
-# INWARD is the site's own material-inward / goods-received report — not
-# something the vendor sends, so it never shows up with a vendor GSTIN the
-# way INVOICE/DELIVERY do (see po_reconciliation in main.py).
-DOC_TYPES = {"UNCLASSIFIED", "INVOICE", "PO", "DELIVERY", "QUOTATION", "INWARD", "OTHER"}
+# INWARD is the site's own material-inward record — a MIN Voucher, in this
+# client's own naming — not something the vendor sends, so it never shows
+# up with a vendor GSTIN the way INVOICE/DELIVERY do. PURCHASE_BILL is the
+# office's own closing record, prepared once the invoice and the MIN both
+# reach the office — see po_reconciliation in main.py for how the three tie
+# together. DELIVERY stays a real type for whenever a vendor does send a
+# dedicated challan, but this client's actual documents don't have one —
+# the invoice itself doubles as the delivery record — so it's never
+# required, only INVOICE + INWARD + PURCHASE_BILL are.
+DOC_TYPES = {
+    "UNCLASSIFIED", "INVOICE", "PO", "DELIVERY", "QUOTATION", "INWARD", "PURCHASE_BILL", "OTHER",
+}
 SOURCES = {"SCAN", "UPLOAD"}
 # APPROVED/REJECTED are an accuracy gate on the OCR read, not a business
 # validation verdict — the 3-way match (Phase 6) doesn't exist yet. See
@@ -102,7 +110,8 @@ CREATE TABLE IF NOT EXISTS documents (
   source         TEXT NOT NULL CHECK (source IN ('SCAN','UPLOAD')),
 
   document_type  TEXT NOT NULL DEFAULT 'UNCLASSIFIED'
-                 CHECK (document_type IN ('UNCLASSIFIED','INVOICE','PO','DELIVERY','QUOTATION','INWARD','OTHER')),
+                 CHECK (document_type IN
+                   ('UNCLASSIFIED','INVOICE','PO','DELIVERY','QUOTATION','INWARD','PURCHASE_BILL','OTHER')),
   file_paths     TEXT NOT NULL,
   page_count     INTEGER NOT NULL,
   notes          TEXT,
@@ -124,14 +133,19 @@ CREATE TABLE IF NOT EXISTS doc_headers (
 
   doc_number   TEXT,
   po_number    TEXT,
+  -- dc_number's meaning depends on doc_kind: on an INVOICE it's the delivery
+  -- challan number printed on it (this client rarely has one — the invoice
+  -- usually stands in for the challan). On an INWARD (MIN Voucher) or
+  -- PURCHASE_BILL, there is no challan — reused for the *invoice* number
+  -- that document references instead ("DC/Invoice No" on a real MIN
+  -- Voucher), which is the field po_reconciliation groups a MIN/Purchase
+  -- Bill under its invoice by.
   dc_number    TEXT,
-  -- Which physical copy an INVOICE is — the vendor hands one to the site and
-  -- mails a separate one to the office. The extractor sets this from a
-  -- "VENDOR INVOICE"/"SITE INVOICE" heading when the page prints one; when
-  -- it doesn't, this stays blank and the reviewer sets it by hand instead.
-  -- Blank for every other document type. See extract.mark_approved for
-  -- where this becomes mandatory.
-  invoice_channel TEXT CHECK (invoice_channel IN ('SITE','VENDOR')),
+  -- Which MIN Voucher a PURCHASE_BILL was closed out from — blank on every
+  -- other document type. A Purchase Bill references both an invoice (via
+  -- dc_number, above) and the MIN that received it; this is the second of
+  -- that pair.
+  min_number   TEXT,
 
   doc_date     TEXT,
   doc_date_raw TEXT,
@@ -171,6 +185,15 @@ CREATE TABLE IF NOT EXISTS doc_lines (
   hsn_code        TEXT,
 
   quantity  REAL,
+  -- On an INWARD line (a MIN Voucher / material inward note), quantity is
+  -- what the note itself calls "MIN Qty" — what was offered for receipt,
+  -- not what was actually taken in. accept_qty/reject_qty are that note's
+  -- own split of it — a MIN Voucher reports both, not just one number, and
+  -- reject_qty is the actual "billed doesn't match what arrived" signal
+  -- the three-way match exists for. Null on every other document type's
+  -- lines, where quantity alone is the whole story.
+  accept_qty REAL,
+  reject_qty REAL,
   unit      TEXT,
   rate      REAL,
   amount    REAL,
@@ -322,7 +345,11 @@ _MIGRATIONS = {
         ("error", "TEXT"),
     ],
     "doc_headers": [
-        ("invoice_channel", "TEXT CHECK (invoice_channel IN ('SITE','VENDOR'))"),
+        ("min_number", "TEXT"),
+    ],
+    "doc_lines": [
+        ("accept_qty", "REAL"),
+        ("reject_qty", "REAL"),
     ],
 }
 
@@ -334,6 +361,19 @@ def migrate(con: sqlite3.Connection) -> None:
         for name, ddl in columns:
             if name not in existing:
                 con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+
+
+def migrate_drop_invoice_channel(con: sqlite3.Connection) -> None:
+    """SITE/VENDOR invoice copies turned out not to match how this client
+    actually works — no such distinction exists on their real documents —
+    so the column (and its own inline CHECK) is dropped outright rather
+    than just left unused. Idempotent: a no-op once it's gone. Modern
+    SQLite (3.35+) can drop a column that carries its own inline CHECK
+    constraint directly, no table rebuild needed — verified against this
+    project's actual sqlite3 (3.50.4)."""
+    existing = {r["name"] for r in con.execute("PRAGMA table_info(doc_headers)")}
+    if "invoice_channel" in existing:
+        con.execute("ALTER TABLE doc_headers DROP COLUMN invoice_channel")
 
 
 # The columns documents actually has, by name — not the order SCHEMA lists
@@ -353,10 +393,10 @@ def migrate_document_type_check(con: sqlite3.Connection) -> None:
     """SQLite can't ALTER a CHECK constraint — adding a new valid
     document_type needs the table rebuilt. Idempotent: a no-op once the
     table's own stored CREATE TABLE text already allows every type DOC_TYPES
-    lists (checked via the newest one added, 'INWARD', so a database that
-    already has 'QUOTATION' but predates 'INWARD' still gets rebuilt once
-    more). Must run after migrate() — depends on every column above already
-    existing under its real name.
+    lists (checked via the newest one added, 'PURCHASE_BILL', so a database
+    that already has 'INWARD' but predates 'PURCHASE_BILL' still gets
+    rebuilt once more). Must run after migrate() — depends on every column
+    above already existing under its real name.
 
     Builds the replacement under a temporary name, copies into it, drops the
     original, then renames the temp table into place — deliberately not the
@@ -371,7 +411,7 @@ def migrate_document_type_check(con: sqlite3.Connection) -> None:
     row = con.execute(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'documents'"
     ).fetchone()
-    if row is None or "INWARD" in row["sql"]:
+    if row is None or "PURCHASE_BILL" in row["sql"]:
         return
 
     cols = ", ".join(_DOCUMENT_COLUMNS)
@@ -385,7 +425,7 @@ def migrate_document_type_check(con: sqlite3.Connection) -> None:
           source         TEXT NOT NULL CHECK (source IN ('SCAN','UPLOAD')),
           document_type  TEXT NOT NULL DEFAULT 'UNCLASSIFIED'
                          CHECK (document_type IN
-                           ('UNCLASSIFIED','INVOICE','PO','DELIVERY','QUOTATION','INWARD','OTHER')),
+                           ('UNCLASSIFIED','INVOICE','PO','DELIVERY','QUOTATION','INWARD','PURCHASE_BILL','OTHER')),
           file_paths     TEXT NOT NULL,
           page_count     INTEGER NOT NULL,
           notes          TEXT,
@@ -436,4 +476,5 @@ def init() -> None:
         con.executescript(SCHEMA)
         migrate(con)
         migrate_document_type_check(con)
+        migrate_drop_invoice_channel(con)
         seed_materials(con)

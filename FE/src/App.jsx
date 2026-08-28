@@ -59,7 +59,6 @@ export default function App() {
           <HomeTab
             projects={projects}
             docs={docs}
-            materials={materials}
             reload={reload}
             addingProject={addingProject}
             setAddingProject={setAddingProject}

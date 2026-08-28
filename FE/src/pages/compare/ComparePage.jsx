@@ -28,9 +28,9 @@ function buildEdits(draft) {
    deliveries — same Material/Unit/Ordered/Delivered shape as the project's
    own Materials rollup (MaterialsRollup.jsx), just scoped to one PO's lines
    and fed by the server-computed reconciliation instead of a client-side sum
-   across every INVOICE in the project (which would double-count a site and
-   office copy of the same delivery — the reconciliation endpoint already
-   dedupes that per delivery group). */
+   across every INVOICE in the project (which would double-count an invoice
+   uploaded twice — the reconciliation endpoint already dedupes that per
+   delivery group). */
 function PoMaterialsSection({ materials, loading, onOpenDocument }) {
   const [open, setOpen] = useState(() => new Set());
 
@@ -106,9 +106,9 @@ function PoMaterialsSection({ materials, loading, onOpenDocument }) {
                       {m.delivered_qty ? qty(m.delivered_qty) : "—"}
                       {m.over_delivered ? " ⚠" : ""}
                     </td>
-                    {/* Claimed by a delivery whose Site Invoice, Vendor
-                        Invoice and Inward Report haven't all agreed yet —
-                        not counted above, not silently dropped either. */}
+                    {/* Claimed by a delivery whose Invoice, MIN Voucher and
+                        Purchase Bill haven't all agreed yet — not counted
+                        above, not silently dropped either. */}
                     <td className="num mute">{m.pending_qty ? qty(m.pending_qty) : "—"}</td>
                     <td className={`num strong ${m.remaining_qty < 0 ? "is-over" : ""}`}>
                       {qty(Math.abs(m.remaining_qty))}{m.remaining_qty < 0 ? " over" : ""}
@@ -183,10 +183,7 @@ function VerificationPill({ status }) {
 }
 
 /* One delivery's diff line between two named documents — labelA/labelB are
-   "Site Invoice", "Vendor Invoice" or "Inward Report", now that
-   invoice_channel means the app actually knows which is which, rather than
-   the generic "first copy"/"second copy" a plain duplicate-scan comparison
-   has to settle for. */
+   "Invoice", "MIN Voucher" or "Purchase Bill". */
 function describeDiffLine(l, labelA, labelB) {
   const name = l.material_name ?? "Unrecognised material";
   if (l.qty_a == null) {
@@ -204,9 +201,9 @@ function describeDiffLine(l, labelA, labelB) {
    both shown elsewhere (the delivery's own "Missing documents:" line and
    its Verified/Awaiting verification/Mismatch pill in the list to the
    left) — this panel is only for an actual disagreement: all three of
-   Site Invoice, Vendor Invoice and Inward Report exist but don't match on
-   material, quantity or rate. Each disagreeing pair (site vs vendor, site
-   vs inward, vendor vs inward) gets its own block, named by which two
+   Invoice, MIN Voucher and Purchase Bill exist but don't match on material
+   or quantity. Each disagreeing pair (invoice vs MIN, invoice vs purchase
+   bill, MIN vs purchase bill) gets its own block, named by which two
    documents disagree. */
 function DeliveryIssuesPanel({ deliveries, loading, onOpenDocument }) {
   if (loading) {
@@ -221,16 +218,16 @@ function DeliveryIssuesPanel({ deliveries, loading, onOpenDocument }) {
       {!flagged.length ? (
         <div className="empty-mini">
           {deliveries?.length
-            ? "No mismatches — every Site Invoice, Vendor Invoice and Inward Report checked so far agree."
+            ? "No mismatches — every Invoice, MIN Voucher and Purchase Bill checked so far agree."
             : "Nothing to check yet."}
         </div>
       ) : (
         flagged.map((delivery) => {
           const v = delivery.verification;
           const pairs = [
-            ["site_vs_vendor", "Site Invoice", "Vendor Invoice", v.site_invoice_document_id, v.vendor_invoice_document_id],
-            ["site_vs_inward", "Site Invoice", "Inward Report", v.site_invoice_document_id, v.inward_document_id],
-            ["vendor_vs_inward", "Vendor Invoice", "Inward Report", v.vendor_invoice_document_id, v.inward_document_id],
+            ["invoice_vs_min", "Invoice", "MIN Voucher", v.invoice_document_id, v.inward_document_id],
+            ["invoice_vs_purchase_bill", "Invoice", "Purchase Bill", v.invoice_document_id, v.purchase_bill_document_id],
+            ["min_vs_purchase_bill", "MIN Voucher", "Purchase Bill", v.inward_document_id, v.purchase_bill_document_id],
           ].filter(([key]) => !v.diffs[key].clean);
 
           return (
@@ -282,10 +279,11 @@ function DeliveryIssuesPanel({ deliveries, loading, onOpenDocument }) {
    to recognise it, not its whole line-item table a second time.
 
    The reconciliation itself — materials/qty delivered-so-far against what
-   was ordered, and each delivery's site/office cross-check — comes from
-   GET .../reconciliation (see main.py), computed server-side against the
-   same po_number == this PO's own doc_number match this page always used;
-   `matches` below is only the fallback while that call is still loading. */
+   was ordered, and each delivery's Invoice/MIN Voucher/Purchase Bill
+   cross-check — comes from GET .../reconciliation (see main.py), computed
+   server-side against the same po_number == this PO's own doc_number match
+   this page always used; `matches` below is only the fallback while that
+   call is still loading. */
 export function ComparePage({ documentId, docs, materials, onOpenDocument, reload, onAddDocument, onScan }) {
   const [section, setSection] = useState("po");
   const [po, setPo] = useState(null);
@@ -501,7 +499,7 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
             <div className="banner banner-err" style={{ marginTop: 16 }}>
               <div>
                 Delete this PO ({po.doc_number ?? po.document_id})? This doesn't remove the
-                invoices, challans or inward reports referencing it — only the PO document
+                invoices, MIN Vouchers or Purchase Bills referencing it — only the PO document
                 itself. This can't be undone.
               </div>
               <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
@@ -557,7 +555,7 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
             {!isWaiting(po) && po.status !== "FAILED" && header ? (
               <>
                 <HeaderFields header={header} locked={locked} onChange={setHeader} />
-                <LineItems lines={lines ?? []} materials={materials} locked={locked} onChange={setLine} />
+                <LineItems lines={lines ?? []} materials={materials} locked={locked} onChange={setLine} header={header} />
 
                 {locked ? (
                   <div className={`banner ${po.status === "APPROVED" ? "banner-ok" : "banner-err"}`} style={{ marginTop: 16 }}>
@@ -680,10 +678,11 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
                     >
                       <div className="compare-link-main">
                         <div className="compare-link-num-row">
-                          {/* The document's own number — a Delivery Note or
-                              Inward Report carries the D.C. number, not the
-                              invoice number the group above is named after,
-                              so this is the one place that actually says so. */}
+                          {/* The document's own number — a MIN Voucher or
+                              Purchase Bill carries its own MIN No/PV No, not
+                              the invoice number the group above is named
+                              after, so this is the one place that actually
+                              says so. */}
                           <span className="compare-link-num">{d.doc_number || "Document not yet numbered"}</span>
                           {/* Every document in a delivery is the same vendor
                               by construction (see po_reconciliation's
@@ -698,11 +697,6 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
                           {d.page_count > 1 ? ` · ${d.page_count} pages` : ""}
                         </div>
                       </div>
-                      {d.invoice_channel ? (
-                        <span className="compare-link-meta">
-                          {d.invoice_channel === "SITE" ? "Site copy" : "Vendor copy"}
-                        </span>
-                      ) : null}
                       <TypePill type={d.document_type} />
                       <StatusPill status={d.status} />
                       <IconArrow width={16} height={16} />

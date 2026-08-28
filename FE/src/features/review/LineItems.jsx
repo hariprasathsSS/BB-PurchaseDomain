@@ -6,8 +6,16 @@ import { inr } from "../../lib/format.js";
 
    fields defaults to the document schema (LINE_FIELDS) — quote review passes
    QUOTE_LINE_FIELDS instead, so the same table, material picker and locked/
-   editable Cell logic serve both without a second copy of any of it. */
-export function LineItems({ lines, materials, locked, onChange, fields = LINE_FIELDS }) {
+   editable Cell logic serve both without a second copy of any of it.
+
+   header is only there for a field's own showIf(header) — same mechanism
+   HeaderFields uses, e.g. accept_qty/reject_qty only being columns at all
+   once doc_kind is INWARD. Optional: callers with no per-document schema
+   concept (quote review) just don't pass it, and nothing here has a showIf
+   that needs it. */
+export function LineItems({ lines, materials, locked, onChange, fields = LINE_FIELDS, header }) {
+  const visibleFields = fields.filter((f) => !f.showIf || f.showIf(header ?? {}));
+
   if (!lines.length) {
     return (
       <div className="field-section">
@@ -25,14 +33,14 @@ export function LineItems({ lines, materials, locked, onChange, fields = LINE_FI
           <thead>
             <tr>
               <th>#</th>
-              {fields.map((f) => <th key={f.key}>{f.label}</th>)}
+              {visibleFields.map((f) => <th key={f.key}>{f.label}</th>)}
             </tr>
           </thead>
           <tbody>
             {lines.map((line) => (
               <tr key={line.line_no}>
                 <td className="num">{line.line_no}</td>
-                {fields.map((field) => (
+                {visibleFields.map((field) => (
                   <td key={field.key}>
                     <Cell
                       field={field}

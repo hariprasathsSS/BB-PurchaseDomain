@@ -291,22 +291,31 @@ def aggregate_by_material(lines: list[dict]) -> tuple[dict[str, dict], list[dict
     return by_material, unmatched
 
 
-def compare_document_lines(lines_a: list[dict], lines_b: list[dict]) -> dict:
+def compare_document_lines(
+    lines_a: list[dict], lines_b: list[dict], *, require_rate: bool = True
+) -> dict:
     """Line-by-line diff between two documents believed to be the same
     delivery. `match` on a line is False the moment quantity differs at all,
     rate differs by more than a cent of rounding, or the material is present
-    on only one side."""
+    on only one side.
+
+    require_rate=False drops the rate check entirely, down to a quantity-only
+    match — for a pairing where one side is never priced at all (a MIN
+    Voucher has no rate column to disagree on), requiring rate agreement
+    would flag every single line as a mismatch regardless of whether the
+    quantities actually agree, which is the thing this comparison actually
+    exists to catch."""
     by_a, unmatched_a = aggregate_by_material(lines_a)
     by_b, unmatched_b = aggregate_by_material(lines_b)
 
     diff_lines = []
     for material_id in sorted(set(by_a) | set(by_b)):
         a, b = by_a.get(material_id), by_b.get(material_id)
-        match = bool(
-            a and b and a["qty"] == b["qty"]
-            and a["rate"] is not None and b["rate"] is not None
+        rate_ok = not require_rate or (
+            a and b and a["rate"] is not None and b["rate"] is not None
             and abs(a["rate"] - b["rate"]) <= RATE_TOLERANCE
         )
+        match = bool(a and b and a["qty"] == b["qty"] and rate_ok)
         diff_lines.append({
             "material_id": material_id,
             "material_name": (a or b)["material_name"],
@@ -343,6 +352,13 @@ class Line(BaseModel):
     description_raw: str | None
     hsn_code: str | None
     quantity: float | None
+    # A MIN Voucher / material inward note's own split of what it offered
+    # for receipt — quantity above is "MIN Qty" on that document, these are
+    # its "Accept Qty"/"Reject Qty" columns. Only an INWARD page has these
+    # printed; null on every other document type's lines, same as amount is
+    # null on a delivery challan. See save_extraction for the doc_kind gate.
+    accept_qty: float | None
+    reject_qty: float | None
     unit: str | None
     rate: float | None
     amount: float | None
@@ -358,11 +374,18 @@ class Extraction(BaseModel):
     # A genuinely unreadable-as-any-of-the-four page returns null rather than
     # a forced guess; save_extraction() already treats anything not in
     # DOC_TYPES as UNCLASSIFIED, so this needed no change there.
-    doc_kind: Literal["INVOICE", "PO", "DELIVERY", "QUOTATION", "INWARD", "OTHER"] | None
+    doc_kind: Literal["INVOICE", "PO", "DELIVERY", "QUOTATION", "INWARD", "PURCHASE_BILL", "OTHER"] | None
 
     doc_number: str | None
     po_number: str | None
+    # See doc_headers.dc_number in db.py — a real delivery challan number on
+    # an INVOICE, but reused as "the invoice this references" on an INWARD
+    # or PURCHASE_BILL page, which never has a challan of their own.
     dc_number: str | None
+    # Which MIN Voucher a PURCHASE_BILL was closed out from — the second of
+    # the two documents it references (dc_number, above, is the first: the
+    # invoice). Null on every other doc_kind.
+    min_number: str | None
     doc_date_raw: str | None
 
     vendor_name_raw: str | None
@@ -383,12 +406,6 @@ class Extraction(BaseModel):
 
     irn: str | None
 
-    # Which physical copy of an INVOICE this is — set only when the page
-    # itself says so (a "VENDOR INVOICE" / "SITE INVOICE" heading, or
-    # equivalent wording); null on every other page and null on an invoice
-    # that never says which. See save_extraction and mark_approved.
-    invoice_channel: Literal["SITE", "VENDOR"] | None
-
     lines: list[Line]
 
 
@@ -404,12 +421,23 @@ Classify the document as doc_kind:
   QUOTATION  a vendor's price quotation or rate offer — rates offered, not yet
              transacted; typically no GST breakup and no delivery details,
              often carrying a validity period ("valid for N days")
-  INWARD     a material inward report or goods-received note the *site*
-             prepares on receiving a delivery — not something the vendor
-             sends. No vendor letterhead, no tax breakup; it lists what
-             actually arrived, signed or initialled by site staff, not the
-             supplier. If it carries a vendor letterhead and GST details, it
-             is a DELIVERY challan instead, not this.
+  INWARD     a material inward report the *site* prepares on receiving a
+             delivery — not something the vendor sends. No vendor
+             letterhead, no tax breakup; it lists what actually arrived,
+             signed or initialled by site staff, not the supplier. If it
+             carries a vendor letterhead and GST details, it is a DELIVERY
+             challan instead, not this. This client calls it a "MIN
+             Voucher" / "Material Inward Note" — a heading with a "MIN
+             No"/"MIN Date" instead of the generic name above — treat that
+             heading as INWARD, not as unrecognised or OTHER.
+  PURCHASE_BILL  the office's own closing record, prepared after both the
+             invoice and the MIN Voucher reach it — never sent by the
+             vendor, never prepared on site. Heading reads "PURCHASE BILL
+             VOUCHER" (or similar); carries its own PV No/PV Date, and
+             references a PO No, a MIN No and an Invoice No together on one
+             page — that combination (referencing both a MIN and an
+             invoice by number) is what tells this apart from an INWARD
+             page, which only ever references an invoice, never a MIN.
   OTHER      a document you can positively identify as a specific different
              genre — most often a works-contract / RA bill: a lump sum against
              a BOQ or Work Order with no quantity and no unit rate, which is
@@ -420,15 +448,15 @@ Classify the document as doc_kind:
              page, handwriting, no letterhead, or no printed heading is not by
              itself grounds for OTHER. That case is null, below.
   null       the correct answer whenever you cannot confidently place a
-             document as INVOICE, PO, DELIVERY, QUOTATION, INWARD, or
-             positively as OTHER — illegible handwriting, no letterhead, no
-             printed heading, torn, ambiguous, blank, or otherwise carrying
-             nothing that identifies which kind it is. A human reviewer
-             decides instead. This is not rare and not a last resort: if you
-             are genuinely unsure, null is the right answer, not OTHER —
-             when torn between OTHER and null specifically, choose null. The
-             only wrong use of null is ducking a page that legibly *is* one
-             of the six above.
+             document as INVOICE, PO, DELIVERY, QUOTATION, INWARD,
+             PURCHASE_BILL, or positively as OTHER — illegible handwriting,
+             no letterhead, no printed heading, torn, ambiguous, blank, or
+             otherwise carrying nothing that identifies which kind it is. A
+             human reviewer decides instead. This is not rare and not a
+             last resort: if you are genuinely unsure, null is the right
+             answer, not OTHER — when torn between OTHER and null
+             specifically, choose null. The only wrong use of null is
+             ducking a page that legibly *is* one of the seven above.
 
   Example: a handwritten notebook page listing materials with quantity, rate
   and amount, no letterhead, no vendor name, no "Invoice"/"PO"/"Delivery"
@@ -447,10 +475,16 @@ Rules:
 - Amounts: digits only. No currency symbol, no thousands separator. Keep the
   decimals as printed.
 - doc_number is this document's own number — the invoice number on an invoice,
-  the PO number on a PO, the challan number on a challan.
+  the PO number on a PO, the challan number on a challan, the PV No on a
+  PURCHASE_BILL, the MIN No on an INWARD page (labelled "MIN No" there, not
+  min_number — see below for min_number's own, different meaning).
 - po_number is a *referenced* order number. "Recipient PO No." is often blank
   while "Order No." is filled; use whichever carries the buyer's order number,
   preferring "Recipient PO No." when both are present.
+- dc_number, on an INWARD or PURCHASE_BILL page, is the *invoice* number it
+  references — printed as "DC/Invoice No" on this client's own forms even
+  though there is no actual challan. Copy that value into dc_number exactly
+  as you would a real challan number on an INVOICE.
 - Tax comes in two shapes. Inter-state: one IGST amount, tax_type is IGST.
   Intra-state: CGST and SGST split roughly evenly, tax_type is CGST_SGST.
   Never report the same tax under both shapes.
@@ -463,19 +497,22 @@ Rules:
   carry their own D.C.No and D.C.Date columns — capture them per line.
 - Ignore terms and conditions, bank details, declarations and signature blocks.
 
-If doc_kind is INVOICE, also read invoice_channel — which physical copy this
-is. A vendor typically hands one copy to the site and mails a separate one
-to the office; some vendors print which is which, most don't.
-  VENDOR   the page carries wording naming it the vendor's/office copy —
-           e.g. a "VENDOR INVOICE" heading, "Vendor Copy", "Office Copy".
-  SITE     the page carries wording naming it the site's copy — e.g. a
-           "SITE INVOICE" heading, "Site Copy".
-  null     the page says only "TAX INVOICE" / "INVOICE" or anything else
-           with no wording identifying which copy it is. Do not guess from
-           context (who it's addressed to, a delivery address, a signature)
-           — only a page that actually prints which copy it is gets SITE or
-           VENDOR; everything else is null, same as any other unreadable
-           field, and a human reviewer picks it instead.
+If doc_kind is PURCHASE_BILL, also read min_number — the "MIN No" it
+references, printed alongside (not instead of) the "DC/Invoice No" that
+dc_number, above, already captures. A Purchase Bill page always carries
+both; if you can only find one of the two, still record whichever is
+actually printed rather than leaving both null.
+
+If doc_kind is INWARD, each line's quantity is that document's own "MIN
+Qty" / "Qty" column — what was offered for receipt. Also read, per line:
+  accept_qty  the "Accept Qty" column — what was actually taken in.
+  reject_qty  the "Reject Qty" column — what was refused (short delivery,
+              damaged, wrong spec). A MIN Voucher / inward note prints both
+              columns even when reject_qty is 0 for every line — transcribe
+              the printed 0 as 0, not null; null means the column itself
+              isn't on the page, not that nothing was rejected.
+These two are specific to INWARD lines — leave both null on every other
+document type, even if a column happens to look similar.
 
 If a value is genuinely unreadable — blur, glare, a fold across the digits —
 return null rather than a guess."""
@@ -719,12 +756,11 @@ def _run_openai(
 # ── persistence ──────────────────────────────────────────────────────────────
 
 _HEADER_FIELDS = (
-    "doc_kind", "doc_number", "po_number", "dc_number", "doc_date", "doc_date_raw",
+    "doc_kind", "doc_number", "po_number", "dc_number", "min_number", "doc_date", "doc_date_raw",
     "vendor_id", "vendor_name_raw", "vendor_gstin", "buyer_gstin",
     "place_of_supply", "delivery_address_raw",
     "basic_value", "tax_type", "igst_amount", "cgst_amount", "sgst_amount",
     "tcs_amount", "rounding_off", "total_value", "irn", "qr_verified",
-    "invoice_channel",
 )
 
 
@@ -739,12 +775,11 @@ def save_extraction(con: sqlite3.Connection, document_id: str, data: dict) -> No
     header["vendor_gstin"] = gstin
     header["buyer_gstin"] = find_gstin(data.get("buyer_gstin"))
     header["qr_verified"] = 1 if data.get("qr_verified") else 0
-    # Meaningless outside an invoice, and the model is only asked for it on
-    # one — belt-and-braces against a stray value landing on a PO/DELIVERY/
-    # etc. row, which the CHECK constraint alone wouldn't catch (it only
-    # rejects a value outside SITE/VENDOR, not a channel on the wrong kind).
-    if header["doc_kind"] != "INVOICE" or header["invoice_channel"] not in ("SITE", "VENDOR"):
-        header["invoice_channel"] = None
+    # Meaningless outside a PURCHASE_BILL — belt-and-braces against a stray
+    # value landing on an INVOICE/PO/etc. row just because the model filled
+    # the key in anyway.
+    if header["doc_kind"] != "PURCHASE_BILL":
+        header["min_number"] = None
 
     columns = ", ".join(("document_id", *_HEADER_FIELDS))
     placeholders = ", ".join(["?"] * (len(_HEADER_FIELDS) + 1))
@@ -754,17 +789,26 @@ def save_extraction(con: sqlite3.Connection, document_id: str, data: dict) -> No
         (document_id, *(header[field] for field in _HEADER_FIELDS)),
     )
 
+    # Meaningless outside an INWARD line — same belt-and-braces as
+    # min_number above, against a stray value landing on an INVOICE/PO/etc.
+    # line just because the model filled the key in anyway.
+    is_inward = header["doc_kind"] == "INWARD"
+
     con.execute("DELETE FROM doc_lines WHERE document_id = ?", (document_id,))
     for index, line in enumerate(data.get("lines") or [], start=1):
         description = line.get("description_raw") or ""
         con.execute(
             "INSERT INTO doc_lines (document_id, line_no, description_raw, material_id,"
-            " hsn_code, quantity, unit, rate, amount, tax_rate, dc_number, dc_date)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " hsn_code, quantity, accept_qty, reject_qty, unit, rate, amount, tax_rate,"
+            " dc_number, dc_date)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 document_id, index, description,
                 match_material(con, description, line.get("unit")),
-                line.get("hsn_code"), line.get("quantity"), line.get("unit"),
+                line.get("hsn_code"), line.get("quantity"),
+                line.get("accept_qty") if is_inward else None,
+                line.get("reject_qty") if is_inward else None,
+                line.get("unit"),
                 line.get("rate"), line.get("amount"), line.get("tax_rate"),
                 line.get("dc_number"), parse_date(line.get("dc_date_raw")),
             ),
@@ -905,22 +949,17 @@ def process_quotation(quotation_id: str) -> None:
 # and delivery challan is a separate, later capability. See Deviation.md §1.
 
 EDITABLE_HEADER_FIELDS = (
-    "doc_kind", "doc_number", "po_number", "dc_number", "doc_date_raw",
+    "doc_kind", "doc_number", "po_number", "dc_number", "min_number", "doc_date_raw",
     "vendor_name_raw", "vendor_gstin", "buyer_gstin",
     "place_of_supply", "delivery_address_raw",
     "basic_value", "tax_type", "igst_amount", "cgst_amount", "sgst_amount",
     "tcs_amount", "rounding_off", "total_value", "irn",
-    # Usually extracted from a "VENDOR INVOICE"/"SITE INVOICE" heading (see
-    # the engine's SYSTEM prompt), but stays reviewer-editable like every
-    # other field here — an invoice that doesn't print which copy it is
-    # needs a reviewer to set this by hand. See doc_headers.invoice_channel
-    # in db.py.
-    "invoice_channel",
 )
 
 EDITABLE_LINE_FIELDS = (
     "description_raw", "material_id", "hsn_code",
-    "quantity", "unit", "rate", "amount", "tax_rate", "dc_number", "dc_date",
+    "quantity", "accept_qty", "reject_qty", "unit", "rate", "amount", "tax_rate",
+    "dc_number", "dc_date",
 )
 
 
@@ -1041,29 +1080,18 @@ def mark_approved(con: sqlite3.Connection, document_id: str, approved_by: str) -
     Approval is the one place that has to matter, since it's what files the
     document.
 
-    INVOICE, DELIVERY and INWARD additionally need a po_number — each one
-    describes a specific delivery against a specific PO, and without that
-    number it can never be grouped under that PO or cross-checked against
-    the other documents for the same delivery (see po_reconciliation).
-    PO and QUOTATION are exempt: a PO doesn't reference another PO, and a
-    quotation predates one existing at all.
-
-    INVOICE also needs invoice_channel (SITE or VENDOR) — the vendor hands
-    one copy to the site and mails a separate one to the office. The
-    extractor sets this automatically when the page itself says which
-    ("VENDOR INVOICE"/"SITE INVOICE" or similar); when it doesn't print
-    that, a reviewer has to say so instead, since the delivery-completeness
-    check (po_reconciliation) can't tell the two apart otherwise."""
+    INVOICE, DELIVERY, INWARD and PURCHASE_BILL additionally need a
+    po_number — each one describes a specific delivery against a specific
+    PO, and without that number it can never be grouped under that PO or
+    cross-checked against the other documents for the same delivery (see
+    po_reconciliation). PO and QUOTATION are exempt: a PO doesn't reference
+    another PO, and a quotation predates one existing at all."""
     cur = con.execute(
         "UPDATE documents SET status = 'APPROVED'"
         " WHERE id = ? AND status = 'EXTRACTED' AND document_type NOT IN ('UNCLASSIFIED', 'OTHER')"
-        " AND (document_type NOT IN ('INVOICE', 'DELIVERY', 'INWARD') OR EXISTS ("
+        " AND (document_type NOT IN ('INVOICE', 'DELIVERY', 'INWARD', 'PURCHASE_BILL') OR EXISTS ("
         "   SELECT 1 FROM doc_headers h WHERE h.document_id = documents.id"
         "     AND h.po_number IS NOT NULL AND TRIM(h.po_number) != ''"
-        " ))"
-        " AND (document_type != 'INVOICE' OR EXISTS ("
-        "   SELECT 1 FROM doc_headers h WHERE h.document_id = documents.id"
-        "     AND h.invoice_channel IN ('SITE', 'VENDOR')"
         " ))",
         (document_id,),
     )

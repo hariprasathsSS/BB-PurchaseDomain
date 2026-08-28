@@ -23,24 +23,21 @@ function buildEdits(draft) {
   return { header, lines };
 }
 
-/* The three completeness gates a document can be stuck behind — shared by
+/* The two completeness gates a document can be stuck behind — shared by
    the Approve button (disabled), the banners (why), and the close handler
-   below (blocks dismissal on the two that matter there). See
+   below (blocks dismissal on the one that matters there). See
    extract.mark_approved for the server-side half of each. */
 function gatesFor(header) {
   const typeUnset = !header?.doc_kind || header.doc_kind === "UNCLASSIFIED";
   const typeOther = header?.doc_kind === "OTHER";
-  // An invoice, delivery challan or inward report with no PO number can
-  // never be grouped under its purchase order.
+  // An invoice, delivery challan, MIN Voucher or Purchase Bill with no PO
+  // number can never be grouped under its purchase order.
   const poNumberMissing =
-    ["INVOICE", "DELIVERY", "INWARD"].includes(header?.doc_kind)
+    ["INVOICE", "DELIVERY", "INWARD", "PURCHASE_BILL"].includes(header?.doc_kind)
     && !String(header?.po_number ?? "").trim();
-  // Which physical copy an invoice is — see schema.js's invoice_channel field.
-  const invoiceChannelMissing =
-    header?.doc_kind === "INVOICE" && !String(header?.invoice_channel ?? "").trim();
   return {
     typeUnset, typeOther, typeMissing: typeUnset || typeOther,
-    poNumberMissing, invoiceChannelMissing,
+    poNumberMissing,
   };
 }
 
@@ -92,7 +89,7 @@ export function ReviewModal({ docId, docs, materials, onClose, onChanged }) {
     });
   }, [doc]);
 
-  /* Site copy vs. office copy of the same delivery — same vendor + invoice
+  /* The same delivery uploaded a second time — same vendor + invoice
      number, paired automatically at extraction time (extract.find_duplicate).
      Fetched once the document itself has settled; most invoices have no
      paired copy at all, in which case duplicate_of comes back null and
@@ -172,13 +169,13 @@ export function ReviewModal({ docId, docs, materials, onClose, onChanged }) {
      half of this — the X itself is disabled too, so it doesn't sit there
      looking clickable while doing nothing.
 
-     Past that, closing always works — PO number and invoice channel are
-     required to *save* (the footer's Save/Approve are disabled without
-     them, see gatesFor), not to walk away. A reviewer who doesn't want to
-     finish this document can still just close it: nothing gets saved, the
-     document sits exactly where it was (EXTRACTED, unreviewed) for whoever
-     opens it next. Closing when it IS complete still saves, so filling the
-     form in and clicking away doesn't lose the edit. */
+     Past that, closing always works — a PO number is required to *save*
+     (the footer's Save/Approve are disabled without one, see gatesFor),
+     not to walk away. A reviewer who doesn't want to finish this document
+     can still just close it: nothing gets saved, the document sits exactly
+     where it was (EXTRACTED, unreviewed) for whoever opens it next.
+     Closing when it IS complete still saves, so filling the form in and
+     clicking away doesn't lose the edit. */
   const attemptClose = () => {
     if (!doc) { onClose(); return; }
     if (isWaiting(doc)) return;
@@ -187,7 +184,7 @@ export function ReviewModal({ docId, docs, materials, onClose, onChanged }) {
       return;
     }
     const gates = gatesFor(draft.header);
-    if (!gates.poNumberMissing && !gates.invoiceChannelMissing) {
+    if (!gates.poNumberMissing) {
       save({ silent: true });
     }
     onClose();
@@ -313,9 +310,8 @@ function StatusBanner({ doc, onRetry }) {
 }
 
 /* Most invoices have no paired copy at all — duplicate_of is null and this
-   renders nothing. When one exists, it's typically the site and office
-   copies of the same delivery, billed twice through two different
-   channels — see extract.compare_document_lines for how "match" is decided. */
+   renders nothing. When one exists, it's the same delivery uploaded more
+   than once — see extract.compare_document_lines for how "match" is decided. */
 function DuplicateDiffBanner({ diff }) {
   if (!diff || !diff.duplicate_of) return null;
   const otherLabel = diff.other_document?.doc_number ?? diff.duplicate_of;
@@ -368,7 +364,7 @@ function DuplicateDiffBanner({ diff }) {
    to this project (see ReviewModal), so "not in that list" here already
    means "not in this project", not "not anywhere". */
 function PoNumberBanner({ header, poNumberOptions }) {
-  const referencesPo = ["INVOICE", "DELIVERY", "INWARD"].includes(header?.doc_kind);
+  const referencesPo = ["INVOICE", "DELIVERY", "INWARD", "PURCHASE_BILL"].includes(header?.doc_kind);
   const poNumber = String(header?.po_number ?? "").trim();
   if (!referencesPo || !poNumber || poNumberOptions.includes(poNumber)) return null;
 
@@ -398,23 +394,18 @@ function DecisionFooter({ reviewer, setReviewer, busy, gates, onSave, onApprove,
       <button
         className="btn btn-quiet"
         onClick={onSave}
-        disabled={busy || gates.poNumberMissing || gates.invoiceChannelMissing}
-        title={
-          gates.poNumberMissing ? "Enter PO number before save"
-            : gates.invoiceChannelMissing ? "Enter Invoice Type before save"
-            : undefined
-        }
+        disabled={busy || gates.poNumberMissing}
+        title={gates.poNumberMissing ? "Enter PO number before save" : undefined}
       >
         Save
       </button>
       <button
         className="btn btn-ink"
         onClick={onApprove}
-        disabled={busy || gates.typeMissing || gates.poNumberMissing || gates.invoiceChannelMissing}
+        disabled={busy || gates.typeMissing || gates.poNumberMissing}
         title={
           gates.typeMissing ? "Please fill a document type, eg: PO, Invoice"
             : gates.poNumberMissing ? "Enter PO number before approving"
-            : gates.invoiceChannelMissing ? "Enter Invoice Type before approving"
             : undefined
         }
       >
@@ -434,7 +425,6 @@ function fieldErrorsFor(gates) {
       ? "Please fill a document type, eg: PO, Invoice"
       : null,
     po_number: gates.poNumberMissing ? "Enter PO number before save" : null,
-    invoice_channel: gates.invoiceChannelMissing ? "Enter Invoice Type before save" : null,
   };
 }
 
@@ -452,7 +442,7 @@ function Body({
         fieldErrors={locked ? {} : fieldErrorsFor(gates)}
         fieldOptions={{ po_number: poNumberOptions }}
       />
-      <LineItems lines={lines ?? []} materials={materials} locked={locked} onChange={onLine} />
+      <LineItems lines={lines ?? []} materials={materials} locked={locked} onChange={onLine} header={header} />
 
       {locked ? null : (
         <div className="field-section">

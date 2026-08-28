@@ -347,7 +347,9 @@ def row_to_document(row: sqlite3.Row) -> dict:
         "doc_number": row["doc_number"],
         "po_number": row["po_number"],
         "total_value": row["total_value"],
-        "invoice_channel": row["invoice_channel"],
+        # A PURCHASE_BILL's own MIN Voucher reference — null on every other
+        # document type. See po_reconciliation for how it's used.
+        "min_number": row["min_number"],
     }
 
 
@@ -910,7 +912,7 @@ def clear_quote_pick(project_id: str, material_id: str):
 DOC_SELECT = """
 SELECT d.*, p.code AS project_code, p.name AS project_name,
        h.vendor_name_raw, h.vendor_gstin, h.vendor_id, h.doc_number, h.po_number, h.total_value,
-       h.invoice_channel
+       h.min_number
   FROM documents d
   LEFT JOIN projects p    ON p.id = d.project_id
   LEFT JOIN doc_headers h ON h.document_id = d.id
@@ -1044,41 +1046,52 @@ def duplicate_diff(document_id: str):
 
 @app.get("/api/v1/documents/{po_document_id}/reconciliation")
 def po_reconciliation(po_document_id: str):
-    """For a PO document: every invoice, delivery challan and inward report
-    that references its number, grouped into deliveries (same vendor +
-    invoice number = one delivery, possibly billed twice — see
-    duplicate_diff), which of the four required documents a delivery is
-    still missing, its three-way verification against the PO's own lines.
-    See docs/PROJECT_PLAN.md §7 for the matching logic this is a scoped-down
-    version of.
+    """For a PO document: every invoice, MIN Voucher and Purchase Bill that
+    references its number, grouped into deliveries (same vendor + invoice
+    number = one delivery — see duplicate_diff), which of the three required
+    documents a delivery is still missing, its three-way verification
+    against the PO's own lines.
 
-    A complete delivery has all four: a Site Invoice and a Vendor Invoice
-    (the same invoice, two copies — one to the site, one mailed straight to
-    the office; doc_headers.invoice_channel says which is which, since
-    nothing on the page itself does), a Delivery Challan, and an Inward
-    Report (the site's own record of what arrived — DELIVERY covers the
-    vendor's challan, INWARD covers this).
+    A complete delivery has three documents, matching how this client
+    actually works — not the generic vendor/site-copy model an earlier
+    version of this assumed: an Invoice (from the supplier), a MIN Voucher
+    (the site's own inward record of what it took in — INWARD in this
+    schema, "Material Inward Note" in the client's own terms), and a
+    Purchase Bill (the office's own closing record, prepared once the
+    invoice and MIN both reach it). DELIVERY stays a real document type for
+    whenever a vendor does send a dedicated challan, but it's never
+    required here — this client's invoice doubles as the delivery record,
+    so there usually isn't a separate one.
 
-    A delivery challan and an inward report don't carry the invoice number —
-    each carries its own number, which shows up on the invoice's own lines
-    as dc_number. That's the only thread connecting them to an invoice
-    group; one no invoice has claimed yet still gets its own group, by its
-    own number, rather than being silently dropped from the page.
+    A MIN Voucher and a Purchase Bill don't carry the invoice number as
+    their own doc_number — each has its own identity (a MIN No, a PV No)
+    and instead references the invoice via dc_number (see doc_headers.
+    dc_number in db.py), which is what threads them into an invoice's
+    group. One that references an invoice number nothing has claimed yet
+    still gets its own group, by that number, rather than being silently
+    dropped from the page. A dedicated DELIVERY challan, on the rare
+    occasion one exists, still folds in the old way — via the dc_number an
+    invoice *line* names, since a real challan's own number is what shows
+    up there, not on the invoice's header.
 
     Fulfillment is gated on a three-way match, not just "an invoice showed
     up": a delivery's quantities only count toward the PO's delivered total
-    once its Site Invoice, Vendor Invoice and Inward Report all exist AND
-    agree on material, quantity and rate line for line — the Delivery
-    Challan isn't part of this specific check (it's usually unpriced, so
-    there's nothing to compare there beyond presence, already covered by
-    `missing`). A PO is fulfilled by several such deliveries over time (a
-    100 MT order arriving as 50 today, 50 next week), each independently
-    three-way-verified and summed — never by trusting one invoice's say-so.
-    A delivery that hasn't cleared the check contributes nothing to
-    delivered_qty; its claimed quantity (site copy's, falling back to
-    vendor's, then inward's — whichever exists first) is reported separately
-    as pending_qty, so it's still visible without silently counting as
-    received."""
+    once its Invoice, MIN Voucher and Purchase Bill all exist AND agree on
+    material and quantity line for line — rate agreement is only required
+    between Invoice and Purchase Bill (both priced); the MIN Voucher side of
+    each comparison is quantity-only, since a MIN Voucher carries no rate
+    column at all to agree or disagree on (see compare_document_lines'
+    require_rate). The MIN Voucher's own comparable quantity is what it
+    actually *accepted* (accept_qty), not what it was offered (quantity/
+    "MIN Qty") — a MIN Voucher that received short of the invoice is
+    exactly the mismatch this check exists to catch. A PO is fulfilled by
+    several such deliveries over time (a 100 MT order arriving as 50 today,
+    50 next week), each independently three-way-verified and summed — never
+    by trusting one invoice's say-so. A delivery that hasn't cleared the
+    check contributes nothing to delivered_qty; its claimed quantity
+    (Invoice's, falling back to MIN's received qty, then Purchase Bill's —
+    whichever exists first) is reported separately as pending_qty, so it's
+    still visible without silently counting as received."""
     with db.db() as con:
         po_raw = con.execute(DOC_SELECT + " WHERE d.id = ?", (po_document_id,)).fetchone()
         if po_raw is None:
@@ -1091,7 +1104,7 @@ def po_reconciliation(po_document_id: str):
 
         related = [
             row_to_document(r) for r in con.execute(
-                DOC_SELECT + " WHERE d.document_type IN ('INVOICE', 'DELIVERY', 'INWARD')"
+                DOC_SELECT + " WHERE d.document_type IN ('INVOICE', 'DELIVERY', 'INWARD', 'PURCHASE_BILL')"
                 " AND d.project_id = ? AND h.po_number = ?",
                 (po_row["project_id"], po_row["doc_number"]),
             ).fetchall()
@@ -1099,6 +1112,7 @@ def po_reconciliation(po_document_id: str):
         invoices = [d for d in related if d["document_type"] == "INVOICE"]
         notes = [d for d in related if d["document_type"] == "DELIVERY"]
         inward = [d for d in related if d["document_type"] == "INWARD"]
+        purchase_bills = [d for d in related if d["document_type"] == "PURCHASE_BILL"]
 
         # One delivery = same vendor + invoice number — exactly what
         # find_duplicate already treats as "the same document, different
@@ -1114,7 +1128,7 @@ def po_reconciliation(po_document_id: str):
         def new_group(doc_number, vendor_name):
             return {
                 "doc_number": doc_number, "vendor_name": vendor_name,
-                "invoices": [], "notes": [], "inward": [],
+                "invoices": [], "notes": [], "inward": [], "purchase_bills": [],
             }
 
         groups: dict[tuple, dict] = {}
@@ -1123,8 +1137,15 @@ def po_reconciliation(po_document_id: str):
             g = groups.setdefault(key, new_group(key[1], inv["vendor_name"]))
             g["invoices"].append(inv)
 
-        # Fold delivery challans and inward reports in via the dc_number an
-        # invoice line names — built from whichever invoices are already
+        # MIN Vouchers and Purchase Bills reference an invoice directly by
+        # its own doc_number (via their dc_number — see the function
+        # docstring), so this is a straight lookup, not the per-line search
+        # a real delivery challan still needs below.
+        invoice_number_to_key = {key[1]: key for key in groups}
+
+        # A dedicated delivery challan (rare for this client, but DELIVERY
+        # stays supported) folds in the old way — via the dc_number an
+        # invoice *line* names, built from whichever invoices are already
         # grouped, before one with no claimant yet falls back to its own
         # standalone group.
         dc_to_key: dict[str, tuple] = {}
@@ -1134,13 +1155,32 @@ def po_reconciliation(po_document_id: str):
                     if line["dc_number"]:
                         dc_to_key[line["dc_number"]] = key
 
-        for slot, docs_of_type in (("notes", notes), ("inward", inward)):
+        for d in notes:
+            key = dc_to_key.get(d["doc_number"])
+            if key is None:
+                key = (d["vendor_id"] or "", d["doc_number"] or d["document_id"])
+                groups.setdefault(key, new_group(key[1], d["vendor_name"]))
+            groups[key]["notes"].append(d)
+
+        for slot, docs_of_type in (("inward", inward), ("purchase_bills", purchase_bills)):
             for d in docs_of_type:
-                key = dc_to_key.get(d["doc_number"])
+                key = invoice_number_to_key.get(d["dc_number"])
                 if key is None:
-                    key = (d["vendor_id"] or "", d["doc_number"] or d["document_id"])
+                    key = (d["vendor_id"] or "", d["dc_number"] or d["doc_number"] or d["document_id"])
                     groups.setdefault(key, new_group(key[1], d["vendor_name"]))
                 groups[key][slot].append(d)
+
+        # A MIN Voucher's comparable quantity is what it actually accepted,
+        # not what it was offered — see doc_lines.accept_qty in db.py. Falls
+        # back to quantity when accept_qty isn't set (an older record, or a
+        # line the model genuinely couldn't read the split on), so a MIN
+        # Voucher that predates this still compares as best it can rather
+        # than as a hard zero.
+        def as_received(lines):
+            return [
+                {**l, "quantity": l["accept_qty"] if l.get("accept_qty") is not None else l.get("quantity")}
+                for l in lines
+            ]
 
         deliveries = []
         delivered_by_material: dict[str, dict] = {}
@@ -1149,54 +1189,51 @@ def po_reconciliation(po_document_id: str):
             g["invoices"].sort(key=lambda d: d["uploaded_at"])
             g["notes"].sort(key=lambda d: d["uploaded_at"])
             g["inward"].sort(key=lambda d: d["uploaded_at"])
+            g["purchase_bills"].sort(key=lambda d: d["uploaded_at"])
 
-            # The four documents a complete delivery needs. Site/Vendor is
-            # read off invoice_channel, not upload order — a reviewer sets it
-            # (see extract.mark_approved), since nothing on the page says
-            # which copy is which. An invoice with no channel set yet (an
-            # older document, or one still mid-review) satisfies neither.
-            site_invoice = next((inv for inv in g["invoices"] if inv["invoice_channel"] == "SITE"), None)
-            vendor_invoice = next((inv for inv in g["invoices"] if inv["invoice_channel"] == "VENDOR"), None)
+            invoice = g["invoices"][0] if g["invoices"] else None
             inward_report = g["inward"][0] if g["inward"] else None
+            purchase_bill = g["purchase_bills"][0] if g["purchase_bills"] else None
 
             missing = []
-            if site_invoice is None:
-                missing.append("Site Invoice")
-            if vendor_invoice is None:
-                missing.append("Vendor Invoice")
-            if not g["notes"]:
-                missing.append("Delivery Challan")
+            if invoice is None:
+                missing.append("Invoice")
             if inward_report is None:
-                missing.append("Inward Report")
+                missing.append("MIN Voucher")
+            if purchase_bill is None:
+                missing.append("Purchase Bill")
+            # DELIVERY isn't required — see the function docstring — so a
+            # missing one never shows up here, only in `documents` if one
+            # happens to exist.
 
             def lines_of(doc):
                 return [dict(l) for l in fetch_doc_lines_with_materials(con, doc["document_id"])]
 
             # Fulfillment is a three-way match, not "an invoice showed up" —
-            # Site Invoice, Vendor Invoice and Inward Report all have to
-            # exist AND agree line for line on material, quantity and rate
-            # before this delivery's quantities count toward the PO at all.
-            # The Delivery Challan isn't part of this specific check (see
-            # the function docstring) — its presence is covered by `missing`
-            # above only.
+            # Invoice, MIN Voucher and Purchase Bill all have to exist AND
+            # agree line for line before this delivery's quantities count
+            # toward the PO at all.
             missing_for_match = [
                 label for label, doc in (
-                    ("Site Invoice", site_invoice), ("Vendor Invoice", vendor_invoice),
-                    ("Inward Report", inward_report),
+                    ("Invoice", invoice), ("MIN Voucher", inward_report), ("Purchase Bill", purchase_bill),
                 ) if doc is None
             ]
 
-            site_lines = lines_of(site_invoice) if site_invoice else None
-            vendor_lines = lines_of(vendor_invoice) if vendor_invoice else None
-            inward_lines = lines_of(inward_report) if inward_report else None
+            invoice_lines = lines_of(invoice) if invoice else None
+            inward_lines = as_received(lines_of(inward_report)) if inward_report else None
+            pb_lines = lines_of(purchase_bill) if purchase_bill else None
 
             if missing_for_match:
                 status, match_diffs = "incomplete", None
             else:
                 match_diffs = {
-                    "site_vs_vendor": extract.compare_document_lines(site_lines, vendor_lines),
-                    "site_vs_inward": extract.compare_document_lines(site_lines, inward_lines),
-                    "vendor_vs_inward": extract.compare_document_lines(vendor_lines, inward_lines),
+                    "invoice_vs_min": extract.compare_document_lines(
+                        invoice_lines, inward_lines, require_rate=False
+                    ),
+                    "invoice_vs_purchase_bill": extract.compare_document_lines(invoice_lines, pb_lines),
+                    "min_vs_purchase_bill": extract.compare_document_lines(
+                        inward_lines, pb_lines, require_rate=False
+                    ),
                 }
                 status = "verified" if all(d["clean"] for d in match_diffs.values()) else "mismatch"
 
@@ -1204,9 +1241,9 @@ def po_reconciliation(po_document_id: str):
                 "status": status,                    # "verified" | "incomplete" | "mismatch"
                 "missing_for_match": missing_for_match,
                 "diffs": match_diffs,
-                "site_invoice_document_id": site_invoice["document_id"] if site_invoice else None,
-                "vendor_invoice_document_id": vendor_invoice["document_id"] if vendor_invoice else None,
+                "invoice_document_id": invoice["document_id"] if invoice else None,
                 "inward_document_id": inward_report["document_id"] if inward_report else None,
+                "purchase_bill_document_id": purchase_bill["document_id"] if purchase_bill else None,
             }
 
             # Verified deliveries feed delivered_qty (what actually counts
@@ -1214,17 +1251,18 @@ def po_reconciliation(po_document_id: str):
             # three disagreeing — feeds pending_qty instead, so a claimed
             # amount is still visible without ever being trusted as received.
             # The claimed amount itself, when unverified, is whichever of
-            # the three exists first in Site > Vendor > Inward priority —
-            # there's no single correct number to show when they disagree,
-            # so this is a stated "best guess," not a reconciled figure.
+            # the three exists first in Invoice > MIN > Purchase Bill
+            # priority — there's no single correct number to show when they
+            # disagree, so this is a stated "best guess," not a reconciled
+            # figure.
             if status == "verified":
-                pool, rep_id, rep_lines = delivered_by_material, site_invoice["document_id"], site_lines
-            elif site_invoice:
-                pool, rep_id, rep_lines = pending_by_material, site_invoice["document_id"], site_lines
-            elif vendor_invoice:
-                pool, rep_id, rep_lines = pending_by_material, vendor_invoice["document_id"], vendor_lines
+                pool, rep_id, rep_lines = delivered_by_material, invoice["document_id"], invoice_lines
+            elif invoice:
+                pool, rep_id, rep_lines = pending_by_material, invoice["document_id"], invoice_lines
             elif inward_report:
                 pool, rep_id, rep_lines = pending_by_material, inward_report["document_id"], inward_lines
+            elif purchase_bill:
+                pool, rep_id, rep_lines = pending_by_material, purchase_bill["document_id"], pb_lines
             else:
                 pool, rep_id, rep_lines = pending_by_material, None, None
 
@@ -1249,13 +1287,13 @@ def po_reconciliation(po_document_id: str):
 
             # doc_number/total_value/page_count so each row in the Delivery
             # info list reads as its own document, not just a bare date — a
-            # Delivery Note or Inward Report carries its own D.C. number,
-            # different from the invoice number the whole group is named
-            # after, and there's otherwise nothing on the row to say so.
+            # MIN Voucher or Purchase Bill carries its own number, different
+            # from the invoice number the whole group is named after, and
+            # there's otherwise nothing on the row to say so.
             documents = [
                 {"document_id": d["document_id"], "document_type": "INVOICE",
-                 "invoice_channel": d["invoice_channel"], "doc_number": d["doc_number"],
-                 "total_value": d["total_value"], "page_count": d["page_count"],
+                 "doc_number": d["doc_number"], "total_value": d["total_value"],
+                 "page_count": d["page_count"],
                  "status": d["status"], "uploaded_at": d["uploaded_at"]}
                 for d in g["invoices"]
             ] + [
@@ -1270,6 +1308,12 @@ def po_reconciliation(po_document_id: str):
                  "page_count": d["page_count"],
                  "status": d["status"], "uploaded_at": d["uploaded_at"]}
                 for d in g["inward"]
+            ] + [
+                {"document_id": d["document_id"], "document_type": "PURCHASE_BILL",
+                 "doc_number": d["doc_number"], "total_value": d["total_value"],
+                 "page_count": d["page_count"],
+                 "status": d["status"], "uploaded_at": d["uploaded_at"]}
+                for d in g["purchase_bills"]
             ]
 
             deliveries.append({
@@ -1381,7 +1425,7 @@ def approve_document(document_id: str, body: dict):
     with db.db() as con:
         if not extract.mark_approved(con, document_id, approved_by):
             row = con.execute(
-                "SELECT d.status, d.document_type, h.po_number, h.invoice_channel FROM documents d"
+                "SELECT d.status, d.document_type, h.po_number FROM documents d"
                 " LEFT JOIN doc_headers h ON h.document_id = d.id WHERE d.id = ?",
                 (document_id,),
             ).fetchone()
@@ -1395,20 +1439,18 @@ def approve_document(document_id: str, body: dict):
             if waiting and doc_type == "OTHER":
                 raise HTTPException(
                     400,
-                    "OTHER isn't a real document type — pick Invoice, PO, Delivery, Quotation or "
-                    "Inward Report before approving, or reject it if none of those genuinely fit",
+                    "OTHER isn't a real document type — pick Invoice, PO, Delivery, Quotation, "
+                    "Inward Report or Purchase Bill before approving, or reject it if none of "
+                    "those genuinely fit",
                 )
-            if waiting and doc_type in ("INVOICE", "DELIVERY", "INWARD") and not (row["po_number"] or "").strip():
+            if (
+                waiting and doc_type in ("INVOICE", "DELIVERY", "INWARD", "PURCHASE_BILL")
+                and not (row["po_number"] or "").strip()
+            ):
                 raise HTTPException(
                     400,
                     "This document has no PO number — enter the purchase order it belongs to "
                     "before approving",
-                )
-            if waiting and doc_type == "INVOICE" and row["invoice_channel"] not in ("SITE", "VENDOR"):
-                raise HTTPException(
-                    400,
-                    "This invoice doesn't say whether it's the Site copy or the Vendor copy — "
-                    "pick one before approving",
                 )
             raise HTTPException(409, f"Cannot approve a document that is {row['status']}")
 

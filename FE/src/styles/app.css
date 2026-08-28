@@ -9,8 +9,6 @@
 
 .nav-rail { position: sticky; top: 0; z-index: 40; padding: var(--rail) var(--rail) 0; background: var(--canvas); }
 .nav {
-  max-width: var(--col);
-  margin: 0 auto;
   min-height: 64px;
   padding: 9px 10px 9px var(--nav-inset);
   display: flex;
@@ -223,54 +221,62 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
    stack of floating boxes. */
 #tab-home .section { margin-top: var(--s6); }
 
-/* A photo band behind the pitch only — taller than the text needs, so the
-   image stays visible (darkened, not faded) well past the copy and only
-   fades into the page's own canvas colour right at the bottom edge, close
-   to where Dashboard starts, instead of washing out immediately under the
-   paragraph. The gradient is layered over the image in one `background`,
-   not a separate overlay element, so there's nothing to keep in sync if the
-   image changes. Text sits toward the top (not vertically centred) so the
-   extra height reads as "more photo below the pitch," not as a bigger gap
-   above it.
+/* A photo band behind the pitch only — .home-hero itself carries no
+   background and no forced height: it still sizes exactly to hero-copy's
+   natural content height, so Dashboard's position in the document never
+   moves, same as before. The photo/fade instead live on ::before, absolutely
+   positioned and made taller than its own box (100% + EXTRA below) — an
+   overlay that visually bleeds past .home-hero's bottom edge into the gap
+   before Dashboard without pushing Dashboard down, since absolutely
+   positioned elements don't add to their parent's height. EXTRA is how far
+   past the pitch the photo (and the start of its fade) reaches — tune that
+   one number to land the fade wherever it should sit relative to Dashboard.
+   Positioned elements paint above static siblings by default, so without
+   .home-below's own z-index below, this overlay would sit on top of and
+   hide the Dashboard section wherever the two overlap — z-index: 1 there
+   (and on .home-hero's own text, via `.home-hero > .band`) is what keeps
+   both readable through it.
 
-   background-position is shifted toward the top of the source photo, not
-   centred — both crane jibs sit in the upper third of that image, and a
-   centred crop on a band this wide loses them, leaving only the mast
-   visible; nudged closer to the very top (8%, not 18%) so the jibs clear
-   the heading text instead of sitting behind it. Same background-size
-   (cover) throughout — this only re-centres which part of the image shows,
-   never a re-crop/re-zoom. The dark-to-canvas transition in the gradient
-   starts later (88%, not 78%) so the fade sits right at the bottom edge,
-   near Dashboard, instead of washing out mid-band — same two rgba
-   opacities as before, only their stop position moved. Drop the photo in
-   at FE/src/assets/home-hero.jpg — referenced here as a plain CSS url(),
-   not a JS import, so a missing file leaves the band looking plain (the
-   gradient alone) instead of breaking the build. */
-.home-hero {
-  min-height: 62vh;
-  display: flex; align-items: flex-start;
+   background-position/size: the band is short and wide against a tall
+   source photo (5326×3551) — much wider, proportionally, than the photo
+   itself, so plain `cover` ends up exactly width-constrained (zero
+   horizontal room to pan, only vertical) — sizing wider than the band
+   explicitly forces real horizontal overflow to exist so X is adjustable
+   too. Drop the photo in at FE/src/assets/home-hero.jpg — a plain CSS
+   url(), not a JS import, so a missing file just leaves the band looking
+   plain (the gradient alone) instead of breaking the build. */
+/* padding, not margin — a top margin on .hero-copy (a descendant with no
+   padding/border of its own in between) collapses straight through .col/
+   .band/.home-hero and out the top of this box, pushing the whole hero
+   (photo included, since ::before's top:0 is relative to this box) down by
+   that amount — that's the gap between the nav and the photo. Padding here
+   doesn't collapse, so the photo starts flush with the nav while the text
+   still gets the same spacing (moved off .hero-copy's own margin-top below). */
+.home-hero { position: relative; padding-top: var(--s6); }
+.home-hero::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: calc(100% + 90px); /* EXTRA = 90px — how far past the pitch the photo/fade reaches */
   background:
-    linear-gradient(to bottom, rgba(10, 16, 24, .55) 0%, rgba(10, 16, 24, .55) 88%, var(--canvas) 100%),
-    url("../assets/home-hero.jpg") center 8% / cover no-repeat;
+    linear-gradient(to bottom, rgba(10, 16, 24, .55) 0%, rgba(10, 16, 24, .55) 75%, var(--canvas) 100%),
+    url("../assets/home-hero.jpg") 70% 26% / 100% auto no-repeat;
 }
-@media (max-width: 720px) { .home-hero { min-height: 54vh; } }
+.home-hero > .band { position: relative; z-index: 1; }
+.home-below { position: relative; z-index: 1; }
 
-.hero-copy { padding-top: var(--s5); margin-top: var(--s6); width: 100%; }
+.hero-copy { padding-top: var(--s3); }
 .hero-copy h1 { margin-top: var(--s2); }
 .hero-copy .lede { margin-top: var(--s2); font-size: 17px; color: var(--slate); max-width: 46ch; }
 .hero-cta { display: flex; gap: 10px; margin-top: var(--s4); flex-wrap: wrap; }
 
 /* Light text over the photo — same hero-copy markup the plain-background
    version used, just re-coloured for a dark image behind it instead of the
-   cream page. The four document kinds named in the lede get picked out in
-   full white + bold rather than their own pill/tag treatment — enough to
-   read as "these are the things this app handles" at a glance without
-   turning one sentence into a row of badges. */
+   cream page. */
 .home-hero .eyebrow { color: rgba(255, 255, 255, .8); }
 .home-hero .eyebrow::before { background: #fff; }
 .home-hero .hero-copy h1 { color: #fff; }
 .home-hero .hero-copy .lede { color: rgba(255, 255, 255, .82); }
-.home-hero .hero-copy .lede strong { color: #fff; font-weight: 700; }
 
 /* ── dashboard metrics ────────────────────────────────────────────────────── */
 /* Two tiers, the way a real ops dashboard reads: the totals first — bigger,
@@ -322,34 +328,6 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 }
 .metric-label { margin-top: 6px; font-size: 13.5px; color: var(--slate); }
 
-/* ── materials pie chart (home) ───────────────────────────────────────────── */
-/* One ring per material (see MaterialsPieChart.jsx for why one combined
-   ring per project would be misleading — materials share a project, not a
-   unit), laid out as a small-multiples grid rather than one big chart. */
-.pie-card { padding: var(--s4); margin-top: var(--s3); }
-.pie-select { min-height: 38px; padding: 0 16px; font-size: 14px; max-width: 320px; }
-
-.pie-legend-key { display: flex; gap: var(--s4); margin-bottom: var(--s3); }
-.pie-legend-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--slate); }
-.pie-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
-
-.pie-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--s3);
-}
-.pie-mat {
-  display: flex; align-items: center; gap: var(--s2);
-  padding: var(--s2); border: 1px solid var(--hair); border-radius: var(--r-btn);
-}
-.pie-svg { flex: none; }
-.pie-mat-info { min-width: 0; }
-.pie-mat-name {
-  font-size: 13.5px; font-weight: 500;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.pie-mat-qty {
-  margin-top: 3px; font-family: var(--mono); font-size: 12.5px;
-  font-variant-numeric: tabular-nums; color: var(--slate);
-}
 @media (max-width: 640px) {
   .metrics-primary { grid-template-columns: 1fr; }
   .metrics-status { grid-template-columns: repeat(2, 1fr); }
