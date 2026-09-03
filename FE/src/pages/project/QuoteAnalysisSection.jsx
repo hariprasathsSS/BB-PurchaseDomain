@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { StatusPill } from "../../components/Pills.jsx";
-import { IconRefresh } from "../../components/Icons.jsx";
+import { IconCheck, IconClose, IconRefresh } from "../../components/Icons.jsx";
 import { QuoteUploadModal } from "./QuoteUploadModal.jsx";
 import { QuoteReviewModal } from "./QuoteReviewModal.jsx";
 import { api } from "../../lib/api.js";
@@ -172,7 +172,21 @@ export function QuoteAnalysisSection({ project, materials, uploading, setUploadi
         <>
           <div className="card" style={{ marginBottom: 24 }}>
             <div className="table-wrap">
-              <table className="data">
+              <table className="data quote-list">
+                {/* table-layout:fixed with the actions column already sized
+                    for its own longest state (the "Remove this quotation?"
+                    confirm) — see app.css. Without this, that column's
+                    width is driven by content across every row at once, so
+                    one row entering confirm mode widened the whole column
+                    and shifted every other row along with it. */}
+                <colgroup>
+                  <col />
+                  <col style={{ width: "160px" }} />
+                  <col style={{ width: "110px" }} />
+                  <col style={{ width: "130px" }} />
+                  <col style={{ width: "90px" }} />
+                  <col style={{ width: "300px" }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>Vendor</th>
@@ -199,11 +213,23 @@ export function QuoteAnalysisSection({ project, materials, uploading, setUploadi
                         {confirmDelete === q.id ? (
                           <span className="row-actions">
                             Remove this quotation?
-                            <button className="row-link warn" type="button" onClick={() => doDelete(q.id)}>
-                              Confirm
+                            <button
+                              className="row-link go"
+                              type="button"
+                              title="Confirm"
+                              aria-label="Confirm removing this quotation"
+                              onClick={() => doDelete(q.id)}
+                            >
+                              <IconCheck width={16} height={16} />
                             </button>
-                            <button className="row-link" type="button" onClick={() => setConfirmDelete(null)}>
-                              Cancel
+                            <button
+                              className="row-link stop"
+                              type="button"
+                              title="Cancel"
+                              aria-label="Cancel"
+                              onClick={() => setConfirmDelete(null)}
+                            >
+                              <IconClose width={16} height={16} />
                             </button>
                           </span>
                         ) : (
@@ -336,6 +362,7 @@ export function QuoteAnalysisSection({ project, materials, uploading, setUploadi
 
       {reviewingId ? (
         <QuoteReviewModal
+          key={reviewingId}
           quotationId={reviewingId}
           materials={materials}
           onClose={() => setReviewingId(null)}

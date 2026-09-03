@@ -13,7 +13,14 @@ import { inr } from "../../lib/format.js";
    once doc_kind is INWARD. Optional: callers with no per-document schema
    concept (quote review) just don't pass it, and nothing here has a showIf
    that needs it. */
-export function LineItems({ lines, materials, locked, onChange, fields = LINE_FIELDS, header }) {
+/* lineIssues is {material_id: [message]} — what another document in this
+   one's own delivery says about that material (see main.py's line-issues).
+   Shown as a marker on the line it concerns rather than as prose in a panel
+   somewhere else, so "the MIN Voucher recorded less of this" is answered
+   where the question gets asked. */
+export function LineItems({
+  lines, materials, locked, onChange, fields = LINE_FIELDS, header, lineIssues = {},
+}) {
   const visibleFields = fields.filter((f) => !f.showIf || f.showIf(header ?? {}));
 
   if (!lines.length) {
@@ -34,25 +41,43 @@ export function LineItems({ lines, materials, locked, onChange, fields = LINE_FI
             <tr>
               <th>#</th>
               {visibleFields.map((f) => <th key={f.key}>{f.label}</th>)}
+              {/* The issue marker's own column, last — unlabelled, since a
+                  row either has something to say or the cell stays empty. */}
+              <th />
             </tr>
           </thead>
           <tbody>
-            {lines.map((line) => (
-              <tr key={line.line_no}>
-                <td className="num">{line.line_no}</td>
-                {visibleFields.map((field) => (
-                  <td key={field.key}>
-                    <Cell
-                      field={field}
-                      line={line}
-                      materials={materials}
-                      locked={locked}
-                      onChange={onChange}
-                    />
+            {lines.map((line) => {
+              const issues = lineIssues[line.material_id] ?? [];
+              return (
+                <tr key={line.line_no}>
+                  <td className="num">{line.line_no}</td>
+                  {visibleFields.map((field) => (
+                    <td key={field.key}>
+                      <Cell
+                        field={field}
+                        line={line}
+                        materials={materials}
+                        locked={locked}
+                        onChange={onChange}
+                      />
+                    </td>
+                  ))}
+                  <td className="line-issue-cell">
+                    {issues.length ? (
+                      <span
+                        className="line-issue"
+                        title={issues.join("\n")}
+                        role="img"
+                        aria-label={issues.join(" ")}
+                      >
+                        i
+                      </span>
+                    ) : null}
                   </td>
-                ))}
-              </tr>
-            ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

@@ -27,12 +27,44 @@ export const projectOf = (doc) =>
 /* The reference printed on the paper, whichever kind of paper it is. */
 export const refOf = (doc) => doc.doc_number || doc.po_number || null;
 
+/* A digit misread breaks these identities almost every time — not a
+   guess, just checking what the document itself already implies:
+   quantity × rate = amount, and basic value + tax + tcs + rounding = total.
+   Tolerance covers real per-line rounding, not a genuine mismatch. */
+const numbersClose = (a, b) => Math.abs(a - b) <= Math.max(1, Math.max(Math.abs(a), Math.abs(b)) * 0.01);
+
+export function checkArithmetic(header, lines) {
+  const badLines = (lines ?? [])
+    .filter((l) => l.quantity != null && l.rate != null && l.amount != null && l.quantity !== "" && l.rate !== "" && l.amount !== "")
+    .filter((l) => !numbersClose(Number(l.quantity) * Number(l.rate), Number(l.amount)))
+    .map((l) => l.line_no);
+
+  const h = header ?? {};
+  const parts = [h.basic_value, h.igst_amount, h.cgst_amount, h.sgst_amount, h.tcs_amount, h.rounding_off]
+    .map((v) => (v == null || v === "" ? 0 : Number(v)));
+  const headerMismatch =
+    h.basic_value != null && h.basic_value !== "" && h.total_value != null && h.total_value !== ""
+    && !numbersClose(parts.reduce((a, b) => a + b, 0), Number(h.total_value));
+
+  return { badLines, headerMismatch };
+}
+
 export const IMAGE_RE = /\.(png|jpe?g|gif|webp)$/i;
 export const ALLOWED_UPLOAD_RE = /\.(pdf|jpe?g|png)$/i;
 
 export const DOC_TYPES = [
   "INVOICE", "PO", "DELIVERY", "QUOTATION", "INWARD", "PURCHASE_BILL", "OTHER", "UNCLASSIFIED",
 ];
+
+// Display text only — the enum value stored everywhere (doc_kind, document_type,
+// the DB, po_reconciliation's grouping) stays INWARD/PURCHASE_BILL unchanged.
+// This client calls an INWARD document a "MIN Voucher" — shown as the shorter
+// "MIN" so it fits a pill and a select option the same way every other type does.
+export const DOC_TYPE_LABELS = {
+  INVOICE: "Invoice", PO: "PO", DELIVERY: "Delivery", QUOTATION: "Quotation",
+  INWARD: "MIN", PURCHASE_BILL: "Purchase Bill", OTHER: "Other", UNCLASSIFIED: "Unclassified",
+};
+export const docTypeLabel = (t) => DOC_TYPE_LABELS[t] ?? t;
 export const DOC_STATUSES = [
   "PENDING", "PROCESSING", "EXTRACTED", "APPROVED", "REJECTED", "FAILED",
 ];
@@ -82,6 +114,7 @@ export function projectTally(project, docs) {
     documents: mine.length,
     pages: mine.reduce((n, d) => n + (d.page_count ?? 0), 0),
     awaiting: mine.filter(needsDecision).length,
+    pos: mine.filter((d) => d.document_type === "PO").length,
     // Rejected documents are excluded: the project did not buy that.
     booked: counted.reduce((sum, d) => sum + (Number(d.total_value) || 0), 0),
     reading: mine.filter(isWaiting).length,

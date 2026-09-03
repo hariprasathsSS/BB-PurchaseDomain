@@ -157,6 +157,12 @@ CREATE TABLE IF NOT EXISTS doc_headers (
 
   place_of_supply      TEXT,
   delivery_address_raw TEXT,
+  -- The vehicle that actually carried the delivery — printed as "Vehicle
+  -- No"/"Truck No"/"Motor Vehicle No" depending on the form. Only ever
+  -- meaningful on an INVOICE or an INWARD (MIN Voucher) page — a PO
+  -- predates any vehicle, and a Purchase Bill is the office's own closing
+  -- record, not something a truck carried.
+  vehicle_number TEXT,
 
   basic_value  REAL,
   tax_type     TEXT CHECK (tax_type IN ('IGST','CGST_SGST')),
@@ -172,7 +178,13 @@ CREATE TABLE IF NOT EXISTS doc_headers (
 
   reviewed_by       TEXT,
   reviewed_at       TEXT,
-  rejection_reason  TEXT
+  rejection_reason  TEXT,
+
+  -- Set only when extract.reconcile_batch silently overwrote a field this
+  -- document's own extraction misread — a reference number two sibling
+  -- documents uploaded in the same batch both agreed on. Auditable, not
+  -- silent: the review screen surfaces this as a banner.
+  correction_note TEXT
 );
 
 CREATE TABLE IF NOT EXISTS doc_lines (
@@ -346,6 +358,8 @@ _MIGRATIONS = {
     ],
     "doc_headers": [
         ("min_number", "TEXT"),
+        ("vehicle_number", "TEXT"),
+        ("correction_note", "TEXT"),
     ],
     "doc_lines": [
         ("accept_qty", "REAL"),

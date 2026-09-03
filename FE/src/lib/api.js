@@ -39,10 +39,20 @@ export const api = {
      time. duplicate_of is null in the response when this document has no
      paired copy on file (yet). */
   getDuplicateDiff: (id) => get(`/api/v1/documents/${id}/duplicate-diff`),
+  /* Per-material disagreements between this document and the others in its
+     own delivery, so the review screen can show each one against the line it
+     concerns. {} when there's nothing to compare against. */
+  getLineIssues: (id) => get(`/api/v1/documents/${id}/line-issues`).then((d) => d.issues ?? {}),
   /* Only meaningful for a PO document: every invoice referencing it,
      grouped into deliveries, and the running delivered-vs-ordered total
      per material. */
   getPoReconciliation: (id) => get(`/api/v1/documents/${id}/reconciliation`),
+  /* Builds a Purchase Bill from an already-matched Invoice + MIN Voucher
+     pair — base is "invoice" or "min", which document's own values (vendor,
+     tax figures, line items) the new record is built from. */
+  generatePurchaseBill: (invoiceDocumentId, inwardDocumentId, base) =>
+    send("/api/v1/deliveries/generate-purchase-bill", "POST",
+      { invoice_document_id: invoiceDocumentId, inward_document_id: inwardDocumentId, base }),
 
   listMaterials: () => get("/api/v1/materials").then((d) => d.materials ?? []),
 

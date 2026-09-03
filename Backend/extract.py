@@ -10,6 +10,7 @@ Run `python extract.py` for the self-check.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -21,6 +22,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 import media
+import ocr
 from db import BASE_DIR, DOC_TYPES, db, new_id
 
 try:
@@ -113,14 +115,72 @@ def is_valid_gstin(value: str | None) -> bool:
     return bool(value and GSTIN_RE.fullmatch(str(value).upper()))
 
 
+_GSTIN_CHECKSUM_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def gstin_checksum_ok(value: str | None) -> bool | None:
+    """Verifies the real check digit (char 15) against chars 1-14 — catches a
+    single misread character with certainty, unlike the shape-only regex
+    check above. None (not True/False) when there's nothing 15-chars long to
+    check at all, so a caller can tell "not validated" from "validated and
+    wrong"."""
+    if not value or len(value) != 15:
+        return None
+    value = value.upper()
+    total = 0
+    factor = 1
+    for ch in value[:14]:
+        code = _GSTIN_CHECKSUM_CHARS.find(ch)
+        if code == -1:
+            return None
+        d = factor * code
+        d = (d // 36) + (d % 36)
+        total += d
+        factor = 2 if factor == 1 else 1
+    expected = _GSTIN_CHECKSUM_CHARS[(36 - (total % 36)) % 36]
+    return value[14] == expected
+
+
+# B&B's own PAN — chars 3-12 of any GSTIN they hold, in any state (the state
+# code and check digit vary per registration, this doesn't). Confirmed
+# against every real sample this session: 33AADCB4217G1Z6 (Tamil Nadu),
+# 21AADCB4217G1ZB (Odisha), 34AADCB4217G1Z4 (Puducherry) all share it.
+_SELF_PAN = "AADCB4217G"
+
+
+def gstin_is_self(value: str | None) -> bool:
+    """True when a GSTIN belongs to B&B itself, or is within 2 misread
+    characters of one — a real instance had the buyer/vendor mixup *and* a
+    transposed character on top (AACDB vs AADCB), so an exact match alone
+    missed it. On vendor_gstin this is almost always a buyer/vendor mixup —
+    B&B is never its own supplier."""
+    if not value or len(value) != 15:
+        return False
+    pan = value[2:12].upper()
+    diff = sum(1 for a, b in zip(pan, _SELF_PAN) if a != b)
+    return diff <= 2
+
+
 # ── mapping ──────────────────────────────────────────────────────────────────
 
-def match_material(con: sqlite3.Connection, description: str | None, unit: str | None = None) -> str | None:
+def match_material(
+    con: sqlite3.Connection, description: str | None, unit: str | None = None,
+    ai_matched_id: str | None = None,
+) -> str | None:
     """Description to material_id via the alias table, creating one if needed.
 
     Line descriptions carry spec sub-lines — the samples show "Electric Drill
     Machine / 10mm / 300W" as one cell. The first line is the material name, so
     try the whole block first and then just that line.
+
+    ai_matched_id is the engine's own semantic pick (Line.matched_material_id
+    — see the SYSTEM prompt's catalog rule): the model recognised this line as
+    a material already on the verified catalog, worded differently than
+    whatever alias is on file for it. The alias table stays the source of
+    truth going forward — a hit there always wins, exact text being the
+    cheapest and least error-prone match there is — but on a genuine miss, a
+    validated AI pick is preferred over inventing a new unverified material
+    for a delivery this client already has a real record of.
     """
     text = normalise(description)
     if not text:
@@ -137,6 +197,18 @@ def match_material(con: sqlite3.Connection, description: str | None, unit: str |
         ).fetchone()
         if row:
             return row["material_id"]
+
+    # A trusted catalog id, not a free-form guess: only ever one of the
+    # verified rows actually offered to the model (see _material_catalog_block)
+    # — a hallucinated id fails this existence check and falls through to
+    # creating a new material below, same as if ai_matched_id were never given.
+    if ai_matched_id:
+        exists = con.execute(
+            "SELECT 1 FROM materials WHERE id = ? AND verified = 1", (ai_matched_id,)
+        ).fetchone()
+        if exists:
+            learn_material_alias(con, candidates[-1], ai_matched_id)
+            return ai_matched_id
 
     # Never block on a masters gap: create it unverified and let review confirm.
     # The line's own unit wins when the document printed one; "Nos" is only a
@@ -257,6 +329,13 @@ def find_duplicate(
 # independently testable function.
 
 RATE_TOLERANCE = 0.01
+# Both comparisons below are against numbers that went through a division or
+# a running sum (aggregate_by_material's rate and qty), so two values a
+# person would call identical can differ by a float's last bit — a genuine
+# ₹0.01 gap sits at 0.010000000000218279 in IEEE754, not 0.01 exactly, and
+# a plain "<= RATE_TOLERANCE" rejects it. This buffer absorbs that rounding
+# noise; it is not a second, looser business tolerance.
+_EPS = 1e-9
 
 
 def aggregate_by_material(lines: list[dict]) -> tuple[dict[str, dict], list[dict]]:
@@ -313,9 +392,10 @@ def compare_document_lines(
         a, b = by_a.get(material_id), by_b.get(material_id)
         rate_ok = not require_rate or (
             a and b and a["rate"] is not None and b["rate"] is not None
-            and abs(a["rate"] - b["rate"]) <= RATE_TOLERANCE
+            and abs(a["rate"] - b["rate"]) <= RATE_TOLERANCE + _EPS
         )
-        match = bool(a and b and a["qty"] == b["qty"] and rate_ok)
+        qty_ok = bool(a and b and abs(a["qty"] - b["qty"]) <= _EPS)
+        match = bool(a and b and qty_ok and rate_ok)
         diff_lines.append({
             "material_id": material_id,
             "material_name": (a or b)["material_name"],
@@ -341,6 +421,20 @@ PROVIDER = os.environ.get("EXTRACT_PROVIDER", "anthropic").strip().lower()
 _DEFAULT_MODELS = {"anthropic": "claude-opus-5", "openai": "gpt-4o-mini"}
 MODEL = os.environ.get("EXTRACT_MODEL", _DEFAULT_MODELS.get(PROVIDER, "claude-opus-5"))
 
+# What a re-read runs on. A re-read is deliberate, rare and user-triggered —
+# somebody has looked at a page the routine pass got wrong and asked for
+# another attempt — so it is the one place worth spending a bigger model and
+# real thinking budget on. Re-running the *same* small model over the same
+# pixels is close to a coin flip; running a stronger one, told exactly which
+# fields are provably wrong, is a genuinely different attempt.
+_DEFAULT_THOROUGH_MODELS = {"anthropic": "claude-opus-5", "openai": "gpt-4o"}
+THOROUGH_MODEL = os.environ.get(
+    "EXTRACT_MODEL_THOROUGH", _DEFAULT_THOROUGH_MODELS.get(PROVIDER, MODEL)
+)
+# Only used on the anthropic path — how hard a re-read is told to think, as
+# against the adaptive budget a routine read picks for itself.
+THOROUGH_THINKING_TOKENS = int(os.environ.get("EXTRACT_THOROUGH_THINKING", "10000"))
+
 
 
 class Line(BaseModel):
@@ -350,6 +444,16 @@ class Line(BaseModel):
     delivery challan has no amount.
     """
     description_raw: str | None
+    # This line's material, matched against the reference catalog appended to
+    # the prompt below — filled with that entry's own id when you recognise
+    # this line names the same real-world material, even under a completely
+    # different name ("OPC" is Ordinary Portland Cement, "TMT 12mm" is a TMT
+    # Steel Bar 12mm). Left null whenever you are not genuinely sure, or
+    # nothing on the list is actually the same material — a document's own
+    # unmatched materials still get filed correctly without this field, so a
+    # cautious null costs nothing, and a wrong guess here would misfile a
+    # delivery against the wrong material's running total.
+    matched_material_id: str | None
     hsn_code: str | None
     quantity: float | None
     # A MIN Voucher / material inward note's own split of what it offered
@@ -394,6 +498,9 @@ class Extraction(BaseModel):
 
     place_of_supply: str | None
     delivery_address_raw: str | None
+    # The truck that carried the delivery — only ever present on an INVOICE
+    # or an INWARD (MIN Voucher) page. Null on every other doc_kind.
+    vehicle_number: str | None
 
     basic_value: float | None
     tax_type: Literal["IGST", "CGST_SGST"] | None
@@ -465,6 +572,14 @@ Classify the document as doc_kind:
   OTHER and every named kind are wrong; only null is correct.
 
 Rules:
+- Read every field twice before committing it: once for what the printed
+  character actually is, once cross-checked against its own label and the
+  values sitting around it — a unit against its quantity, a reference
+  number's prefix against which field that prefix means (see the prefix
+  table below), a line's amount against its own rate x quantity, a total
+  against the figures above it. Most misreads are legible on a second,
+  deliberate look — an 8 is not a 3, a v is not a y, "MIN" is not "MN". Work
+  the whole page this way before answering, not field by field in isolation.
 - Transcribe what is printed. Never infer, calculate or complete a value. If a
   field is not on the page, return null. A wrong value is far worse than null:
   null is visibly missing and gets fixed in review, a wrong value is not.
@@ -474,17 +589,52 @@ Rules:
   silently.
 - Amounts: digits only. No currency symbol, no thousands separator. Keep the
   decimals as printed.
-- doc_number is this document's own number — the invoice number on an invoice,
-  the PO number on a PO, the challan number on a challan, the PV No on a
-  PURCHASE_BILL, the MIN No on an INWARD page (labelled "MIN No" there, not
-  min_number — see below for min_number's own, different meaning).
-- po_number is a *referenced* order number. "Recipient PO No." is often blank
-  while "Order No." is filled; use whichever carries the buyer's order number,
-  preferring "Recipient PO No." when both are present.
-- dc_number, on an INWARD or PURCHASE_BILL page, is the *invoice* number it
-  references — printed as "DC/Invoice No" on this client's own forms even
-  though there is no actual challan. Copy that value into dc_number exactly
-  as you would a real challan number on an INVOICE.
+- This client's own reference numbers (never a vendor's) each have a fixed
+  prefix on the value itself, which settles which field a number belongs in
+  even when a label is smudged, rotated, or in a language you're unsure of:
+    PO number        always starts "PO"  — e.g. PO/02754/26-27
+    MIN Voucher No   always starts "MIN" — e.g. MIN/06586/26-27
+    Purchase Bill No always starts "PB"  — e.g. PB/04711/26-27 — even though
+                      the label printed next to it usually reads "PV No", not
+                      "PB No"; go by the value's own prefix, not the label.
+  An invoice number is the one exception: it is assigned by whichever vendor
+  issued that invoice, so it carries no fixed prefix or shape at all and
+  varies from vendor to vendor. The only reliable way to identify it is the
+  printed label itself — wherever a value sits next to "Invoice No" (or
+  "Invoice No.", "Inv No"), that value is the invoice number, regardless of
+  what it looks like.
+- doc_number is this document's own identifying number — go by doc_kind:
+    INVOICE        the value labelled "Invoice No" — no fixed prefix.
+    PO             the value that starts "PO".
+    INWARD         the value that starts "MIN" (labelled "MIN No"). An INWARD
+                   page ALWAYS also prints an invoice number of its own
+                   (labelled "DC/Invoice No") — that is a different value,
+                   goes in dc_number below, and must never be put in
+                   doc_number even though it often sits higher on the page.
+    PURCHASE_BILL  the value that starts "PB" (labelled "PV No"). A
+                   PURCHASE_BILL page ALWAYS also prints an invoice number of
+                   its own (labelled "Invoice No") — that is a different
+                   value, goes in dc_number below, and must never be put in
+                   doc_number, even though it often sits higher on the page
+                   or looks more prominent.
+  Before finalising doc_number on an INWARD or PURCHASE_BILL page, check its
+  prefix against the table above — if it starts with anything other than
+  "MIN" or "PB" respectively, it is the wrong value.
+- po_number is a *referenced* order number — always a "PO" value by the rule
+  above. "Recipient PO No." is often blank while "Order No." is filled; use
+  whichever carries the buyer's order number, preferring "Recipient PO No."
+  when both are present.
+- dc_number, on an INWARD or PURCHASE_BILL page, is that page's *own* invoice
+  reference described above — printed as "DC/Invoice No" (INWARD) or
+  "Invoice No" (PURCHASE_BILL) even though there is no actual challan. This is
+  a *second, separate* field from doc_number, not an alternate place for the
+  same value — an INWARD or PURCHASE_BILL page prints two different numbers
+  (its own MIN/PB number, and the invoice number it references) and both get
+  recorded, one in doc_number, the other here in dc_number. Finding and
+  filling doc_number does not excuse leaving dc_number null: go back and read
+  the invoice number specifically for this field even after doc_number is
+  already settled. dc_number is never blank on these two page kinds — copy
+  it in exactly as you would a real challan number on an INVOICE.
 - Tax comes in two shapes. Inter-state: one IGST amount, tax_type is IGST.
   Intra-state: CGST and SGST split roughly evenly, tax_type is CGST_SGST.
   Never report the same tax under both shapes.
@@ -493,15 +643,55 @@ Rules:
   will not reconcile against the purchase order.
 - delivery_address_raw is the "Name & Address of Delivery" block. On a
   construction document this identifies the site, so copy it in full.
+- vehicle_number is the truck that carried the delivery — printed as
+  "Vehicle No", "Truck No", "Motor Vehicle No", or "Vehicle Number" —
+  only present on an INVOICE or an INWARD (MIN Voucher) page. Leave it
+  null on every other doc_kind, and null if the field is printed but left
+  blank on the form itself.
 - Line items: one entry per row of the item table. Invoice line tables often
   carry their own D.C.No and D.C.Date columns — capture them per line.
+- description_raw is this line's material or service, transcribed exactly as
+  printed and in full — brand, grade, size and spec ("TMT Bars Fe550D CRS
+  Bend- 12 MM", "OPC Cement 53 Grade UltraTech") kept on it, not dropped or
+  split off. This text is how the same material gets recognised as the same
+  material across different documents, so transcribe the wording and order
+  actually printed rather than paraphrasing, reordering, expanding an
+  abbreviation or abbreviating a spelled-out word — a rewrite that reads the
+  same to a person reads as a different material to the system matching
+  against every earlier document.
+- A numbered reference catalog of this client's known materials may follow
+  this prompt, each entry as "id — name (unit)". For every line, check
+  whether it is genuinely the same real-world material as one of those
+  entries, no matter how differently it's worded on this particular page —
+  same reasoning a purchasing clerk would use, not a text match ("OPC" is
+  Ordinary Portland Cement, "TMT 12mm" is a TMT Steel Bar 12mm, a brand name
+  is still that generic material). If so, put that entry's own id in
+  matched_material_id. If you are not genuinely confident, or the catalog
+  doesn't contain this material at all, leave matched_material_id null —
+  never invent an id that isn't on the list, and never force a match onto
+  the closest-sounding entry when it plainly isn't the same material.
+- EVERY entry in `lines` must be a row that names a material or a service and
+  states how much of it was supplied. A row with no quantity is not a line
+  item. This matters because vendors print the tax/total breakup as trailing
+  rows of the very same ruled table, right under the real item rows and
+  still lined up under the Rate/Amount columns — "Basic Value", "Taxable
+  Value", "IGST/CGST/SGST @ N%", "Total Value of Goods / Services", "NET
+  Rounded Amount", "Amount in words". Those are the header totals
+  (basic_value, igst/cgst/sgst_amount, total_value, rounding_off) wearing a
+  table row's shape, and they belong in those header fields only. Read the
+  item table's own rows, stop where the quantities stop, and put nothing
+  from the totals block into `lines`. A one-item invoice returns exactly one
+  line however many ruled rows sit beneath it.
 - Ignore terms and conditions, bank details, declarations and signature blocks.
 
-If doc_kind is PURCHASE_BILL, also read min_number — the "MIN No" it
-references, printed alongside (not instead of) the "DC/Invoice No" that
-dc_number, above, already captures. A Purchase Bill page always carries
-both; if you can only find one of the two, still record whichever is
-actually printed rather than leaving both null.
+A PURCHASE_BILL page prints three of this client's own reference numbers
+together, all three required: doc_number (its own "PV No", starts "PB"),
+min_number (the "MIN No" it references, starts "MIN"), and dc_number (the
+"Invoice No" it references — no "DC/" prefix on this particular form, unlike
+INWARD's "DC/Invoice No" label, but it is the same field). All three are
+printed side by side near the top of the page; read all three before moving
+to the line items, and if you can only find some of them, still record
+whichever are actually printed rather than leaving all null.
 
 If doc_kind is INWARD, each line's quantity is that document's own "MIN
 Qty" / "Qty" column — what was offered for receipt. Also read, per line:
@@ -550,12 +740,36 @@ def _blocks(image_paths: list[str]) -> list[dict]:
 ENGINE_LOCK = threading.Lock()
 
 
-def run_engine(image_paths: list[str], document_type: str) -> dict:
+_NULL_WORDS = {"null", "none", "n/a", "na", "nil", "-"}
+
+
+def _denull(value):
+    """The model is told to return null for a missing field, but sometimes
+    writes the word instead of leaving it out — seen for real on dc_number
+    and irn. Recurses through dicts/lists so it catches that wherever it
+    lands, not just at the top level."""
+    if isinstance(value, str):
+        return None if value.strip().lower() in _NULL_WORDS else value
+    if isinstance(value, dict):
+        return {k: _denull(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_denull(v) for v in value]
+    return value
+
+
+def run_engine(
+    image_paths: list[str], document_type: str, *, retry_guidance: str = "",
+) -> dict:
     """All pages of one document in, structured fields out.
 
     `document_type` is only the operator's hint; the model classifies the page
     itself and its answer wins. Someone filing a challan as an invoice on the
     phone must not make the extraction wrong.
+
+    retry_guidance is what makes a re-read worth running at all — see
+    build_retry_guidance. Without it, re-reading the same image with the same
+    prompt is a coin flip: nothing about the second attempt gives it any
+    reason to do better than the first.
 
     Dispatches to whichever provider EXTRACT_PROVIDER names — both share this
     schema and prompt, so switching providers doesn't change what gets stored.
@@ -572,10 +786,298 @@ def run_engine(image_paths: list[str], document_type: str) -> dict:
         f"{hint} Transcribe every field you can read. This is one document,"
         f" {len(image_paths)} page(s), in order."
     )
+    prompt += _ocr_cross_check(image_paths)
+    prompt += _material_catalog_block()
+    prompt += retry_guidance
 
-    if PROVIDER == "openai":
-        return _run_openai(image_paths, prompt)
-    return _run_anthropic(image_paths, prompt)
+    # A re-read gets the bigger model and a real thinking budget — see
+    # THOROUGH_MODEL. Every rule the routine pass runs under still applies:
+    # this is the same SYSTEM prompt, the same material catalogue and the
+    # same OCR cross-check, read again by something with more to spend on it.
+    thorough = bool(retry_guidance)
+    runner = _run_openai if PROVIDER == "openai" else _run_anthropic
+    return _denull(runner(image_paths, prompt, thorough=thorough))
+
+
+# ── guided re-read ───────────────────────────────────────────────────────────
+# What separates a re-read from the first read. Two things go into the prompt
+# that weren't available the first time round:
+#
+#   · the specific checks this document currently fails. These are not
+#     opinions — a GSTIN's 15th character is a checksum over the first 14,
+#     and quantity x rate either equals the printed amount or it doesn't. So
+#     "one character in this exact field is wrong" is a far stronger
+#     instruction than "read the page again".
+#   · whatever a reviewer has already corrected by hand, as settled fact —
+#     both so a re-read stops throwing that work away, and because a known-
+#     correct PO number or vendor name orients the model on the rest of the
+#     page.
+#
+# The obvious hazard is anchoring: handed its own previous answer and told a
+# field fails a check, a model can "fix" the field to satisfy the check
+# rather than to match the page — turning a flagged-wrong GSTIN into a
+# valid-looking wrong one, which is strictly worse because nothing catches it
+# afterwards. The instruction block below is explicit that the image decides
+# and a genuinely-failing value stays as printed.
+
+_ARITH_TOLERANCE = 0.01
+
+
+def _arithmetic_off(a: float, b: float) -> bool:
+    return abs(a - b) > max(1.0, max(abs(a), abs(b)) * _ARITH_TOLERANCE)
+
+
+def _describe_problems(header: dict, lines: list[dict]) -> list[str]:
+    """The checks this document currently fails, each phrased as something to
+    go and look at. Mirrors what the review screen shows a person, so the
+    model is asked about exactly what a reviewer would query."""
+    problems: list[str] = []
+
+    for label, key in (("Vendor", "vendor_gstin"), ("Buyer", "buyer_gstin")):
+        value = header.get(key)
+        if value and gstin_checksum_ok(value) is False:
+            problems.append(
+                f"{label} GSTIN currently reads \"{value}\" and fails its check digit. A GSTIN's"
+                " 15th character is a checksum computed over the first 14, so at least one"
+                " character of it is misread. Re-read all 15 characters from the image."
+            )
+
+    for line in lines:
+        qty, rate, amount = line.get("quantity"), line.get("rate"), line.get("amount")
+        if qty is not None and rate is not None and amount is not None and _arithmetic_off(qty * rate, amount):
+            problems.append(
+                f"On line {line.get('line_no')}, quantity x rate does not equal the amount"
+                f" ({qty} x {rate} = {round(qty * rate, 2)}, but the amount was read as {amount})."
+                " One of those three numbers is misread — re-read all three."
+            )
+        if not line.get("material_id"):
+            problems.append(
+                f"Line {line.get('line_no')}'s description was read as"
+                f" \"{line.get('description_raw')}\" and matches no known material — it is likely"
+                " garbled. Re-read that line's description."
+            )
+
+    parts = [header.get(k) or 0 for k in
+             ("basic_value", "igst_amount", "cgst_amount", "sgst_amount", "tcs_amount", "rounding_off")]
+    if header.get("basic_value") is not None and header.get("total_value") is not None:
+        if _arithmetic_off(sum(float(p) for p in parts), float(header["total_value"])):
+            problems.append(
+                "The basic value, taxes, TCS and rounding off do not add up to the total value."
+                " Re-read the whole totals block."
+            )
+
+    for field in REQUIRED_FIELDS_BY_KIND.get(header.get("doc_kind") or "", ()):
+        if not str(header.get(field) or "").strip():
+            problems.append(
+                f"{FIELD_LABELS.get(field, field)} came back empty, but a"
+                f" {header.get('doc_kind')} page always prints one. Find it on the page."
+            )
+
+    return problems
+
+
+# Compared against the engine's own original output to find what a person
+# changed afterwards. Derived fields (doc_date, vendor_id, qr_verified) and
+# anything save_extraction nulls by document kind are left out — a difference
+# there is this system's own normalisation, not somebody's correction.
+_CONFIRMABLE_FIELDS = {
+    "doc_kind": "Document type", "doc_number": "Document no.", "po_number": "PO no.",
+    "dc_number": "DC / invoice no.", "min_number": "MIN no.",
+    "doc_date_raw": "Document date", "vendor_name_raw": "Vendor name",
+    "vendor_gstin": "Vendor GSTIN", "buyer_gstin": "Buyer GSTIN",
+    "place_of_supply": "Place of supply", "delivery_address_raw": "Delivery address",
+    "vehicle_number": "Vehicle no.", "basic_value": "Basic value", "tax_type": "Tax type",
+    "igst_amount": "IGST", "cgst_amount": "CGST", "sgst_amount": "SGST",
+    "tcs_amount": "TCS", "rounding_off": "Rounding off", "total_value": "Total value",
+    "irn": "IRN",
+}
+
+
+def _describe_confirmed(header: dict, original: dict) -> list[str]:
+    """Fields a reviewer has since corrected — a stored value that is both
+    non-empty and different from what the engine first said. The non-empty
+    half matters: a field the system deliberately blanked (min_number on an
+    invoice, say) differs from the original too, and is nobody's correction."""
+    confirmed = []
+    for field, label in _CONFIRMABLE_FIELDS.items():
+        current, first = header.get(field), original.get(field)
+        if current in (None, "") or current == first:
+            continue
+        confirmed.append(f"{label} is \"{current}\"")
+    return confirmed
+
+
+def build_retry_guidance(con: sqlite3.Connection, document_id: str) -> str:
+    """The extra prompt section for a re-read, or "" when there's nothing to
+    say (a first extraction, or a document with no stored prior read)."""
+    row = con.execute(
+        "SELECT extracted_json FROM documents WHERE id = ?", (document_id,)
+    ).fetchone()
+    if row is None or not row["extracted_json"]:
+        return ""
+    try:
+        original = json.loads(row["extracted_json"])
+    except (TypeError, ValueError):
+        return ""
+
+    header_row = con.execute(
+        "SELECT * FROM doc_headers WHERE document_id = ?", (document_id,)
+    ).fetchone()
+    if header_row is None:
+        return ""
+    header = dict(header_row)
+    lines = [dict(r) for r in con.execute(
+        "SELECT line_no, description_raw, material_id, quantity, rate, amount"
+        " FROM doc_lines WHERE document_id = ? ORDER BY line_no", (document_id,)
+    )]
+
+    problems = _describe_problems(header, lines)
+    confirmed = _describe_confirmed(header, original)
+    if not problems and not confirmed:
+        return ""
+
+    block = (
+        "\n\nThis page has been read once already and is being re-read because that read"
+        " has problems. Treat the image as the only authority: everything below is"
+        " context about the previous attempt, not something to reproduce."
+        "\n\nTake your time with this one. Work the page deliberately rather than at a"
+        " glance: read the header block field by field, then work down the item table"
+        " one row at a time — for each row, read its description, its quantity, its"
+        " unit, its rate and its amount separately and check that quantity x rate"
+        " actually gives the amount printed beside it. Then read the totals block on"
+        " its own, and confirm the item rows you kept are only the rows that name a"
+        " material and state a quantity. Every rule you were given above still applies"
+        " in full; this is the same job done more carefully, not a different one."
+    )
+    if problems:
+        block += (
+            "\n\nThese specific things are provably wrong or missing in the previous read."
+            " Re-examine each of these fields on the image, character by character, before"
+            " answering:\n- " + "\n- ".join(problems)
+        )
+        block += (
+            "\n\nImportant: correct these by reading the image again, never by adjusting a"
+            " value until it satisfies a check. If what is actually printed genuinely fails"
+            " its check digit or genuinely does not add up, transcribe what is printed and"
+            " leave it failing — a plausible-looking wrong value is far worse than a flagged"
+            " one, because nothing downstream catches it."
+        )
+    if confirmed:
+        block += (
+            "\n\nA person has since checked this page against these values and corrected them"
+            " by hand. Treat them as settled and return them unchanged, and use them to orient"
+            " yourself on the rest of the page:\n- " + "\n- ".join(confirmed)
+        )
+    return block
+
+
+def _material_catalog_block() -> str:
+    """This client's verified materials, offered to the model so it can match
+    a line against one of them by what it actually is, not by its own
+    wording — see matched_material_id in the Line schema and the SYSTEM rule
+    that reads this block. Limited to verified=1 rows: the much larger
+    unverified pile is exactly the noisy, near-duplicate output of past
+    unmatched lines, and offering that back to the model would teach it to
+    match against its own earlier mistakes."""
+    with db() as con:
+        rows = con.execute(
+            "SELECT id, name, unit FROM materials WHERE verified = 1 ORDER BY name"
+        ).fetchall()
+    if not rows:
+        return ""
+    catalog = "\n".join(f"{r['id']} — {r['name']} ({r['unit']})" for r in rows)
+    return "\n\nReference catalog of known materials:\n" + catalog
+
+
+def _ocr_cross_check(image_paths: list[str]) -> str:
+    """A second, independent read of the same pages via local OCR (see
+    ocr.py) — appended to the prompt as extra context the vision model can
+    weigh, never as a replacement for its own read of the images. Empty
+    string when ENABLE_OCR is off (the default) or every page's OCR pass
+    failed, so the prompt is byte-identical to before this existed."""
+    if not ocr.ENABLED:
+        return ""
+    pages = [ocr.read_page(str(BASE_DIR / p)) for p in image_paths]
+    parts = [f"--- page {i + 1} ---\n{text}" for i, text in enumerate(pages) if text]
+    if not parts:
+        return ""
+    return (
+        "\n\nA local OCR pass also read these pages; its text follows, page by page. Treat it "
+        "only as a cross-check on your own reading of the images — the images are the "
+        "authoritative source. Where the OCR text disagrees with what you read from the image "
+        "itself, prefer whichever one you are more confident is actually correct; do not "
+        "blindly prefer the OCR text over the image, it has its own misreads (it has been seen "
+        "substituting a wrong character for symbols like ₹).\n\n" + "\n\n".join(parts)
+    )
+
+
+# ── page boundaries ──────────────────────────────────────────────────────────
+# One browser upload — a multi-page PDF, or several photos picked together —
+# is not always one document: the site may scan an invoice, its MIN Voucher
+# and the purchase bill together as one file. This runs once per upload,
+# before extraction, so store_batch_pages' flat page list can be split into
+# the right number of documents instead of every page landing in one.
+
+class PageInfo(BaseModel):
+    document_title: str
+    is_new_document: bool
+
+
+class PageBoundaries(BaseModel):
+    pages: list[PageInfo]
+
+
+SYSTEM_BOUNDARIES = """You look at scanned pages, in order, and decide where one document \
+ends and the next begins. This batch may hold several different documents scanned together \
+— e.g. a supplier invoice, a MIN Voucher / material inward note, and a purchase bill, filed \
+one after another — or it may be a single document that runs across several pages, such as \
+an invoice whose item table continues onto a second page.
+
+For every page, first read the title actually printed at the top of that specific page — \
+look there before deciding anything. Common titles in this domain: TAX INVOICE, MIN VOUCHER \
+/ MATERIAL INWARD NOTE, PURCHASE BILL VOUCHER, PURCHASE ORDER, DELIVERY CHALLAN. Put what you \
+read in document_title (or "(continuation)" if the page has no title of its own — just a
+table, totals, terms, or a signature block continuing the page before it).
+
+Then set is_new_document: true if this page's title differs from the page immediately before \
+it, or this is page 1. false only if this page has no title of its own and is plainly \
+continuing the previous page's document. A different title always means a new document, even \
+if the vendor, project or PO number printed on it is the same as the page before — the same \
+delivery is routinely covered by an invoice, then a separate MIN Voucher, then a separate \
+Purchase Bill, each its own document even though every one names the same vendor and PO."""
+
+
+def classify_page_boundaries(image_paths: list[str]) -> list[bool]:
+    """True at every page that starts a new document; page 1 is always True.
+
+    A malformed or wrong-length answer falls back to treating the whole batch
+    as one document — the same thing that happened before this existed, and
+    safer than guessing at a split that might be wrong.
+    """
+    if len(image_paths) <= 1:
+        return [True] * len(image_paths)
+
+    prompt = (
+        f"{len(image_paths)} pages, in order. For each one: what title is printed on it, and"
+        " does it start a new document?"
+    )
+
+    try:
+        with ENGINE_LOCK:
+            if PROVIDER == "openai":
+                data = _run_openai(image_paths, prompt, system=SYSTEM_BOUNDARIES, output_format=PageBoundaries)
+            else:
+                data = _run_anthropic(image_paths, prompt, system=SYSTEM_BOUNDARIES, output_format=PageBoundaries)
+    except Exception:
+        # An upload must still succeed even if the boundary check can't run
+        # right now (no credentials, a transient API error) — the same
+        # fallback as a malformed answer: keep the batch as one document.
+        return [True] + [False] * (len(image_paths) - 1)
+
+    pages = data.get("pages") or []
+    if len(pages) != len(image_paths):
+        return [True] + [False] * (len(image_paths) - 1)
+    return [True] + [bool(p.get("is_new_document")) for p in pages[1:]]
 
 
 # ── quotations ───────────────────────────────────────────────────────────────
@@ -651,12 +1153,13 @@ def run_quotation_engine(image_paths: list[str]) -> dict:
     )
 
     if PROVIDER == "openai":
-        return _run_openai(image_paths, prompt, system=SYSTEM_QUOTATION, output_format=QuotationExtraction)
-    return _run_anthropic(image_paths, prompt, system=SYSTEM_QUOTATION, output_format=QuotationExtraction)
+        return _denull(_run_openai(image_paths, prompt, system=SYSTEM_QUOTATION, output_format=QuotationExtraction))
+    return _denull(_run_anthropic(image_paths, prompt, system=SYSTEM_QUOTATION, output_format=QuotationExtraction))
 
 
 def _run_anthropic(
-    image_paths: list[str], prompt: str, *, system: str = SYSTEM, output_format=Extraction
+    image_paths: list[str], prompt: str, *, system: str = SYSTEM, output_format=Extraction,
+    thorough: bool = False,
 ) -> dict:
     if anthropic is None:
         raise EngineNotConfigured(
@@ -672,10 +1175,14 @@ def _run_anthropic(
     # Streamed: a dense multi-page invoice at high effort can outrun the
     # non-streaming HTTP timeout.
     with client.messages.stream(
-        model=MODEL,
+        model=THOROUGH_MODEL if thorough else MODEL,
         max_tokens=16000,
         system=system,
-        thinking={"type": "adaptive"},
+        # A routine read picks its own budget; a re-read is told to spend.
+        thinking=(
+            {"type": "enabled", "budget_tokens": THOROUGH_THINKING_TOKENS}
+            if thorough else {"type": "adaptive"}
+        ),
         messages=[{
             "role": "user",
             "content": [*_blocks(image_paths), {"type": "text", "text": prompt}],
@@ -722,7 +1229,8 @@ def _image_data_urls(image_paths: list[str]) -> list[dict]:
 
 
 def _run_openai(
-    image_paths: list[str], prompt: str, *, system: str = SYSTEM, output_format=Extraction
+    image_paths: list[str], prompt: str, *, system: str = SYSTEM, output_format=Extraction,
+    thorough: bool = False,
 ) -> dict:
     if openai is None:
         raise EngineNotConfigured(
@@ -735,7 +1243,7 @@ def _run_openai(
 
     client = openai.OpenAI()
     response = client.chat.completions.parse(
-        model=MODEL,
+        model=THOROUGH_MODEL if thorough else MODEL,
         messages=[
             {"role": "system", "content": system},
             {
@@ -758,10 +1266,220 @@ def _run_openai(
 _HEADER_FIELDS = (
     "doc_kind", "doc_number", "po_number", "dc_number", "min_number", "doc_date", "doc_date_raw",
     "vendor_id", "vendor_name_raw", "vendor_gstin", "buyer_gstin",
-    "place_of_supply", "delivery_address_raw",
+    "place_of_supply", "delivery_address_raw", "vehicle_number",
     "basic_value", "tax_type", "igst_amount", "cgst_amount", "sgst_amount",
     "tcs_amount", "rounding_off", "total_value", "irn", "qr_verified",
 )
+
+
+# ── totals rows that arrive as line items ────────────────────────────────────
+# The SYSTEM prompt already tells the model that an invoice's trailing
+# "Basic Value / Taxable Value / IGST @ 18% / Total Value / NET Rounded
+# Amount" rows are the totals block and not line items. It mostly obeys —
+# but a prompt rule is a request, and this one has been broken repeatedly on
+# real invoices, each time permanently polluting the materials master with
+# an auto-created "material" called IGST @ 18.00 %. Anything the app cannot
+# afford to have wrong occasionally needs a check that doesn't depend on the
+# model's cooperation, so this is that check.
+#
+# Both conditions have to hold before a row is dropped: its text has to name
+# a value type *and* it has to carry no quantity. A real material line on
+# these documents always states how much was supplied, so the pair together
+# is very hard to trip accidentally — a genuine material would have to be
+# named "Basic Value" and be supplied in no measurable amount.
+
+_TOTALS_LABEL_RE = re.compile(
+    r"""^\s*(
+          (basic|taxable|total|net|gross|invoice)\s+(value|amount)
+        | (sub\s*)?total\s+(value|amount|of\s+goods)
+        | grand\s+total
+        | net\s+rounded | rounded\s+amount | round(ing)?[\s-]*off
+        | amount\s+in\s+words | in\s+words
+        | (i|c|s)?gst\s*[@:]
+        | (igst|cgst|sgst|gst)\s+@
+        | t[cd]s\s*[@:]?\s*\d
+        )""",
+    re.I | re.X,
+)
+
+
+def is_totals_row(line: dict) -> bool:
+    """True for a totals-block row the model returned as if it were an item."""
+    text = (line.get("description_raw") or "").strip()
+    if not text or not _TOTALS_LABEL_RE.match(text):
+        return False
+    quantity = line.get("quantity")
+    return quantity in (None, "") or float(quantity) == 0
+
+
+# ── PO-anchored line alignment ───────────────────────────────────────────────
+# Matching a line's own text against the whole materials catalogue is what
+# free-text matching has to do for a PO — it is the first document in the
+# chain and has nothing to anchor to. Every document *after* it does: an
+# invoice, MIN Voucher or Purchase Bill quoting a PO number is, line for
+# line, that PO's own order. So the question those documents actually pose
+# is not "which of 150 catalogue materials is '2 I6B BARS'" (open-ended, and
+# it fails exactly when a scan is poor) but "which of this PO's 5 lines is
+# it" — a handful of candidates, decided on several independent signals at
+# once, and self-correcting: once the confident ones claim their line, an
+# unreadable leftover is often the only line still unclaimed.
+#
+# Measured against the real PO/00538/26-27 set, whose invoice OCR'd as
+# "1 MT BARS FISSED CRS BEND- 8 MM" / "2 I6B BARS" / "3 I8MT BARS ...":
+# four lines resolve confidently on size+quantity+rate, and "2 I6B BARS" —
+# which free-text matching had put on 16mm, inflating that material and
+# leaving 10mm looking undelivered — resolves correctly by elimination.
+
+_SIZE_RE = re.compile(r"(\d{1,3})\s*MM\b", re.I)
+
+# A match is applied only at or above this score AND this far clear of the
+# runner-up; anything less is left alone for a reviewer rather than guessed.
+_ALIGN_MIN_SCORE = 50
+_ALIGN_MIN_GAP = 15
+
+
+def _size_token(text: str | None) -> str | None:
+    """The "12 MM" in a description, however mangled the rest of it is — the
+    single most discriminating thing on a steel line, and digits survive a
+    bad scan far better than words do ("FE550D" came back "FISSED")."""
+    match = _SIZE_RE.search(text or "")
+    return match.group(1) if match else None
+
+
+def _within(a, b, tolerance: float) -> bool:
+    if a is None or b is None:
+        return False
+    return abs(a - b) <= tolerance * max(abs(a), abs(b), 1e-9)
+
+
+def _align_score(line: dict, po_line: dict, index: int, po_index: int) -> int:
+    """How much this document line looks like this PO line. Deliberately
+    several weak-but-independent signals rather than one strong one: any
+    single signal can be destroyed by a bad scan, but a scan that destroys
+    the size token, the quantity and the rate at once is not a scan anything
+    could have read."""
+    score = 0
+    size, po_size = _size_token(line.get("description_raw")), _size_token(po_line.get("description_raw"))
+    if size and po_size:
+        score += 50 if size == po_size else -40
+    if _within(line.get("quantity"), po_line.get("quantity"), 0.001):
+        score += 30
+    elif _within(line.get("quantity"), po_line.get("quantity"), 0.05):
+        score += 18
+    if _within(line.get("rate"), po_line.get("rate"), 0.001):
+        score += 20
+    elif _within(line.get("rate"), po_line.get("rate"), 0.05):
+        score += 12
+    if line.get("hsn_code") and line.get("hsn_code") == po_line.get("hsn_code"):
+        score += 15
+    if (line.get("unit") or "").upper() == (po_line.get("unit") or "").upper():
+        score += 5
+    # Documents in this trade list their items in the order they were
+    # ordered — worth a nudge, never enough to decide anything on its own.
+    if index == po_index:
+        score += 8
+    return score
+
+
+def align_lines_to_po(lines: list[dict], po_lines: list[dict]) -> dict[int, str]:
+    """{index in `lines` -> material_id from the PO line it matches}.
+
+    Two passes, no DB access — the caller supplies both line lists and
+    persists whatever comes back, so this stays independently testable.
+
+    Pass one takes the best-scoring pairs in order, each claiming its PO
+    line exclusively, and only where the score clears both thresholds
+    against whatever is still unclaimed. Pass two is the elimination case:
+    one unresolved line, one unclaimed PO line, nothing else it could be.
+    Everything else is left out of the result deliberately — an unresolved
+    line keeps whatever the ordinary text match gave it and shows up for a
+    reviewer, which is the whole point of not guessing here.
+    """
+    if not lines or not po_lines:
+        return {}
+
+    ranked = sorted(
+        ((_align_score(l, p, i, j), i, j) for i, l in enumerate(lines) for j, p in enumerate(po_lines)),
+        key=lambda t: -t[0],
+    )
+
+    assigned: dict[int, int] = {}
+    claimed_lines: set[int] = set()
+    claimed_po: set[int] = set()
+    for score, i, j in ranked:
+        if i in claimed_lines or j in claimed_po:
+            continue
+        # Re-rank against what's *still* unclaimed: a runner-up that has
+        # already been taken by a better-scoring line isn't competition.
+        others = sorted(
+            (_align_score(lines[i], p, i, k) for k, p in enumerate(po_lines) if k not in claimed_po),
+            reverse=True,
+        )
+        gap = others[0] - others[1] if len(others) > 1 else 10 ** 6
+        if score >= _ALIGN_MIN_SCORE and gap >= _ALIGN_MIN_GAP:
+            assigned[i] = j
+            claimed_lines.add(i)
+            claimed_po.add(j)
+
+    leftover_lines = [i for i in range(len(lines)) if i not in claimed_lines]
+    leftover_po = [j for j in range(len(po_lines)) if j not in claimed_po]
+    if len(leftover_lines) == 1 and len(leftover_po) == 1:
+        i, j = leftover_lines[0], leftover_po[0]
+        # "Nothing else it can be" is only an argument when nothing actively
+        # says otherwise: two legible, *different* sizes are two different
+        # materials, however alone they've each been left. Without this, a
+        # one-line document against a one-line PO would pair them no matter
+        # how plainly they disagree.
+        size, po_size = _size_token(lines[i].get("description_raw")), _size_token(po_lines[j].get("description_raw"))
+        if not (size and po_size and size != po_size):
+            assigned[i] = j
+
+    return {
+        i: po_lines[j]["material_id"]
+        for i, j in assigned.items()
+        if po_lines[j].get("material_id")
+    }
+
+
+# Only these ever quote a PO number and bill against its lines. A PO has
+# nothing upstream to anchor to, and a QUOTATION predates the order itself.
+_PO_ANCHORED_KINDS = ("INVOICE", "INWARD", "PURCHASE_BILL", "DELIVERY")
+
+
+def _apply_po_alignment(con: sqlite3.Connection, document_id: str, doc_kind: str, po_number: str | None) -> None:
+    """Re-point this document's lines at the materials its own PO uses, where
+    align_lines_to_po is confident. Silent by design (see the SYSTEM prompt's
+    own "a wrong value is worse than null" rule for the opposite case — here
+    the alternative to a confident match is a *known-wrong* material, not a
+    null). A line it can't place keeps the ordinary text match and its
+    disagreement stays visible in the delivery's own Issues list."""
+    if doc_kind not in _PO_ANCHORED_KINDS or not po_number:
+        return
+
+    po_row = con.execute(
+        "SELECT d.id FROM documents d JOIN doc_headers h ON h.document_id = d.id"
+        " WHERE d.document_type = 'PO' AND h.doc_number = ?"
+        "   AND d.project_id = (SELECT project_id FROM documents WHERE id = ?)"
+        " ORDER BY d.uploaded_at LIMIT 1",
+        (po_number, document_id),
+    ).fetchone()
+    if po_row is None:
+        return
+
+    def rows_of(doc_id: str) -> list[dict]:
+        return [dict(r) for r in con.execute(
+            "SELECT id, line_no, description_raw, material_id, hsn_code, quantity, unit, rate"
+            " FROM doc_lines WHERE document_id = ? ORDER BY line_no",
+            (doc_id,),
+        )]
+
+    lines, po_lines = rows_of(document_id), rows_of(po_row["id"])
+    for index, material_id in align_lines_to_po(lines, po_lines).items():
+        if lines[index]["material_id"] != material_id:
+            con.execute(
+                "UPDATE doc_lines SET material_id = ? WHERE id = ?",
+                (material_id, lines[index]["id"]),
+            )
 
 
 def save_extraction(con: sqlite3.Connection, document_id: str, data: dict) -> None:
@@ -780,6 +1498,9 @@ def save_extraction(con: sqlite3.Connection, document_id: str, data: dict) -> No
     # the key in anyway.
     if header["doc_kind"] != "PURCHASE_BILL":
         header["min_number"] = None
+    # Only an INVOICE or INWARD page has a vehicle attached to it.
+    if header["doc_kind"] not in ("INVOICE", "INWARD"):
+        header["vehicle_number"] = None
 
     columns = ", ".join(("document_id", *_HEADER_FIELDS))
     placeholders = ", ".join(["?"] * (len(_HEADER_FIELDS) + 1))
@@ -794,8 +1515,14 @@ def save_extraction(con: sqlite3.Connection, document_id: str, data: dict) -> No
     # line just because the model filled the key in anyway.
     is_inward = header["doc_kind"] == "INWARD"
 
+    # Dropped before anything is stored, so a totals row never reaches the
+    # line table, the materials master, or the three-way match — see
+    # is_totals_row. data (and so extracted_json) keeps the model's own
+    # unedited answer either way, which is what makes this auditable.
+    kept_lines = [l for l in (data.get("lines") or []) if not is_totals_row(l)]
+
     con.execute("DELETE FROM doc_lines WHERE document_id = ?", (document_id,))
-    for index, line in enumerate(data.get("lines") or [], start=1):
+    for index, line in enumerate(kept_lines, start=1):
         description = line.get("description_raw") or ""
         con.execute(
             "INSERT INTO doc_lines (document_id, line_no, description_raw, material_id,"
@@ -804,7 +1531,7 @@ def save_extraction(con: sqlite3.Connection, document_id: str, data: dict) -> No
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 document_id, index, description,
-                match_material(con, description, line.get("unit")),
+                match_material(con, description, line.get("unit"), line.get("matched_material_id")),
                 line.get("hsn_code"), line.get("quantity"),
                 line.get("accept_qty") if is_inward else None,
                 line.get("reject_qty") if is_inward else None,
@@ -813,6 +1540,10 @@ def save_extraction(con: sqlite3.Connection, document_id: str, data: dict) -> No
                 line.get("dc_number"), parse_date(line.get("dc_date_raw")),
             ),
         )
+
+    # Now that the lines exist, re-point whichever of them this document's own
+    # PO can identify better than their own text could — see align_lines_to_po.
+    _apply_po_alignment(con, document_id, header["doc_kind"], header["po_number"])
 
     duplicate = find_duplicate(con, vendor_id, header["doc_number"], document_id)
     # The classifier's answer is what files the document. An unrecognised kind
@@ -851,20 +1582,193 @@ def process(document_id: str) -> None:
             return
         paths = json.loads(row["file_paths"])
         document_type = row["document_type"]
+        # Empty on a first extraction (nothing has been read yet), so this is
+        # what makes a *re*-read different from the read before it rather
+        # than the same coin flipped twice — see build_retry_guidance.
+        guidance = build_retry_guidance(con, document_id)
 
+    _log_extraction_attempt(document_id, paths, "start" + (" (guided re-read)" if guidance else ""))
     try:
         with ENGINE_LOCK:
-            data = run_engine(paths, document_type)
+            data = run_engine(paths, document_type, retry_guidance=guidance)
     except Exception as exc:
+        _log_extraction_attempt(document_id, paths, f"error: {exc}")
         with db() as con:
             con.execute(
                 "UPDATE documents SET status = 'FAILED', error = ? WHERE id = ?",
                 (str(exc)[:500], document_id),
             )
         return
+    _log_extraction_attempt(document_id, paths, f"done: doc_kind={data.get('doc_kind')} doc_number={data.get('doc_number')!r}")
 
     with db() as con:
         save_extraction(con, document_id, data)
+
+
+# ── same-batch cross-check ───────────────────────────────────────────────────
+# A MIN Voucher and a Purchase Bill both print the invoice number they refer
+# to as their own dc_number, and a Purchase Bill also prints the MIN number
+# it closed from as its own min_number — by design these are meant to be
+# identical to the document they're naming (see the SYSTEM prompt's own
+# doc_number/dc_number/min_number rules). When two sibling documents, scanned
+# and uploaded together in the same batch, agree on one of these values and a
+# third disagrees only by what looks like a character-level misread, that
+# third document's own read is almost certainly the wrong one — corrected
+# here, before a reviewer ever opens it.
+
+_REF_FIELD_LABELS = {
+    "doc_number": "Document no.", "dc_number": "DC / invoice no.",
+    "min_number": "MIN no.", "po_number": "PO no.",
+}
+
+# Which field, on a document of this doc_kind, carries this reference — e.g.
+# every document's own claim of "the invoice number" is an INVOICE's own
+# doc_number, or an INWARD/PURCHASE_BILL's dc_number naming it instead.
+_REF_GROUPS = {
+    "invoice": {"INVOICE": "doc_number", "INWARD": "dc_number", "PURCHASE_BILL": "dc_number"},
+    "min": {"INWARD": "doc_number", "PURCHASE_BILL": "min_number"},
+    "po": {"PO": "doc_number", "INVOICE": "po_number", "DELIVERY": "po_number",
+           "INWARD": "po_number", "PURCHASE_BILL": "po_number"},
+}
+
+
+def _edit_distance(a: str, b: str) -> int:
+    """Levenshtein distance. A transposed pair of digits costs 2 here (two
+    substitutions) — the tolerance in _plausible_misread is sized for that."""
+    if a == b:
+        return 0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, start=1):
+        cur = [i] + [0] * len(b)
+        for j, cb in enumerate(b, start=1):
+            cur[j] = min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + (ca != cb))
+        prev = cur
+    return prev[len(b)]
+
+
+def _plausible_misread(a: str, b: str) -> bool:
+    """Same length, and close enough that one is almost certainly a
+    character-level misread of the other — a transposed or substituted
+    digit or two, not two numbers that just happen to look similar."""
+    if not a or not b or len(a) != len(b) or len(a) < 4:
+        return False
+    return _edit_distance(a, b) <= max(2, round(len(a) * 0.4))
+
+
+def reconcile_batch(document_ids: list[str]) -> None:
+    """Runs once, after every document from one upload has finished
+    extracting (see main.py's _extract_all) — cross-checks the reference
+    numbers that are supposed to agree across documents scanned together as
+    one delivery, and corrects a lone misread against the other two's
+    agreement.
+
+    Never touches a field with fewer than three documents actually carrying
+    a value for it: two documents disagreeing is a genuine mismatch with no
+    way to tell which one is right, not something to guess at — that stays
+    visible as the Delivery info tab's own mismatch banner instead. Same
+    reasoning if more than one document disagrees with the rest: a single
+    confident outlier gets corrected, a real three-way split does not.
+    """
+    # Line alignment first, and again here rather than only in
+    # save_extraction: that call happens while one document is being saved,
+    # so it can only see POs that already existed at that moment. Re-running
+    # it once the whole batch has settled makes it order-independent — a PO
+    # uploaded in the same batch as its own invoice now anchors that invoice
+    # either way round. Cheap and idempotent: a line already pointing at the
+    # right material is left exactly as it is.
+    with db() as con:
+        for row in con.execute(
+            "SELECT h.document_id, d.document_type AS doc_kind, h.po_number"
+            " FROM doc_headers h JOIN documents d ON d.id = h.document_id"
+            f" WHERE h.document_id IN ({','.join('?' * len(document_ids))})"
+            " AND d.status = 'EXTRACTED'",
+            document_ids,
+        ).fetchall():
+            _apply_po_alignment(con, row["document_id"], row["doc_kind"], row["po_number"])
+
+    if len(document_ids) < 3:
+        return
+    with db() as con:
+        placeholders = ",".join("?" * len(document_ids))
+        rows = con.execute(
+            f"SELECT h.document_id, d.document_type AS doc_kind, h.doc_number,"
+            f" h.po_number, h.dc_number, h.min_number FROM doc_headers h"
+            f" JOIN documents d ON d.id = h.document_id"
+            f" WHERE h.document_id IN ({placeholders}) AND d.status = 'EXTRACTED'",
+            document_ids,
+        ).fetchall()
+        docs = {r["document_id"]: dict(r) for r in rows}
+
+        corrections: dict[str, list[str]] = {}
+        for field_by_kind in _REF_GROUPS.values():
+            entries = []
+            for doc_id, doc in docs.items():
+                field = field_by_kind.get(doc["doc_kind"])
+                value = doc.get(field) if field else None
+                if value and str(value).strip():
+                    entries.append((doc_id, field, str(value).strip()))
+            if len(entries) < 3:
+                continue
+
+            counts: dict[str, int] = {}
+            for _, _, value in entries:
+                counts[value] = counts.get(value, 0) + 1
+            majority_value, majority_count = max(counts.items(), key=lambda kv: kv[1])
+            if majority_count < 2 or majority_count == len(entries):
+                continue  # no majority, or every document already agrees
+
+            outliers = [e for e in entries if e[2] != majority_value]
+            if len(outliers) != 1:
+                continue  # more than one disagreement — not a confident single misread
+            doc_id, field, old_value = outliers[0]
+            if not _plausible_misread(old_value, majority_value):
+                continue
+
+            con.execute(f"UPDATE doc_headers SET {field} = ? WHERE document_id = ?", (majority_value, doc_id))
+            label = _REF_FIELD_LABELS.get(field, field)
+            note = (
+                f"{label} corrected from a likely misread ‘{old_value}’ to"
+                f" ‘{majority_value}’ — matches the other document(s) uploaded with it."
+            )
+            corrections.setdefault(doc_id, []).append(note)
+
+        for doc_id, notes in corrections.items():
+            con.execute(
+                "UPDATE doc_headers SET correction_note = ? WHERE document_id = ?",
+                ("; ".join(notes), doc_id),
+            )
+
+
+_DEBUG_LOG = BASE_DIR / "extraction_debug.log"
+
+
+def _log_extraction_attempt(document_id: str, paths: list[str], note: str) -> None:
+    """Temporary diagnostic trail for a real, reproduced-but-not-yet-explained
+    incident: a document occasionally comes back with another document's
+    field values, or fabricated ones, even on a single-page call with no
+    other document involved. Records enough to tell apart three distinct
+    explanations after the fact — genuinely overlapping calls (timestamps
+    would overlap), the wrong bytes being read for a path (hash would show
+    it), or the model itself producing a bad answer for the right input
+    (everything here checks out and the fault is upstream). Safe to remove
+    once the cause is confirmed."""
+    try:
+        parts = []
+        for p in paths:
+            full = BASE_DIR / p
+            if full.exists():
+                digest = hashlib.sha256(full.read_bytes()).hexdigest()[:12]
+                parts.append(f"{p}(sha256:{digest},{full.stat().st_size}b)")
+            else:
+                parts.append(f"{p}(MISSING)")
+        line = (
+            f"{datetime.now(timezone.utc).isoformat()} thread={threading.get_ident()} "
+            f"doc={document_id} {note} pages=[{', '.join(parts)}]\n"
+        )
+        with open(_DEBUG_LOG, "a", encoding="utf-8") as fh:
+            fh.write(line)
+    except Exception:
+        pass  # diagnostics must never break extraction itself
 
 
 _QUOTATION_HEADER_FIELDS = (
@@ -951,7 +1855,7 @@ def process_quotation(quotation_id: str) -> None:
 EDITABLE_HEADER_FIELDS = (
     "doc_kind", "doc_number", "po_number", "dc_number", "min_number", "doc_date_raw",
     "vendor_name_raw", "vendor_gstin", "buyer_gstin",
-    "place_of_supply", "delivery_address_raw",
+    "place_of_supply", "delivery_address_raw", "vehicle_number",
     "basic_value", "tax_type", "igst_amount", "cgst_amount", "sgst_amount",
     "tcs_amount", "rounding_off", "total_value", "irn",
 )
@@ -1070,6 +1974,33 @@ def claim_quotation_for_edit(con: sqlite3.Connection, quotation_id: str) -> bool
     return cur.rowcount > 0
 
 
+# Which header fields a document can never be approved without, by its own
+# kind — each one is a reference this client's own three-way match (see
+# po_reconciliation) depends on to thread documents together:
+#   PO             its own number — nothing references a PO that has none.
+#   INVOICE/DELIVERY  the PO it was delivered against.
+#   INWARD (MIN)   the PO, its own MIN No (doc_number), and the invoice it
+#                  received against (dc_number).
+#   PURCHASE_BILL  the PO, its own PV/PB No (doc_number), the invoice
+#                  (dc_number), and the MIN it was closed from (min_number).
+# QUOTATION is exempt — it predates a PO existing at all. Single source of
+# truth for both mark_approved's SQL gate below and main.py's error message
+# — FE/src/features/review/ReviewModal.jsx mirrors this same table for the
+# Approve button's own disabled state, kept in sync by hand.
+REQUIRED_FIELDS_BY_KIND = {
+    "PO": ("doc_number",),
+    "INVOICE": ("po_number",),
+    "DELIVERY": ("po_number",),
+    "INWARD": ("po_number", "doc_number", "dc_number"),
+    "PURCHASE_BILL": ("po_number", "doc_number", "dc_number", "min_number"),
+}
+
+FIELD_LABELS = {
+    "po_number": "PO no.", "doc_number": "Document no.",
+    "dc_number": "DC / invoice no.", "min_number": "MIN no.",
+}
+
+
 def mark_approved(con: sqlite3.Connection, document_id: str, approved_by: str) -> bool:
     """EXTRACTED -> APPROVED, atomically. False (no write at all) if the
     document was not EXTRACTED — already decided, not yet extracted, sitting
@@ -1080,18 +2011,21 @@ def mark_approved(con: sqlite3.Connection, document_id: str, approved_by: str) -
     Approval is the one place that has to matter, since it's what files the
     document.
 
-    INVOICE, DELIVERY, INWARD and PURCHASE_BILL additionally need a
-    po_number — each one describes a specific delivery against a specific
-    PO, and without that number it can never be grouped under that PO or
-    cross-checked against the other documents for the same delivery (see
-    po_reconciliation). PO and QUOTATION are exempt: a PO doesn't reference
-    another PO, and a quotation predates one existing at all."""
+    Beyond that, each kind needs its own required references filled in —
+    see REQUIRED_FIELDS_BY_KIND above."""
+    per_kind = " OR ".join(
+        "(documents.document_type = '{}' AND {})".format(
+            kind,
+            " AND ".join(f"h.{f} IS NOT NULL AND TRIM(h.{f}) != ''" for f in fields),
+        )
+        for kind, fields in REQUIRED_FIELDS_BY_KIND.items()
+    )
+    kinds_list = ", ".join(f"'{k}'" for k in REQUIRED_FIELDS_BY_KIND)
     cur = con.execute(
         "UPDATE documents SET status = 'APPROVED'"
         " WHERE id = ? AND status = 'EXTRACTED' AND document_type NOT IN ('UNCLASSIFIED', 'OTHER')"
-        " AND (document_type NOT IN ('INVOICE', 'DELIVERY', 'INWARD', 'PURCHASE_BILL') OR EXISTS ("
-        "   SELECT 1 FROM doc_headers h WHERE h.document_id = documents.id"
-        "     AND h.po_number IS NOT NULL AND TRIM(h.po_number) != ''"
+        f" AND (document_type NOT IN ({kinds_list}) OR EXISTS ("
+        f"   SELECT 1 FROM doc_headers h WHERE h.document_id = documents.id AND ({per_kind})"
         " ))",
         (document_id,),
     )

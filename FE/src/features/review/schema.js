@@ -21,8 +21,15 @@ export const HEADER_SECTIONS = [
       // A real delivery challan's own number on an INVOICE, but reused for
       // "the invoice this references" on an INWARD (MIN Voucher) or
       // PURCHASE_BILL page — see doc_headers.dc_number in db.py. Same field
-      // either way, so it's always shown, not gated behind a showIf.
-      { key: "dc_number", label: "DC / invoice no." },
+      // either way, so it's always shown, not gated behind a showIf — only
+      // the label changes, so a reviewer looking at an invoice never reads
+      // this as "where did my own invoice number go" (see ReviewModal's
+      // dcNumberOptions for the matching dropdown-on-INWARD/PURCHASE_BILL
+      // behaviour this label change goes with).
+      {
+        key: "dc_number",
+        label: (h) => (["INWARD", "PURCHASE_BILL"].includes(h.doc_kind) ? "Invoice no. (referenced)" : "DC no."),
+      },
       // Which MIN Voucher a Purchase Bill was closed out from — meaningless
       // for every other document type, so it only shows up once doc_kind
       // is PURCHASE_BILL.
@@ -46,6 +53,11 @@ export const HEADER_SECTIONS = [
     fields: [
       { key: "place_of_supply", label: "Place of supply" },
       { key: "delivery_address_raw", label: "Delivery address" },
+      {
+        key: "vehicle_number",
+        label: "Vehicle no.",
+        showIf: (h) => ["INVOICE", "INWARD"].includes(h.doc_kind),
+      },
     ],
   },
   {

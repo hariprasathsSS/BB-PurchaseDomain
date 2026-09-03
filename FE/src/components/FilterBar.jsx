@@ -1,4 +1,4 @@
-import { DOC_STATUSES, DOC_TYPES } from "../lib/format.js";
+import { DOC_STATUSES, DOC_TYPES, docTypeLabel } from "../lib/format.js";
 
 const title = (s) => { const w = s.replace(/_/g, " "); return w.charAt(0) + w.slice(1).toLowerCase(); };
 
@@ -43,7 +43,7 @@ export function FilterBar({
         onChange={(e) => set({ type: e.target.value })}
       >
         <option value="">All types</option>
-        {DOC_TYPES.map((t) => <option key={t} value={t}>{title(t)}</option>)}
+        {DOC_TYPES.map((t) => <option key={t} value={t}>{docTypeLabel(t)}</option>)}
       </select>
 
       <select

@@ -12,7 +12,9 @@ import { IconClose } from "./Icons.jsx";
    still runs the caller's own logic either way (ReviewModal's attemptClose
    already no-ops for the cases that matter) — this is only the visible half
    of that gate. */
-export function Modal({ title, subtitle, wide = false, closable = true, onClose, children, footer }) {
+export function Modal({
+  title, subtitle, wide = false, closable = true, glacier = false, maxWidth, onClose, children, footer,
+}) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape" && closable) onClose(); };
     window.addEventListener("keydown", onKey);
@@ -21,11 +23,12 @@ export function Modal({ title, subtitle, wide = false, closable = true, onClose,
 
   return (
     <div
-      className="backdrop"
+      className={`backdrop ${glacier ? "backdrop-glacier" : ""}`}
       onMouseDown={(e) => { if (closable && e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className={`modal ${wide ? "modal-lg" : ""}`}
+        className={`modal ${wide ? "modal-lg" : ""} ${glacier ? "modal-glacier" : ""}`}
+        style={maxWidth ? { maxWidth } : undefined}
         role="dialog"
         aria-modal="true"
         aria-label={title}

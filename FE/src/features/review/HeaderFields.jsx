@@ -1,6 +1,6 @@
 import { HEADER_SECTIONS } from "./schema.js";
 import { Combobox } from "../../components/Combobox.jsx";
-import { inr } from "../../lib/format.js";
+import { docTypeLabel, inr } from "../../lib/format.js";
 
 /* Read-only once a document is approved or rejected: the decision is a record,
    so the numbers behind it stop being editable.
@@ -39,8 +39,11 @@ export function HeaderFields({
             <h3>{section.title}</h3>
             <div className="field-grid">
               {visibleFields.map((field) => (
-                <label key={field.key}>
-                  <span>{field.label}</span>
+                // is-invalid marks the field itself, so the input carries the
+                // problem visually and the sentence under it only has to say
+                // what the problem is — see .field-grid label.is-invalid.
+                <label key={field.key} className={fieldErrors[field.key] ? "is-invalid" : undefined}>
+                  <span>{typeof field.label === "function" ? field.label(header ?? {}) : field.label}</span>
                   {locked
                     ? <div className="display">{display(header, field)}</div>
                     : (
@@ -67,6 +70,7 @@ export function HeaderFields({
 const display = (header, field) => {
   const value = header?.[field.key];
   if (field.type === "number") return inr(value);
+  if (field.type === "select") return value ? docTypeLabel(value) : "—";
   return value || "—";
 };
 
@@ -84,7 +88,7 @@ function Editor({ field, header, onChange, options }) {
         onChange={(e) => onChange(field.key, e.target.value)}
       >
         <option value="">—</option>
-        {field.options.map((o) => <option key={o} value={o}>{o}</option>)}
+        {field.options.map((o) => <option key={o} value={o}>{docTypeLabel(o)}</option>)}
       </select>
     );
   }

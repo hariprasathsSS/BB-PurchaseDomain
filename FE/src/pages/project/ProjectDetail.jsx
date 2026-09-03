@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { IconBack, IconDownload, IconPlus, IconPrint, IconTrash } from "../../components/Icons.jsx";
 import { AddDocumentMenu } from "../../components/AddDocumentMenu.jsx";
+import { DocumentsSection } from "../../components/DocumentsSection.jsx";
+import { Modal } from "../../components/Modal.jsx";
 import { MaterialsRollup } from "./MaterialsRollup.jsx";
 import { PurchaseOrdersSection } from "./PurchaseOrdersSection.jsx";
 import { QuoteAnalysisSection } from "./QuoteAnalysisSection.jsx";
@@ -8,21 +10,23 @@ import { go } from "../../lib/useHashRoute.js";
 import { api } from "../../lib/api.js";
 import { countsTowardTotals, money, projectTally } from "../../lib/format.js";
 
-/* Purchase Orders, Materials and Quote Analysis are the project's whole
-   story now — Overview's document explorer and the separate Invoices tab
-   both folded away, leaving nothing that duplicated what those three
-   already show. */
+/* Purchase Orders and Quote Analysis are the project's two real tabs —
+   the ongoing work a reviewer actually tracks. Documents and Materials are
+   reference lookups underneath that, not their own destinations, so they
+   sit as plain buttons instead of competing for tab billing — see
+   docsOpen/materialsOpen below. */
 const SECTIONS = [
   { id: "po", label: "Purchase Orders" },
-  { id: "materials", label: "Materials" },
   { id: "quotes", label: "Quote Analysis" },
 ];
 
-export function ProjectDetail({ project, docs, materials, reload, onAddDocument, onScan }) {
+export function ProjectDetail({ project, docs, materials, reload, onOpenDocument, onAddDocument, onScan }) {
   const [section, setSection] = useState("po");
   // Owned here rather than inside QuoteAnalysisSection so the button that
   // flips it can sit in the shared tab row instead of its own header line.
   const [quoteUploading, setQuoteUploading] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
+  const [materialsOpen, setMaterialsOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteErr, setDeleteErr] = useState("");
@@ -64,8 +68,11 @@ export function ProjectDetail({ project, docs, materials, reload, onAddDocument,
 
           <div className="phead-main">
             <div>
-              <div className="code">{project.code}</div>
-              <div className="pname">{project.name}</div>
+              {/* Name leads (the "code" styling is just the bigger,
+                  bolder look — reused here for whichever field is primary,
+                  not literally the project's own code field). */}
+              <div className="code">{project.name}</div>
+              <div className="pname">{project.code}</div>
             </div>
             <div className="spacer" />
             <div className="phead-actions">
@@ -145,6 +152,13 @@ export function ProjectDetail({ project, docs, materials, reload, onAddDocument,
                 <span><b>{money(tally.booked)}</b> booked</span>
               </>
             ) : null}
+            <div className="spacer" />
+            <button className="btn btn-quiet btn-xs" type="button" onClick={() => setDocsOpen(true)}>
+              Documents
+            </button>
+            <button className="btn btn-quiet btn-xs" type="button" onClick={() => setMaterialsOpen(true)}>
+              Materials
+            </button>
           </div>
         </div>
 
@@ -186,19 +200,6 @@ export function ProjectDetail({ project, docs, materials, reload, onAddDocument,
           </div>
         ) : null}
 
-        {section === "materials" ? (
-          <div className="section">
-            <div className="section-head">
-              <div className="spacer" />
-              <span className="tag">
-                from {counted.length} document{counted.length === 1 ? "" : "s"}
-                {rejectedInView ? ` · ${rejectedInView} rejected excluded` : ""}
-              </span>
-            </div>
-            <MaterialsRollup docs={counted} materials={materials} />
-          </div>
-        ) : null}
-
         {section === "quotes" ? (
           <div className="section">
             <QuoteAnalysisSection
@@ -210,6 +211,33 @@ export function ProjectDetail({ project, docs, materials, reload, onAddDocument,
           </div>
         ) : null}
       </div>
+
+      {docsOpen ? (
+        <Modal
+          title="Documents"
+          subtitle={`${projectDocs.length} in this project`}
+          wide
+          maxWidth="1240px"
+          onClose={() => setDocsOpen(false)}
+        >
+          <DocumentsSection
+            docs={projectDocs}
+            onOpenDocument={onOpenDocument}
+            emptyLabel="No documents in this project yet."
+          />
+        </Modal>
+      ) : null}
+
+      {materialsOpen ? (
+        <Modal
+          title="Materials"
+          subtitle={`from ${counted.length} document${counted.length === 1 ? "" : "s"}${rejectedInView ? ` · ${rejectedInView} rejected excluded` : ""}`}
+          wide
+          onClose={() => setMaterialsOpen(false)}
+        >
+          <MaterialsRollup docs={counted} materials={materials} />
+        </Modal>
+      ) : null}
     </div>
   );
 }

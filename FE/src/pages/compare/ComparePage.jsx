@@ -1,7 +1,10 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { StatusPill, TypePill } from "../../components/Pills.jsx";
-import { IconArrow, IconBack, IconChevron, IconTrash } from "../../components/Icons.jsx";
+import { IconArrow, IconBack, IconCheck, IconChevron, IconClose, IconTrash } from "../../components/Icons.jsx";
 import { AddDocumentMenu } from "../../components/AddDocumentMenu.jsx";
+import { DocumentsSection } from "../../components/DocumentsSection.jsx";
+import { Modal } from "../../components/Modal.jsx";
+import { ArithmeticBanner } from "../../features/review/ReviewModal.jsx";
 import { HeaderFields } from "../../features/review/HeaderFields.jsx";
 import { LineItems } from "../../features/review/LineItems.jsx";
 import { HEADER_KEYS, LINE_FIELDS } from "../../features/review/schema.js";
@@ -183,16 +186,42 @@ function VerificationPill({ status }) {
 }
 
 /* One delivery's diff line between two named documents — labelA/labelB are
-   "Invoice", "MIN Voucher" or "Purchase Bill". */
-function describeDiffLine(l, labelA, labelB) {
-  const name = l.material_name ?? "Unrecognised material";
-  if (l.qty_a == null) {
-    return `${name} — not on ${labelA} (${labelB} has ${qty(l.qty_b)} @ ${money(l.rate_b)})`;
+   "Invoice", "MIN Voucher" or "Purchase Bill".
+
+   The part that says *what is wrong* is marked, so the eye lands on it
+   without reading the whole sentence: which document a material is missing
+   from, or — when both have it — the two quantities that disagree.
+
+   A rate of zero is not a price of nothing, it's a document with no rate
+   column at all (a MIN Voucher never carries one, and aggregate_by_material
+   reports the absence as 0.0) — so it's left out rather than printed as
+   "@ ₹0.00", which reads as a price dispute where there is none. */
+function DiffLine({ line, labelA, labelB }) {
+  const name = line.material_name ?? "Unrecognised material";
+  const at = (rate) => (rate ? ` @ ${money(rate)}` : "");
+
+  if (line.qty_a == null) {
+    return (
+      <>
+        {name} — <b className="issue-where">not on {labelA}</b>
+        {" "}({labelB} has {qty(line.qty_b)}{at(line.rate_b)})
+      </>
+    );
   }
-  if (l.qty_b == null) {
-    return `${name} — not on ${labelB} (${labelA} has ${qty(l.qty_a)} @ ${money(l.rate_a)})`;
+  if (line.qty_b == null) {
+    return (
+      <>
+        {name} — <b className="issue-where">not on {labelB}</b>
+        {" "}({labelA} has {qty(line.qty_a)}{at(line.rate_a)})
+      </>
+    );
   }
-  return `${name} — ${labelA}: ${qty(l.qty_a)} @ ${money(l.rate_a)}, ${labelB}: ${qty(l.qty_b)} @ ${money(l.rate_b)}`;
+  return (
+    <>
+      {name} — {labelA}: <b className="issue-where">{qty(line.qty_a)}</b>{at(line.rate_a)},{" "}
+      {labelB}: <b className="issue-where">{qty(line.qty_b)}</b>{at(line.rate_b)}
+    </>
+  );
 }
 
 /* Same slot the PO tab uses for the scanned image — here it's the thing a
@@ -224,11 +253,13 @@ function DeliveryIssuesPanel({ deliveries, loading, onOpenDocument }) {
       ) : (
         flagged.map((delivery) => {
           const v = delivery.verification;
+          // Purchase Bill is optional (see po_reconciliation) — v.diffs only
+          // carries the two purchase-bill pairs when one actually exists.
           const pairs = [
             ["invoice_vs_min", "Invoice", "MIN Voucher", v.invoice_document_id, v.inward_document_id],
             ["invoice_vs_purchase_bill", "Invoice", "Purchase Bill", v.invoice_document_id, v.purchase_bill_document_id],
             ["min_vs_purchase_bill", "MIN Voucher", "Purchase Bill", v.inward_document_id, v.purchase_bill_document_id],
-          ].filter(([key]) => !v.diffs[key].clean);
+          ].filter(([key]) => v.diffs[key] && !v.diffs[key].clean);
 
           return (
             <div key={delivery.doc_number} className="delivery-issue">
@@ -252,7 +283,11 @@ function DeliveryIssuesPanel({ deliveries, loading, onOpenDocument }) {
                       {" disagree:"}
                     </p>
                     <ul className="delivery-issue-lines">
-                      {badLines.map((l) => <li key={l.material_id}>{describeDiffLine(l, labelA, labelB)}</li>)}
+                      {badLines.map((l) => (
+                        <li key={l.material_id}>
+                          <DiffLine line={l} labelA={labelA} labelB={labelB} />
+                        </li>
+                      ))}
                       {(diff.unmatched_a ?? []).map((l, i) => (
                         <li key={`ua-${i}`}>Unrecognised line on {labelA} — "{l.description_raw}"</li>
                       ))}
@@ -284,7 +319,9 @@ function DeliveryIssuesPanel({ deliveries, loading, onOpenDocument }) {
    server-side against the same po_number == this PO's own doc_number match
    this page always used; `matches` below is only the fallback while that
    call is still loading. */
-export function ComparePage({ documentId, docs, materials, onOpenDocument, reload, onAddDocument, onScan }) {
+export function ComparePage({
+  documentId, docs, materials, onOpenDocument, onOpenGenerated, reload, onAddDocument, onScan,
+}) {
   const [section, setSection] = useState("po");
   const [po, setPo] = useState(null);
   const [draft, setDraft] = useState(null);
@@ -302,6 +339,11 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
   const [confirmingDeleteDoc, setConfirmingDeleteDoc] = useState(null);
   const [confirmingDeleteDelivery, setConfirmingDeleteDelivery] = useState(null);
   const [deletingKey, setDeletingKey] = useState(null);
+  // Which delivery (by its doc_number) is asking the reviewer to pick a
+  // source document, because its Invoice and MIN Voucher disagree — see
+  // generatePurchaseBillFor below. Null once resolved or cancelled.
+  const [pbMismatchFor, setPbMismatchFor] = useState(null);
+  const [generatingPbFor, setGeneratingPbFor] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -433,6 +475,38 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
     }
   };
 
+  /* Builds this delivery's Purchase Bill from its Invoice + MIN Voucher.
+     Called directly when the two already agree (base doesn't matter then);
+     otherwise the caller has already asked which one to build from — see
+     the pbMismatchFor popup below. */
+  const generatePurchaseBillFor = async (delivery, base) => {
+    const { invoice_document_id: invoiceId, inward_document_id: inwardId } = delivery.verification;
+    setGeneratingPbFor(delivery.doc_number);
+    setErr("");
+    try {
+      const created = await api.generatePurchaseBill(invoiceId, inwardId, base);
+      setPbMismatchFor(null);
+      await reloadRecon();
+      reload();
+      // Not onOpenDocument — this one isn't kept unless the reviewer
+      // actually saves/approves/rejects it (see App.jsx's openGenerated).
+      onOpenGenerated(created.document_id);
+    } catch (e) {
+      setErr(`Could not generate Purchase Bill — ${e.message}`);
+    } finally {
+      setGeneratingPbFor(null);
+    }
+  };
+
+  const clickGeneratePurchaseBill = (delivery) => {
+    const clean = delivery.verification.diffs?.invoice_vs_min?.clean;
+    if (clean) {
+      generatePurchaseBillFor(delivery, "invoice");
+    } else {
+      setPbMismatchFor(delivery.doc_number);
+    }
+  };
+
   if (!po) {
     return <div className="band"><div className="col"><div className="empty">Loading…</div></div></div>;
   }
@@ -440,6 +514,15 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
   const matches = docs.filter(
     (d) => d.document_type === "INVOICE" && d.project_id === po.project_id
       && d.po_number && d.po_number === po.doc_number
+  );
+
+  // Every document this PO's own "Documents" tab shows: the PO itself, plus
+  // any Invoice, MIN Voucher, Purchase Bill or anything else that carries
+  // this PO's number — the same reference the Delivery info tab and
+  // po_reconciliation already thread documents together by.
+  const poDocuments = docs.filter(
+    (d) => d.document_id === po.document_id
+      || (d.project_id === po.project_id && d.po_number && d.po_number === po.doc_number)
   );
 
   // AddDocumentMenu/UploadModal/ScanModal only ever read id/code/name off
@@ -523,6 +606,7 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
           {[
             { id: "po", label: "PO" },
             { id: "delivery", label: `Delivery info${recon?.deliveries?.length ? ` (${recon.deliveries.length})` : ""}` },
+            { id: "documents", label: `Documents (${poDocuments.length})` },
             { id: "materials", label: "Materials" },
           ].map((t) => (
             <button
@@ -555,6 +639,7 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
             {!isWaiting(po) && po.status !== "FAILED" && header ? (
               <>
                 <HeaderFields header={header} locked={locked} onChange={setHeader} />
+                <ArithmeticBanner header={header} lines={lines} />
                 <LineItems lines={lines ?? []} materials={materials} locked={locked} onChange={setLine} header={header} />
 
                 {locked ? (
@@ -631,25 +716,47 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
                 <div className="compare-delivery-head">
                   <span className="compare-link-num">{delivery.doc_number}</span>
                   <span className="compare-link-meta">{delivery.vendor_name ?? "Vendor not read"}</span>
-                  <div className="spacer" />
                   <VerificationPill status={delivery.verification.status} />
+                  <div className="spacer" />
+                  {/* Only once this delivery actually has both source
+                      documents to build from, and doesn't have a Purchase
+                      Bill of its own yet — see generatePurchaseBillFor.
+                      Sits right before the delete icon so that icon stays
+                      the row's own rightmost element — lined up with the
+                      per-document delete icons directly below it. */}
+                  {delivery.verification.invoice_document_id
+                    && delivery.verification.inward_document_id
+                    && !delivery.verification.purchase_bill_document_id ? (
+                    <button
+                      type="button"
+                      className="btn btn-out btn-xs"
+                      onClick={() => clickGeneratePurchaseBill(delivery)}
+                      disabled={generatingPbFor === delivery.doc_number}
+                    >
+                      {generatingPbFor === delivery.doc_number ? "Generating…" : "Generate Purchase Bill"}
+                    </button>
+                  ) : null}
                   {confirmingDeleteDelivery === delivery.doc_number ? (
                     <span className="row-actions">
                       Delete all {delivery.documents.length}?
                       <button
-                        className="row-link warn"
+                        className="row-link go"
                         type="button"
+                        title="Confirm"
+                        aria-label={`Confirm deleting all ${delivery.documents.length} documents`}
                         onClick={() => deleteDelivery(delivery)}
                         disabled={deletingKey === delivery.doc_number}
                       >
-                        {deletingKey === delivery.doc_number ? "…" : "Confirm"}
+                        {deletingKey === delivery.doc_number ? "…" : <IconCheck width={16} height={16} />}
                       </button>
                       <button
-                        className="row-link"
+                        className="row-link stop"
                         type="button"
+                        title="Cancel"
+                        aria-label="Cancel"
                         onClick={() => setConfirmingDeleteDelivery(null)}
                       >
-                        Cancel
+                        <IconClose width={16} height={16} />
                       </button>
                     </span>
                   ) : (
@@ -668,6 +775,50 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
                   <div className="compare-missing">
                     Missing documents: {delivery.missing.join(", ")}
                   </div>
+                ) : null}
+                {pbMismatchFor === delivery.doc_number ? (
+                  <Modal
+                    glacier
+                    maxWidth="620px"
+                    title="Generate Purchase Bill"
+                    subtitle={delivery.doc_number}
+                    closable={generatingPbFor !== delivery.doc_number}
+                    onClose={() => setPbMismatchFor(null)}
+                    footer={
+                      <>
+                        <button
+                          className="btn btn-quiet"
+                          type="button"
+                          onClick={() => setPbMismatchFor(null)}
+                          disabled={generatingPbFor === delivery.doc_number}
+                        >
+                          Cancel
+                        </button>
+                        <div className="spacer" />
+                        <button
+                          className="btn btn-out"
+                          type="button"
+                          onClick={() => generatePurchaseBillFor(delivery, "invoice")}
+                          disabled={generatingPbFor === delivery.doc_number}
+                        >
+                          Generate with Invoice
+                        </button>
+                        <button
+                          className="btn btn-ink"
+                          type="button"
+                          onClick={() => generatePurchaseBillFor(delivery, "min")}
+                          disabled={generatingPbFor === delivery.doc_number}
+                        >
+                          Generate with MIN
+                        </button>
+                      </>
+                    }
+                  >
+                    <p style={{ margin: 0 }}>
+                      There will be a mismatch between Invoice and MIN — pick which one the
+                      Purchase Bill should be built from.
+                    </p>
+                  </Modal>
                 ) : null}
                 {delivery.documents.map((d) => (
                   <div key={d.document_id} className="compare-link-row">
@@ -705,19 +856,23 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
                       <span className="row-actions">
                         Delete?
                         <button
-                          className="row-link warn"
+                          className="row-link go"
                           type="button"
+                          title="Confirm"
+                          aria-label="Confirm deleting this document"
                           onClick={() => deleteOneDoc(d.document_id)}
                           disabled={deletingKey === d.document_id}
                         >
-                          {deletingKey === d.document_id ? "…" : "Confirm"}
+                          {deletingKey === d.document_id ? "…" : <IconCheck width={16} height={16} />}
                         </button>
                         <button
-                          className="row-link"
+                          className="row-link stop"
                           type="button"
+                          title="Cancel"
+                          aria-label="Cancel"
                           onClick={() => setConfirmingDeleteDoc(null)}
                         >
-                          Cancel
+                          <IconClose width={16} height={16} />
                         </button>
                       </span>
                     ) : (
@@ -747,6 +902,12 @@ export function ComparePage({ documentId, docs, materials, onOpenDocument, reloa
             <DeliveryIssuesPanel deliveries={recon?.deliveries} loading={!recon} onOpenDocument={onOpenDocument} />
           </div>
         </div>
+        ) : section === "documents" ? (
+        <DocumentsSection
+          docs={poDocuments}
+          onOpenDocument={onOpenDocument}
+          emptyLabel="No documents linked to this PO yet."
+        />
         ) : (
         <PoMaterialsSection materials={recon?.materials} loading={!recon} onOpenDocument={onOpenDocument} />
         )}

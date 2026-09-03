@@ -140,11 +140,29 @@ def current_session(authorization: str | None = Header(None)) -> str:
 def host_ip() -> str:
     """The LAN IP a phone can actually reach.
 
-    Asking the OS which interface it would use to reach the internet beats a
-    hostname lookup on machines with Docker/VM adapters. No packet is sent.
+    A phone joining this computer's own Mobile Hotspot lands on a completely
+    separate network from whatever the office WiFi handed out — Windows'
+    Internet Connection Sharing always hands that adapter 192.168.137.0/24,
+    checked first and preferred whenever present, since turning a hotspot on
+    only ever means one thing here: a phone is about to connect to it, not
+    to the office WiFi. This matters because the other heuristic below asks
+    the OS which interface it would use to reach the *internet* — and the
+    hotspot adapter usually isn't that one, so it would otherwise report the
+    office WiFi's address to a phone that can no longer reach it at all.
+
+    Otherwise falls back to that same internet-route trick, which beats a
+    hostname lookup on machines with Docker/VM adapters and sends no real
+    packet.
     """
     if override := os.environ.get("HOST_IP"):
         return override
+    try:
+        _, _, addrs = socket.gethostbyname_ex(socket.gethostname())
+        for addr in addrs:
+            if addr.startswith("192.168.137."):
+                return addr
+    except OSError:
+        pass
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.connect(("8.8.8.8", 80))
@@ -194,7 +212,23 @@ def add_site(con: sqlite3.Connection, project_id: str, name: str, address: str |
 
 
 def project_dict(row: sqlite3.Row) -> dict:
-    return dict(row) | {"sites": list_sites(row["id"])}
+    return dict(row) | {"sites": list_sites(row["id"]), "material_count": material_count(row["id"])}
+
+
+def material_count(project_id: str) -> int:
+    """Distinct materials actually named on this project's own document
+    lines — the same "what did this project buy" question the Materials
+    tab answers, reduced to one number for the project card. Document and
+    PO counts don't need a query of their own: the console already has
+    every document loaded client-side (see format.js's projectTally)."""
+    with db.db() as con:
+        row = con.execute(
+            "SELECT COUNT(DISTINCT dl.material_id) AS n FROM doc_lines dl"
+            " JOIN documents d ON d.id = dl.document_id"
+            " WHERE d.project_id = ? AND dl.material_id IS NOT NULL",
+            (project_id,),
+        ).fetchone()
+    return row["n"]
 
 
 def new_session(project_id: str, created_by: str = "web") -> dict:
@@ -350,6 +384,9 @@ def row_to_document(row: sqlite3.Row) -> dict:
         # A PURCHASE_BILL's own MIN Voucher reference — null on every other
         # document type. See po_reconciliation for how it's used.
         "min_number": row["min_number"],
+        # A MIN Voucher's or Purchase Bill's own reference back to the
+        # invoice it belongs to — see po_reconciliation for how it's used.
+        "dc_number": row["dc_number"],
     }
 
 
@@ -584,20 +621,67 @@ def store_documents(
             rel_paths.extend(
                 store_upload(upload, directory, doc_id, start_page=len(rel_paths) + 1)
             )
-        con.execute(
-            "INSERT INTO documents (id, project_id, site_id, session_id, source, document_type,"
-            " file_paths, page_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (doc_id, project_id, site_id, session_id, source, hint,
-             json.dumps(rel_paths), len(rel_paths)),
+        documents.append(
+            insert_document(con, project_id, site_id, session_id, source, doc_id, hint, rel_paths)
         )
-        documents.append({
-            "document_id": doc_id,
-            "document_type": hint,
-            "file_paths": rel_paths,
-            "page_count": len(rel_paths),
-            "status": "PENDING",
-        })
     return documents
+
+
+def insert_document(
+    con: sqlite3.Connection,
+    project_id: str,
+    site_id: str | None,
+    session_id: str | None,
+    source: str,
+    doc_id: str,
+    document_type: str,
+    rel_paths: list[str],
+) -> dict:
+    """The row-insert half of store_documents, split out so a caller that
+    already has rendered page paths in hand — see store_batch_pages, used
+    once the pages have been split into documents by content rather than by
+    upload — doesn't have to re-derive this shape by hand."""
+    con.execute(
+        "INSERT INTO documents (id, project_id, site_id, session_id, source, document_type,"
+        " file_paths, page_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (doc_id, project_id, site_id, session_id, source, document_type,
+         json.dumps(rel_paths), len(rel_paths)),
+    )
+    return {
+        "document_id": doc_id,
+        "document_type": document_type,
+        "file_paths": rel_paths,
+        "page_count": len(rel_paths),
+        "status": "PENDING",
+    }
+
+
+def store_batch_pages(files: list[UploadFile], directory: Path, batch_id: str) -> tuple[list[str], list[bool]]:
+    """Render every file in one browser upload to its page image(s), in the
+    order picked, as one continuously-numbered run of pages, alongside a
+    parallel list marking which pages started a newly *picked* file.
+
+    Naming carries batch_id, a scratch id for this upload only, not any
+    document's real id: which pages end up in which document isn't known
+    until after classification runs, and nothing downstream parses a page's
+    filename for meaning (only file_paths, from the DB row, is ever read).
+
+    The file-boundary list matters beyond naming: two files picked
+    separately — two photos, two PDFs — must never be silently merged into
+    one document just because a page-boundary guess says otherwise. Losing a
+    whole picked document into another one's pages is a worse failure than
+    two documents that arguably should have been one; the classifier is only
+    trusted to split pages *within* a single file, never to fuse across
+    files the operator deliberately picked apart. See web_upload.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    rel_paths: list[str] = []
+    file_starts: list[bool] = []
+    for upload in files:
+        pages = store_upload(upload, directory, batch_id, start_page=len(rel_paths) + 1)
+        rel_paths.extend(pages)
+        file_starts.extend([True] + [False] * (len(pages) - 1))
+    return rel_paths, file_starts
 
 
 def _extract_all(document_ids: list[str]) -> None:
@@ -618,6 +702,11 @@ def _extract_all(document_ids: list[str]) -> None:
     left to interleave."""
     for document_id in document_ids:
         extract.process(document_id)
+    # Once every document from this upload has settled, cross-check the
+    # reference numbers that are supposed to agree between them (an
+    # invoice's own number against the MIN Voucher/Purchase Bill naming it,
+    # etc) — see extract.reconcile_batch.
+    extract.reconcile_batch(document_ids)
 
 
 def queue_extraction(background: BackgroundTasks, documents: list[dict]) -> None:
@@ -680,16 +769,19 @@ def web_upload(
 ):
     """Console upload: loose files picked in a browser, no phone and no session.
 
-    One file is one document. A multi-page PDF therefore stores as a single
-    document with page_count 1 — ponytail: the engine reads every page of the
-    PDF regardless, so counting them would mean a PDF library for a number
-    nothing reads. Add pypdf when the review UI needs a real page count.
+    One upload is not always one document — a multi-page PDF, or several
+    photos picked together, may hold more than one physical document (an
+    invoice, its MIN Voucher and the purchase bill, scanned as one file) or a
+    single document spanning several pages. Every file's pages are rendered
+    and laid end to end in the order picked, then classify_page_boundaries
+    decides where one document ends and the next begins; each resulting
+    group becomes its own document row.
 
     document_type is optional and only ever a hint — e.g. "Scan PO" sends
     "PO" so the extractor is told what the operator expects, but an invalid
     or absent value just falls back to UNCLASSIFIED rather than rejecting
     the upload over it; the classifier's own read of the pixels is what
-    actually decides.
+    actually decides, per document, once boundaries are found.
     """
     if not files:
         raise HTTPException(400, "no files were sent")
@@ -699,11 +791,31 @@ def web_upload(
     if hint not in db.DOC_TYPES:
         hint = "UNCLASSIFIED"
 
+    batch_id = new_id("DOC")
+    page_paths, file_starts = store_batch_pages(files, UPLOAD_DIR / "web", batch_id)
+    # Every picked file is already its own boundary; only worth asking the
+    # classifier when some file contributed more than one page (a PDF) —
+    # otherwise its guess can only be overridden anyway, see below.
+    if all(file_starts):
+        boundaries = file_starts
+    else:
+        guessed = extract.classify_page_boundaries(page_paths)
+        # A picked file always starts its own document regardless of what the
+        # classifier guessed — see store_batch_pages for why that direction only.
+        boundaries = [g or f for g, f in zip(guessed, file_starts)]
+
+    groups: list[list[str]] = []
+    for path, is_new in zip(page_paths, boundaries):
+        if is_new or not groups:
+            groups.append([path])
+        else:
+            groups[-1].append(path)
+
     with db.db() as con:
-        documents = store_documents(
-            con, UPLOAD_DIR / "web", project_id, site_id or None, None, "UPLOAD", [[f] for f in files],
-            document_type_hints=[hint] * len(files),
-        )
+        documents = [
+            insert_document(con, project_id, site_id or None, None, "UPLOAD", new_id("DOC"), hint, pages)
+            for pages in groups
+        ]
 
     queue_extraction(background, documents)
     return {"project_id": project_id, "total": len(documents), "documents": documents}
@@ -912,7 +1024,7 @@ def clear_quote_pick(project_id: str, material_id: str):
 DOC_SELECT = """
 SELECT d.*, p.code AS project_code, p.name AS project_name,
        h.vendor_name_raw, h.vendor_gstin, h.vendor_id, h.doc_number, h.po_number, h.total_value,
-       h.min_number
+       h.min_number, h.dc_number
   FROM documents d
   LEFT JOIN projects p    ON p.id = d.project_id
   LEFT JOIN doc_headers h ON h.document_id = d.id
@@ -955,8 +1067,14 @@ def get_document(document_id: str):
             "SELECT * FROM doc_lines WHERE document_id = ? ORDER BY line_no", (document_id,)
         ).fetchall()
 
+    header_dict = dict(header) if header else None
+    if header_dict:
+        header_dict["vendor_gstin_checksum_ok"] = extract.gstin_checksum_ok(header_dict.get("vendor_gstin"))
+        header_dict["buyer_gstin_checksum_ok"] = extract.gstin_checksum_ok(header_dict.get("buyer_gstin"))
+        header_dict["vendor_gstin_is_self"] = extract.gstin_is_self(header_dict.get("vendor_gstin"))
+
     return row_to_document(row) | {
-        "header": dict(header) if header else None,
+        "header": header_dict,
         "lines": [dict(line) for line in lines],
     }
 
@@ -1003,6 +1121,91 @@ def fetch_doc_lines_with_materials(con: sqlite3.Connection, document_id: str) ->
         " WHERE l.document_id = ? ORDER BY l.line_no",
         (document_id,),
     ).fetchall()
+
+
+@app.get("/api/v1/documents/{document_id}/line-issues")
+def line_issues(document_id: str):
+    """Which of this document's own lines another document in its delivery
+    disagrees about, keyed by material.
+
+    The same comparison the PO page's Issues panel runs, turned around to
+    face one document: the panel answers "what is wrong with this delivery",
+    this answers "what is wrong with the line I am looking at", so the review
+    screen can put each disagreement against the line it concerns instead of
+    a reviewer holding the two screens side by side.
+
+    Phrased from this document's own point of view — an invoice is told what
+    the MIN Voucher recorded, not what "side b" said. Empty (rather than an
+    error) whenever there's nothing to compare against: no PO on file, no
+    siblings yet, or a document type that isn't part of a delivery at all.
+    """
+    empty = {"issues": {}}
+    with db.db() as con:
+        row = con.execute(
+            "SELECT d.document_type, d.project_id, h.po_number FROM documents d"
+            " LEFT JOIN doc_headers h ON h.document_id = d.id WHERE d.id = ?",
+            (document_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "No such document")
+        if row["document_type"] not in ("INVOICE", "INWARD", "PURCHASE_BILL") or not row["po_number"]:
+            return empty
+        po_row = con.execute(
+            "SELECT d.id FROM documents d JOIN doc_headers h ON h.document_id = d.id"
+            " WHERE d.document_type = 'PO' AND h.doc_number = ? AND d.project_id = ?"
+            " ORDER BY d.uploaded_at LIMIT 1",
+            (row["po_number"], row["project_id"]),
+        ).fetchone()
+        if po_row is None:
+            return empty
+
+    recon = po_reconciliation(po_row["id"])
+    delivery = next(
+        (d for d in recon["deliveries"]
+         if any(doc["document_id"] == document_id for doc in d["documents"])),
+        None,
+    )
+    if delivery is None or not delivery["verification"]["diffs"]:
+        return empty
+
+    verification = delivery["verification"]
+    role = {"INVOICE": "invoice", "INWARD": "min", "PURCHASE_BILL": "purchase_bill"}[row["document_type"]]
+    # Each pair, as (diff key, side-a role, side-b role, label for each side).
+    pairs = (
+        ("invoice_vs_min", "invoice", "min", "Invoice", "MIN Voucher"),
+        ("invoice_vs_purchase_bill", "invoice", "purchase_bill", "Invoice", "Purchase Bill"),
+        ("min_vs_purchase_bill", "min", "purchase_bill", "MIN Voucher", "Purchase Bill"),
+    )
+
+    issues: dict[str, list[str]] = {}
+    for key, role_a, role_b, label_a, label_b in pairs:
+        diff = verification["diffs"].get(key)
+        if not diff or role not in (role_a, role_b):
+            continue
+        # "Mine" is whichever side this document is; the message names the other.
+        mine, theirs = ("a", "b") if role == role_a else ("b", "a")
+        other_label = label_b if role == role_a else label_a
+        for line in diff["lines"]:
+            if line["match"]:
+                continue
+            my_qty, their_qty = line[f"qty_{mine}"], line[f"qty_{theirs}"]
+            if their_qty is None:
+                message = f"Not on the {other_label} at all."
+            elif my_qty is None:
+                message = f"Only on the {other_label} ({qty_text(their_qty)}) — missing from this document."
+            else:
+                message = f"{other_label} says {qty_text(their_qty)}, this document says {qty_text(my_qty)}."
+            issues.setdefault(line["material_id"], []).append(message)
+
+    return {"issues": issues}
+
+
+def qty_text(value) -> str:
+    """A quantity as a person would write it — 5 rather than 5.0."""
+    if value is None:
+        return "—"
+    number = float(value)
+    return str(int(number)) if number == int(number) else f"{number:g}"
 
 
 @app.get("/api/v1/documents/{document_id}/duplicate-diff")
@@ -1200,23 +1403,26 @@ def po_reconciliation(po_document_id: str):
                 missing.append("Invoice")
             if inward_report is None:
                 missing.append("MIN Voucher")
-            if purchase_bill is None:
-                missing.append("Purchase Bill")
-            # DELIVERY isn't required — see the function docstring — so a
-            # missing one never shows up here, only in `documents` if one
-            # happens to exist.
+            # Purchase Bill is optional, same as DELIVERY — this client's own
+            # closing record, generated (see generate_purchase_bill) or
+            # scanned later once the office gets to it, never something a
+            # delivery is "missing" for. When one does turn up, it's still
+            # cross-checked below — just never required to call a delivery
+            # complete.
 
             def lines_of(doc):
                 return [dict(l) for l in fetch_doc_lines_with_materials(con, doc["document_id"])]
 
-            # Fulfillment is a three-way match, not "an invoice showed up" —
-            # Invoice, MIN Voucher and Purchase Bill all have to exist AND
-            # agree line for line before this delivery's quantities count
-            # toward the PO at all.
+            # Fulfillment is a two-way match at minimum — Invoice and MIN
+            # Voucher have to exist AND agree line for line before this
+            # delivery's quantities count toward the PO at all. Purchase
+            # Bill is optional: when one exists it's cross-checked too, and
+            # any disagreement it introduces still marks the whole delivery
+            # a mismatch, but its absence never leaves a delivery
+            # "incomplete" the way a missing Invoice or MIN Voucher does.
             missing_for_match = [
-                label for label, doc in (
-                    ("Invoice", invoice), ("MIN Voucher", inward_report), ("Purchase Bill", purchase_bill),
-                ) if doc is None
+                label for label, doc in (("Invoice", invoice), ("MIN Voucher", inward_report))
+                if doc is None
             ]
 
             invoice_lines = lines_of(invoice) if invoice else None
@@ -1230,11 +1436,21 @@ def po_reconciliation(po_document_id: str):
                     "invoice_vs_min": extract.compare_document_lines(
                         invoice_lines, inward_lines, require_rate=False
                     ),
-                    "invoice_vs_purchase_bill": extract.compare_document_lines(invoice_lines, pb_lines),
-                    "min_vs_purchase_bill": extract.compare_document_lines(
-                        inward_lines, pb_lines, require_rate=False
-                    ),
                 }
+                if purchase_bill:
+                    # Same reasoning the MIN Voucher already gets: you cannot
+                    # disagree on a number you don't carry. A Purchase Bill
+                    # generated from the MIN (see generate_purchase_bill) has
+                    # no rate column of its own, so requiring rate agreement
+                    # would flag every one of its lines forever — including
+                    # lines whose quantities match exactly.
+                    pb_priced = any(l.get("rate") is not None for l in pb_lines)
+                    match_diffs["invoice_vs_purchase_bill"] = extract.compare_document_lines(
+                        invoice_lines, pb_lines, require_rate=pb_priced
+                    )
+                    match_diffs["min_vs_purchase_bill"] = extract.compare_document_lines(
+                        inward_lines, pb_lines, require_rate=False
+                    )
                 status = "verified" if all(d["clean"] for d in match_diffs.values()) else "mismatch"
 
             verification = {
@@ -1365,6 +1581,119 @@ def po_reconciliation(po_document_id: str):
     return {"materials": materials, "deliveries": deliveries}
 
 
+@app.post("/api/v1/deliveries/generate-purchase-bill")
+def generate_purchase_bill(body: dict):
+    """Creates a Purchase Bill document from an already-uploaded Invoice +
+    MIN Voucher pair, for the office's own record — this client's own
+    Purchase Bill is normally written up by hand once both reach it (see
+    po_reconciliation's docstring), and this is that same step done by the
+    console instead of on paper.
+
+    base picks which of the two source documents' own values (vendor, tax
+    figures, line items) the new record is built from — the FE only sends a
+    real disagreement between them (see ComparePage's own invoice-vs-min
+    check before offering this), so this makes no attempt to resolve it
+    itself; it trusts whichever the reviewer picked.
+
+    The result goes through extract.save_extraction exactly like a scanned
+    page's own engine output would — same material matching, same GSTIN
+    handling — and comes back EXTRACTED, not APPROVED: generating one is a
+    starting point for review, not an approval of it. doc_number gets a
+    timestamp placeholder rather than a blank, real-looking field (see
+    below) — a reviewer overwrites it with the Bill's actual PV No once
+    assigned, same as correcting any other misread field. Once it exists,
+    po_reconciliation cross-checks it against the Invoice and MIN Voucher
+    exactly as it would a scanned one — a base of "invoice" that disagrees
+    with the MIN Voucher still surfaces as a mismatch afterward.
+    """
+    base = body.get("base")
+    if base not in ("invoice", "min"):
+        raise HTTPException(400, "base must be 'invoice' or 'min'")
+    invoice_id = body.get("invoice_document_id")
+    inward_id = body.get("inward_document_id")
+
+    with db.db() as con:
+        invoice = con.execute(
+            "SELECT * FROM documents WHERE id = ? AND document_type = 'INVOICE'", (invoice_id,)
+        ).fetchone()
+        inward = con.execute(
+            "SELECT * FROM documents WHERE id = ? AND document_type = 'INWARD'", (inward_id,)
+        ).fetchone()
+        if invoice is None or inward is None:
+            raise HTTPException(404, "Invoice or MIN Voucher not found")
+
+        invoice_header = dict(
+            con.execute("SELECT * FROM doc_headers WHERE document_id = ?", (invoice_id,)).fetchone() or {}
+        )
+        inward_header = dict(
+            con.execute("SELECT * FROM doc_headers WHERE document_id = ?", (inward_id,)).fetchone() or {}
+        )
+        source_header = invoice_header if base == "invoice" else inward_header
+        source_lines = fetch_doc_lines_with_materials(con, invoice_id if base == "invoice" else inward_id)
+
+        doc_id = new_id("DOC")
+        insert_document(con, invoice["project_id"], invoice["site_id"], None, "UPLOAD", doc_id, "PURCHASE_BILL", [])
+
+        data = {
+            "doc_kind": "PURCHASE_BILL",
+            # This Bill's own PV/PB number is the client's own paper series —
+            # not something to invent. A timestamp placeholder ("PB-2026...")
+            # keeps the required field non-empty (so the review screen isn't
+            # blocked on it before a reviewer has even opened it) without
+            # pretending to know the real number; whoever reviews it is
+            # expected to overwrite it with the actual PV No once assigned.
+            "doc_number": f"PB-{datetime.now(timezone.utc):%Y%m%d%H%M%S}",
+            "po_number": source_header.get("po_number"),
+            # This Bill's own two references — its Invoice No and MIN No —
+            # are the two source documents' own numbers, regardless of which
+            # one `base` reads the rest of the record from.
+            "dc_number": invoice_header.get("doc_number"),
+            "min_number": inward_header.get("doc_number"),
+            "doc_date_raw": source_header.get("doc_date_raw"),
+            "vendor_name_raw": source_header.get("vendor_name_raw"),
+            "vendor_gstin": source_header.get("vendor_gstin"),
+            "buyer_gstin": source_header.get("buyer_gstin"),
+            "place_of_supply": source_header.get("place_of_supply"),
+            "delivery_address_raw": source_header.get("delivery_address_raw"),
+            "vehicle_number": None,
+            # A MIN Voucher never carries a rupee figure at all (see
+            # doc_lines.rate in db.py) — basing a Bill on one leaves these
+            # null rather than inventing a total the source page never had.
+            "basic_value": invoice_header.get("basic_value") if base == "invoice" else None,
+            "tax_type": invoice_header.get("tax_type") if base == "invoice" else None,
+            "igst_amount": invoice_header.get("igst_amount") if base == "invoice" else None,
+            "cgst_amount": invoice_header.get("cgst_amount") if base == "invoice" else None,
+            "sgst_amount": invoice_header.get("sgst_amount") if base == "invoice" else None,
+            "tcs_amount": invoice_header.get("tcs_amount") if base == "invoice" else None,
+            "rounding_off": invoice_header.get("rounding_off") if base == "invoice" else None,
+            "total_value": invoice_header.get("total_value") if base == "invoice" else None,
+            "irn": None,
+            "qr_verified": False,
+            "lines": [
+                {
+                    "description_raw": l["description_raw"],
+                    "hsn_code": l["hsn_code"],
+                    # The MIN Voucher's own comparable quantity is what it
+                    # actually accepted, not what it was offered — same
+                    # accept_qty-first rule po_reconciliation's as_received
+                    # uses.
+                    "quantity": (
+                        l["quantity"] if base == "invoice"
+                        else (l["accept_qty"] if l["accept_qty"] is not None else l["quantity"])
+                    ),
+                    "unit": l["unit"],
+                    "rate": l["rate"] if base == "invoice" else None,
+                    "amount": l["amount"] if base == "invoice" else None,
+                    "tax_rate": l["tax_rate"] if base == "invoice" else None,
+                }
+                for l in source_lines
+            ],
+        }
+        extract.save_extraction(con, doc_id, data)
+
+    return get_document(doc_id)
+
+
 @app.post("/api/v1/documents/{document_id}/extract")
 def reextract(document_id: str, background: BackgroundTasks):
     """Re-run extraction — for a FAILED document, or after the engine changes.
@@ -1425,8 +1754,8 @@ def approve_document(document_id: str, body: dict):
     with db.db() as con:
         if not extract.mark_approved(con, document_id, approved_by):
             row = con.execute(
-                "SELECT d.status, d.document_type, h.po_number FROM documents d"
-                " LEFT JOIN doc_headers h ON h.document_id = d.id WHERE d.id = ?",
+                "SELECT d.status, d.document_type, h.po_number, h.doc_number, h.dc_number, h.min_number"
+                " FROM documents d LEFT JOIN doc_headers h ON h.document_id = d.id WHERE d.id = ?",
                 (document_id,),
             ).fetchone()
             if row is None:
@@ -1443,15 +1772,15 @@ def approve_document(document_id: str, body: dict):
                     "Inward Report or Purchase Bill before approving, or reject it if none of "
                     "those genuinely fit",
                 )
-            if (
-                waiting and doc_type in ("INVOICE", "DELIVERY", "INWARD", "PURCHASE_BILL")
-                and not (row["po_number"] or "").strip()
-            ):
-                raise HTTPException(
-                    400,
-                    "This document has no PO number — enter the purchase order it belongs to "
-                    "before approving",
-                )
+            if waiting and doc_type in extract.REQUIRED_FIELDS_BY_KIND:
+                missing = [
+                    extract.FIELD_LABELS[f] for f in extract.REQUIRED_FIELDS_BY_KIND[doc_type]
+                    if not (row[f] or "").strip()
+                ]
+                if missing:
+                    raise HTTPException(
+                        400, f"Missing {', '.join(missing)} — fill it in before approving"
+                    )
             raise HTTPException(409, f"Cannot approve a document that is {row['status']}")
 
     return get_document(document_id)

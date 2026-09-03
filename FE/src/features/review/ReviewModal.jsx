@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { Modal } from "../../components/Modal.jsx";
 import { HeaderFields } from "./HeaderFields.jsx";
 import { LineItems } from "./LineItems.jsx";
+import { openPurchaseBillTab, PurchaseBillPreview, PurchaseBillVoucher } from "./PurchaseBillVoucher.jsx";
 import { HEADER_KEYS, LINE_FIELDS } from "./schema.js";
 import { api } from "../../lib/api.js";
-import { isLocked, isWaiting, money, projectOf, qty } from "../../lib/format.js";
+import { checkArithmetic, isLocked, isWaiting, money, projectOf, qty } from "../../lib/format.js";
+import { gstinChecksumOk, gstinIsSelf } from "../../lib/gstin.js";
 
 const blank = (v) => (typeof v === "string" && v.trim() === "" ? null : v === "" ? null : v);
 
@@ -23,21 +25,40 @@ function buildEdits(draft) {
   return { header, lines };
 }
 
-/* The two completeness gates a document can be stuck behind — shared by
-   the Approve button (disabled), the banners (why), and the close handler
-   below (blocks dismissal on the one that matters there). See
-   extract.mark_approved for the server-side half of each. */
+/* Which fields a document can never be approved without, by its own kind —
+   each one is a reference this client's own three-way match (see
+   po_reconciliation) depends on to thread documents together:
+     PO             its own number — nothing references a PO that has none.
+     INVOICE/DELIVERY  the PO it was delivered against.
+     INWARD (MIN)   the PO, its own MIN No (doc_number), and the invoice
+                    it received against (dc_number).
+     PURCHASE_BILL  the PO, its own PV/PB No (doc_number), the invoice
+                    (dc_number) and the MIN it was closed from (min_number).
+   Mirrored server-side in extract.mark_approved — this only gets the
+   Approve button disabled with the right reason before the request goes,
+   the server gate is what actually holds. */
+const REQUIRED_FIELDS_BY_KIND = {
+  PO: ["doc_number"],
+  INVOICE: ["po_number"],
+  DELIVERY: ["po_number"],
+  INWARD: ["po_number", "doc_number", "dc_number"],
+  PURCHASE_BILL: ["po_number", "doc_number", "dc_number", "min_number"],
+};
+
+/* The completeness gates a document can be stuck behind — shared by the
+   Approve button (disabled), the banners (why), and the close handler
+   below (blocks dismissal on the one that matters there). */
 function gatesFor(header) {
   const typeUnset = !header?.doc_kind || header.doc_kind === "UNCLASSIFIED";
   const typeOther = header?.doc_kind === "OTHER";
-  // An invoice, delivery challan, MIN Voucher or Purchase Bill with no PO
-  // number can never be grouped under its purchase order.
-  const poNumberMissing =
-    ["INVOICE", "DELIVERY", "INWARD", "PURCHASE_BILL"].includes(header?.doc_kind)
-    && !String(header?.po_number ?? "").trim();
+  const missingFields = (REQUIRED_FIELDS_BY_KIND[header?.doc_kind] ?? [])
+    .filter((f) => !String(header?.[f] ?? "").trim());
   return {
     typeUnset, typeOther, typeMissing: typeUnset || typeOther,
-    poNumberMissing,
+    missingFields,
+    // Kept as its own flag — existing callers (Save's disabled/title, the
+    // close handler) only ever cared about po_number specifically.
+    poNumberMissing: missingFields.includes("po_number"),
   };
 }
 
@@ -50,6 +71,7 @@ export function ReviewModal({ docId, docs, materials, onClose, onChanged }) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [diff, setDiff] = useState(null);
+  const [lineIssues, setLineIssues] = useState({});
 
   /* Load, then re-read only while extraction is still running — the loop
      schedules its own next tick and so stops itself the moment the document
@@ -98,6 +120,17 @@ export function ReviewModal({ docId, docs, materials, onClose, onChanged }) {
     if (!doc || isWaiting(doc) || doc.status === "FAILED") { setDiff(null); return; }
     let cancelled = false;
     api.getDuplicateDiff(docId).then((d) => { if (!cancelled) setDiff(d); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [docId, doc?.status]);
+
+  /* What the other documents of this one's own delivery say about its lines
+     — marked on the lines themselves (see LineItems' lineIssues). Empty for
+     anything that isn't part of a delivery, so most documents fetch this
+     once and render nothing extra. */
+  useEffect(() => {
+    if (!doc || isWaiting(doc) || doc.status === "FAILED") { setLineIssues({}); return; }
+    let cancelled = false;
+    api.getLineIssues(docId).then((i) => { if (!cancelled) setLineIssues(i); }).catch(() => {});
     return () => { cancelled = true; };
   }, [docId, doc?.status]);
 
@@ -169,24 +202,12 @@ export function ReviewModal({ docId, docs, materials, onClose, onChanged }) {
      half of this — the X itself is disabled too, so it doesn't sit there
      looking clickable while doing nothing.
 
-     Past that, closing always works — a PO number is required to *save*
-     (the footer's Save/Approve are disabled without one, see gatesFor),
-     not to walk away. A reviewer who doesn't want to finish this document
-     can still just close it: nothing gets saved, the document sits exactly
-     where it was (EXTRACTED, unreviewed) for whoever opens it next.
-     Closing when it IS complete still saves, so filling the form in and
-     clicking away doesn't lose the edit. */
+     Past that, closing never saves — only an explicit Save/Approve click
+     does (see DecisionFooter). A reviewer who closes without clicking
+     either walks away with nothing written: the document sits exactly
+     where it was (EXTRACTED, unreviewed) for whoever opens it next. */
   const attemptClose = () => {
-    if (!doc) { onClose(); return; }
-    if (isWaiting(doc)) return;
-    if (doc.status === "FAILED" || isLocked(doc) || !draft) {
-      onClose();
-      return;
-    }
-    const gates = gatesFor(draft.header);
-    if (!gates.poNumberMissing) {
-      save({ silent: true });
-    }
+    if (doc && isWaiting(doc)) return;
     onClose();
   };
 
@@ -212,6 +233,24 @@ export function ReviewModal({ docId, docs, materials, onClose, onChanged }) {
           .map((d) => d.doc_number)
       )]
     : [];
+
+  /* Only meaningful on an INWARD/PURCHASE_BILL page — see schema.js's
+     dc_number label — and only once a PO number is actually on the form:
+     an invoice not yet tied to that same PO isn't the one this document is
+     closing out, so it's not offered. Reads header.po_number (the live
+     draft, not doc's original value) so picking a different PO re-scopes
+     the suggestions immediately, not just after a save. */
+  const dcNumberOptions =
+    doc && ["INWARD", "PURCHASE_BILL"].includes(header?.doc_kind) && header?.po_number
+      ? [...new Set(
+          (docs ?? [])
+            .filter((d) =>
+              d.project_id === doc.project_id && d.document_type === "INVOICE"
+              && d.po_number === header.po_number && d.doc_number
+            )
+            .map((d) => d.doc_number)
+        )]
+      : [];
 
   return (
     <Modal
@@ -239,27 +278,85 @@ export function ReviewModal({ docId, docs, materials, onClose, onChanged }) {
     >
       {!doc ? <div className="empty">Loading…</div> : (
         <>
+          {doc.file_paths.length > 1 ? (
+            <div className="doc-pages-count">{doc.file_paths.length} pages</div>
+          ) : null}
           <div className="doc-pages">
-            {doc.file_paths.map((path) => (
+            {doc.file_paths.map((path, i) => (
               <a key={path} href={`/${path}`} target="_blank" rel="noopener noreferrer">
-                <img src={`/${path}`} alt="captured page" />
+                <img src={`/${path}`} alt={`page ${i + 1}`} />
               </a>
             ))}
+            {/* A generated Purchase Bill (see ComparePage's Generate
+                Purchase Bill) never had a paper page to scan — file_paths
+                is empty — so it gets the same thumbnail-sized slot every
+                other document's own page image sits in here, not a full
+                inline render of the voucher. A scanned Purchase Bill
+                already has its own real page image above and skips this. */}
+            {header?.doc_kind === "PURCHASE_BILL" && !doc.file_paths.length ? (
+              <button
+                type="button"
+                className="pb-thumb"
+                title="Open in a new tab"
+                onClick={() => openPurchaseBillTab({
+                  header,
+                  lines: locked ? (doc.lines ?? []) : draft?.lines,
+                  materials,
+                  project: { code: doc.project_code, name: doc.project_name },
+                })}
+              >
+                <PurchaseBillPreview
+                  header={header}
+                  lines={locked ? (doc.lines ?? []) : draft?.lines}
+                  materials={materials}
+                  project={{ code: doc.project_code, name: doc.project_name }}
+                />
+              </button>
+            ) : null}
           </div>
+
+          {header?.doc_kind === "PURCHASE_BILL" ? (
+            <>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+                <button type="button" className="btn btn-out btn-sm" onClick={() => window.print()}>
+                  Print Purchase Bill
+                </button>
+              </div>
+              <PurchaseBillVoucher
+                header={header}
+                lines={locked ? (doc.lines ?? []) : draft?.lines}
+                materials={materials}
+                project={{ code: doc.project_code, name: doc.project_name }}
+              />
+            </>
+          ) : null}
 
           <StatusBanner doc={doc} onRetry={retry} />
 
           {isWaiting(doc) || doc.status === "FAILED" ? null : (
             <>
+              <ScanQualityBanner
+                header={header}
+                lines={locked ? (doc.lines ?? []) : draft?.lines}
+                gates={gates}
+                onRetry={retry}
+              />
+              {/* What's left up here is deliberately only what *isn't* about
+                  one field: this document against another copy of itself, and
+                  the page as a whole. The GSTIN check digit and an unknown PO
+                  number now sit on their own fields instead — see
+                  fieldErrorsFor. */}
               <DuplicateDiffBanner diff={diff} />
-              <PoNumberBanner header={header} poNumberOptions={poNumberOptions} />
+              <ArithmeticBanner header={header} lines={locked ? (doc.lines ?? []) : draft?.lines} />
               <Body
                 header={header}
                 lines={locked ? (doc.lines ?? []) : draft?.lines}
                 locked={locked}
                 gates={gates}
                 poNumberOptions={poNumberOptions}
+                dcNumberOptions={dcNumberOptions}
                 materials={materials}
+                lineIssues={lineIssues}
                 rejecting={rejecting}
                 reason={reason}
                 setReason={setReason}
@@ -376,6 +473,104 @@ function PoNumberBanner({ header, poNumberOptions }) {
   );
 }
 
+/* Several of the checks below can fire at once for one underlying reason:
+   the page itself scanned badly. Each of them alone reads as its own small
+   problem to go and fix by hand; together they're better read as "this
+   photograph is the problem" — and a clearer rescan fixes all of them in one
+   go, for less effort than correcting each field. Deliberately built only
+   from checks already computed here rather than a new server-side quality
+   score: it costs nothing, and it can only ever agree with what the
+   reviewer is already being shown.
+
+   Two is the threshold on purpose — any one of these fires routinely on a
+   perfectly good scan (a vendor really can print a wrong GSTIN, a total
+   really can round oddly), but a page failing two unrelated checks at once
+   is usually a page that was hard to read. */
+function ScanQualityBanner({ header, lines, gates, onRetry }) {
+  const rows = lines ?? [];
+  const signals = [];
+
+  if (header?.vendor_gstin && gstinChecksumOk(header.vendor_gstin) === false) {
+    signals.push("the vendor GSTIN fails its check digit");
+  }
+  const { badLines, headerMismatch } = checkArithmetic(header, rows);
+  if (headerMismatch || badLines.length) signals.push("the amounts don't add up");
+  const unmatched = rows.filter((l) => !l.material_id).length;
+  if (unmatched) {
+    signals.push(`${unmatched} line${unmatched === 1 ? "" : "s"} couldn't be matched to a material`);
+  }
+  if (gates?.missingFields?.length) {
+    signals.push("a reference number is missing");
+  }
+
+  if (signals.length < 2) return null;
+
+  return (
+    <div className="banner banner-warn">
+      <div>
+        This page looks like it scanned poorly — {signals.join(", ")}. A clearer photo or rescan
+        is likely to fix these together, and is usually quicker than correcting each field by hand.
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <button className="btn btn-out btn-xs" type="button" onClick={onRetry}>
+          Re-read this document
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* GSTIN's last character is a real check digit — false here means a
+   misread character, not a guess. Checked live against whatever's
+   currently in the field (see lib/gstin.js), not the server's
+   vendor_gstin_checksum_ok/vendor_gstin_is_self — those describe the
+   value at load time and go stale the moment a reviewer corrects it,
+   which is exactly when this banner most needs to go away. Non-blocking,
+   same as PoNumberBanner. */
+function GstinChecksumBanner({ header }) {
+  const bad = [];
+  if (header?.vendor_gstin && gstinChecksumOk(header.vendor_gstin) === false) bad.push(["Vendor", header.vendor_gstin]);
+  if (header?.buyer_gstin && gstinChecksumOk(header.buyer_gstin) === false) bad.push(["Buyer", header.buyer_gstin]);
+  if (gstinIsSelf(header?.vendor_gstin)) {
+    bad.push(["Vendor-self", header.vendor_gstin]);
+  }
+  if (!bad.length) return null;
+
+  return (
+    <div className="banner banner-warn">
+      {bad.map(([label, value]) => (
+        <div key={value + label}>
+          {label === "Vendor-self"
+            ? `Vendor GSTIN "${value}" matches B&B's own registration — vendor and buyer look swapped, please check.`
+            : `${label} GSTIN "${value}" fails its check digit — likely a misread character.`}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* Not a claim the numbers are wrong — a document can genuinely round oddly
+   — just that they don't add up the way the document itself implies, which
+   is worth a second look before saving. Non-blocking, same as the others. */
+export function ArithmeticBanner({ header, lines }) {
+  const { badLines, headerMismatch } = checkArithmetic(header, lines);
+  if (!badLines.length && !headerMismatch) return null;
+
+  return (
+    <div className="banner banner-warn">
+      {headerMismatch ? (
+        <div>The basic value, tax and rounding off don't add up to the total value — please check before saving.</div>
+      ) : null}
+      {badLines.length ? (
+        <div>
+          Quantity × rate doesn't match the amount on line{badLines.length > 1 ? "s" : ""}{" "}
+          {badLines.join(", ")} — please check before saving.
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /* Reviewer name + Save/Approve/Reject, right-aligned in the modal's own
    footer strip rather than inline in the scrolling body — the actions that
    finish a review stay in the same place regardless of how long the body
@@ -394,19 +589,18 @@ function DecisionFooter({ reviewer, setReviewer, busy, gates, onSave, onApprove,
       <button
         className="btn btn-quiet"
         onClick={onSave}
-        disabled={busy || gates.poNumberMissing}
-        title={gates.poNumberMissing ? "Enter PO number before save" : undefined}
+        disabled={busy || gates.missingFields.length > 0}
+        title={missingFieldsTitle(gates, "save")}
       >
         Save
       </button>
       <button
         className="btn btn-ink"
         onClick={onApprove}
-        disabled={busy || gates.typeMissing || gates.poNumberMissing}
+        disabled={busy || gates.typeMissing || gates.missingFields.length > 0}
         title={
           gates.typeMissing ? "Please fill a document type, eg: PO, Invoice"
-            : gates.poNumberMissing ? "Enter PO number before approving"
-            : undefined
+            : missingFieldsTitle(gates, "approving")
         }
       >
         Approve
@@ -416,20 +610,58 @@ function DecisionFooter({ reviewer, setReviewer, busy, gates, onSave, onApprove,
   );
 }
 
-/* Each gate's reason, keyed to the field it's actually about — HeaderFields
-   renders these right above that field's own label instead of bundled into
-   one banner down in the Decision section. */
-function fieldErrorsFor(gates) {
-  return {
+const FIELD_LABELS = {
+  po_number: "PO no.", doc_number: "Document no.",
+  dc_number: "DC / invoice no.", min_number: "MIN no.",
+};
+
+function missingFieldsTitle(gates, action) {
+  if (!gates.missingFields.length) return undefined;
+  const names = gates.missingFields.map((f) => FIELD_LABELS[f] ?? f).join(", ");
+  return `Enter ${names} before ${action}`;
+}
+
+/* Every problem this screen knows about, keyed to the field it's actually
+   about — HeaderFields renders each one under that field's own input, and
+   marks the input itself, rather than stacking banners at the top of the
+   modal for a reviewer to map back onto fields by hand. A banner is still
+   right for anything that isn't about one field (a bad scan overall, a
+   disagreement with another document); anything that *is* belongs here. */
+function fieldErrorsFor(gates, header, poNumberOptions) {
+  const errors = {
     doc_kind: gates.typeUnset || gates.typeOther
       ? "Please fill a document type, eg: PO, Invoice"
       : null,
-    po_number: gates.poNumberMissing ? "Enter PO number before save" : null,
   };
+  gates.missingFields.forEach((f) => {
+    errors[f] = `Enter ${FIELD_LABELS[f] ?? f} before save`;
+  });
+
+  // Checked live against what's in the field right now — see lib/gstin.js.
+  if (header?.vendor_gstin && gstinChecksumOk(header.vendor_gstin) === false) {
+    errors.vendor_gstin = "GSTIN mismatch, please check.";
+  } else if (gstinIsSelf(header?.vendor_gstin)) {
+    errors.vendor_gstin = "This is B&B's own registration — vendor and buyer look swapped.";
+  }
+  if (header?.buyer_gstin && gstinChecksumOk(header.buyer_gstin) === false) {
+    errors.buyer_gstin = "GSTIN mismatch, please check.";
+  }
+
+  // A referenced PO that isn't on file in this project — a typo, or a PO not
+  // uploaded yet. Never blocks saving (see PoNumberBanner's own note), so
+  // it's phrased as a check rather than a demand.
+  const referencesPo = ["INVOICE", "DELIVERY", "INWARD", "PURCHASE_BILL"].includes(header?.doc_kind);
+  const poNumber = String(header?.po_number ?? "").trim();
+  if (referencesPo && poNumber && !errors.po_number && !poNumberOptions.includes(poNumber)) {
+    errors.po_number = "No PO with this number in this project — check it, or upload that PO.";
+  }
+
+  return errors;
 }
 
 function Body({
-  header, lines, locked, gates, poNumberOptions, materials, rejecting, reason, setReason, err, busy, onHeader, onLine, onDecide,
+  header, lines, locked, gates, poNumberOptions, dcNumberOptions, materials, lineIssues,
+  rejecting, reason, setReason, err, busy, onHeader, onLine, onDecide,
 }) {
   if (!header) return <div className="empty">Loading…</div>;
 
@@ -439,10 +671,17 @@ function Body({
         header={header}
         locked={locked}
         onChange={onHeader}
-        fieldErrors={locked ? {} : fieldErrorsFor(gates)}
-        fieldOptions={{ po_number: poNumberOptions }}
+        fieldErrors={locked ? {} : fieldErrorsFor(gates, header, poNumberOptions)}
+        fieldOptions={{ po_number: poNumberOptions, dc_number: dcNumberOptions }}
       />
-      <LineItems lines={lines ?? []} materials={materials} locked={locked} onChange={onLine} header={header} />
+      <LineItems
+        lines={lines ?? []}
+        materials={materials}
+        locked={locked}
+        onChange={onLine}
+        header={header}
+        lineIssues={lineIssues}
+      />
 
       {locked ? null : (
         <div className="field-section">
