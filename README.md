@@ -88,6 +88,19 @@ as the dev machine.
 
 [Expo Go]: https://expo.dev/go
 
+### First-time setup after a clone
+
+Two env files, neither in git. Copy the templates beside them and fill in the keys — the
+templates document every variable, defaults included:
+
+```bash
+cp Backend/.env.example Backend/.env     # API key, session key
+cp FE/.env.example FE/.env               # console feature flags
+```
+
+Nothing else is missing: the SQLite schema, `poc.db` and `uploads/` all create themselves on
+first run.
+
 ### Backend
 
 ```bash
@@ -97,24 +110,32 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 `--host 0.0.0.0` is not optional — bound to localhost the phone cannot reach it. The startup
-banner prints the LAN URL to open. SQLite schema and `uploads/` are created on first run.
+banner prints the LAN URL to open.
 
-Extraction needs Claude credentials. Without them uploads still store fine and each document
-lands `FAILED` with the reason — nothing crashes, and `POST /api/v1/documents/{id}/extract`
-re-runs it once a key is set.
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-```
+Extraction needs a vision API key (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, whichever matches
+`EXTRACT_PROVIDER`). Without one, uploads still store fine and each document lands `FAILED`
+with the reason — nothing crashes, and `POST /api/v1/documents/{id}/extract` re-runs it once a
+key is set.
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | — | Claude credentials for extraction. Unset = every document fails |
-| `EXTRACT_MODEL` | `claude-opus-5` | Extraction model |
+| `EXTRACT_PROVIDER` | `anthropic` | Which vision engine reads documents — `anthropic` or `openai` |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | — | Credentials for that provider. Unset = every document fails |
+| `EXTRACT_MODEL` | `claude-opus-5` / `gpt-4o-mini` | Routine first-pass model |
+| `EXTRACT_MODEL_THOROUGH` | `claude-opus-5` / `gpt-4o` | Bigger model used by "Re-read this document" |
 | `SECRET_KEY` | `dev-insecure-key` | HMAC key for session tokens |
 | `SESSION_TTL` | `900` | Token lifetime, seconds |
 | `HOST_IP` | auto-detected | LAN IP advertised in the QR — set it on machines with Docker/VM adapters |
 | `PORT` | `8000` | Port advertised in the QR |
+
+### Console (FE)
+
+```bash
+cd FE
+npm install
+npm run dev      # dev server on :5173, proxied to the backend
+npm run build    # emits FE/dist/, which the backend serves at /
+```
 
 ### Mobile
 
