@@ -173,6 +173,20 @@ def host_ip() -> str:
         sock.close()
 
 
+def public_server_url() -> str:
+    """Where a phone should send its scans back to — the one address both the
+    QR payload and /api/v1/config need to agree on.
+
+    PUBLIC_SERVER_URL overrides this outright, for whenever the app sits
+    behind a public tunnel/domain rather than being reached over the LAN
+    directly. Unset, falls back to the LAN IP a phone on the office WiFi
+    would use.
+    """
+    if public_url := os.environ.get("PUBLIC_SERVER_URL"):
+        return public_url.rstrip("/")
+    return f"http://{host_ip()}:{PORT}"
+
+
 def get_project(project_id: str) -> sqlite3.Row:
     with db.db() as con:
         row = con.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
@@ -256,7 +270,7 @@ def new_session(project_id: str, created_by: str = "web") -> dict:
         # Only what the phone needs to reach us. The project name comes back
         # from /health instead, so there is one authoritative copy of it.
         "qr_payload": {
-            "serverUrl": f"http://{host_ip()}:{PORT}",
+            "serverUrl": public_server_url(),
             "sessionToken": token,
             "sessionId": session_id,
         },
@@ -430,16 +444,8 @@ app.mount("/assets", StaticFiles(directory=FE_DIST / "assets"), name="assets")
 @app.get("/api/v1/config")
 def console_config():
     """The one thing the console cannot work out for itself: which address a
-    phone has to reach to get here. Everything else it asks for by API.
-
-    PUBLIC_SERVER_URL overrides this outright — set it once the app sits
-    behind a public tunnel/domain, since a phone off the LAN can't reach
-    host_ip()'s address at all. Unset, it falls back to the LAN IP, which is
-    all a phone on the same office WiFi ever needed anyway.
-    """
-    if public_url := os.environ.get("PUBLIC_SERVER_URL"):
-        return {"server_url": public_url.rstrip("/")}
-    return {"server_url": f"http://{host_ip()}:{PORT}"}
+    phone has to reach to get here. Everything else it asks for by API."""
+    return {"server_url": public_server_url()}
 
 
 @app.get("/", response_class=HTMLResponse)
