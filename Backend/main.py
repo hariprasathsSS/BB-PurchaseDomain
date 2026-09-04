@@ -429,8 +429,16 @@ app.mount("/assets", StaticFiles(directory=FE_DIST / "assets"), name="assets")
 
 @app.get("/api/v1/config")
 def console_config():
-    """The one thing the console cannot work out for itself: which LAN address a
-    phone has to reach to get here. Everything else it asks for by API."""
+    """The one thing the console cannot work out for itself: which address a
+    phone has to reach to get here. Everything else it asks for by API.
+
+    PUBLIC_SERVER_URL overrides this outright — set it once the app sits
+    behind a public tunnel/domain, since a phone off the LAN can't reach
+    host_ip()'s address at all. Unset, it falls back to the LAN IP, which is
+    all a phone on the same office WiFi ever needed anyway.
+    """
+    if public_url := os.environ.get("PUBLIC_SERVER_URL"):
+        return {"server_url": public_url.rstrip("/")}
     return {"server_url": f"http://{host_ip()}:{PORT}"}
 
 
