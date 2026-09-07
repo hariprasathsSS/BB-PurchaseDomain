@@ -330,6 +330,12 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 }
 .projects-hero > .band { position: relative; z-index: 1; }
 .projects-below { position: relative; z-index: 1; }
+/* The generic .section margin-top (--s8, 64px) sat inside the hero's own
+   90px photo overhang (see .projects-hero::before's EXTRA), so the toolbar
+   card's top edge landed in the overhang's still-fading tail instead of
+   clear canvas. Push it past the overhang itself, with a bit of the usual
+   spacing on top, instead of relying on --s8 to happen to be enough. */
+.projects-below .section { margin-top: calc(90px + var(--s12)); }
 /* The hero's own padding already supplies the first half of the standard
    heading offset (see .pagetitle), so the heading inside it only owes the
    second — otherwise this page's title would sit --s6 lower than Home's. */
@@ -687,11 +693,11 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 /* Each number in its own soft chip rather than a bare column — reads as a
    small dashboard strip, not a row of stray digits. */
 .tally {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
   gap: 8px; margin-top: auto; padding-top: 16px; border-top: 1px solid var(--hair);
 }
 .tally div {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden;
   padding: 8px 10px; border-radius: var(--r-btn); background: var(--hover);
 }
 .tally svg { flex: none; color: var(--slate); }
@@ -699,7 +705,16 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
   display: block; font-family: var(--mono); font-size: 17px; font-weight: 600; line-height: 1;
   font-variant-numeric: tabular-nums;
 }
-.tally span { display: block; margin-top: 3px; font-size: 10px; font-weight: 700; letter-spacing: var(--wide); text-transform: uppercase; color: var(--slate); }
+/* A one-word label (DOCUMENTS, AWAITING) has nowhere to break, so at a
+   narrow zoom/viewport it used to run past its own chip and get painted over
+   by the next chip's background instead of just wrapping — min-width:0 above
+   lets the flex/grid item actually shrink instead of holding its content's
+   natural width, and this lets a label that still doesn't fit wrap onto a
+   second line within its own box rather than bleed sideways into it. */
+.tally span {
+  display: block; margin-top: 3px; font-size: 10px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate); overflow-wrap: break-word;
+}
 .tally .hot { background: var(--warn-bg); }
 .tally .hot b, .tally .hot svg { color: var(--warn-fg); }
 
