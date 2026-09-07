@@ -247,7 +247,14 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
    Five zones, and only two of them are cards — what needs doing, and the
    portfolio. The rest sits on the cream so the page does not read as a
    stack of floating boxes. */
+/* The first section after the hero needs less of its own top margin than a
+   section following another section would: the hero already spends --s3 of
+   its own bottom padding fading into the canvas before this margin even
+   starts, so the full --s6 here would double up into the ~96px dead zone
+   this rule used to produce. Every other inter-section gap keeps --s6. */
 #tab-home .section { margin-top: var(--s6); }
+#tab-home .home-below > .section:first-of-type { margin-top: var(--s3); }
+#tab-home .section-analytics { margin-top: var(--s4); }
 
 /* A photo band behind the pitch only — .home-hero itself carries no
    background and no forced height: it still sizes exactly to hero-copy's
@@ -280,7 +287,7 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
    that amount — that's the gap between the nav and the photo. Padding here
    doesn't collapse, so the photo starts flush with the nav while the text
    still gets the same spacing (moved off .hero-copy's own margin-top below). */
-.home-hero { position: relative; padding-top: var(--s6); }
+.home-hero { position: relative; padding-top: var(--s4); }
 .home-hero::before {
   content: "";
   position: absolute;
@@ -327,11 +334,12 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
    heading offset (see .pagetitle), so the heading inside it only owes the
    second — otherwise this page's title would sit --s6 lower than Home's. */
 .projects-hero .pagetitle { margin-top: var(--s3); }
-/* This page's count tag sits in the strip the hero photo overhangs, so the
-   quiet slate .tag wears elsewhere disappears into the image. White, with a
-   border to match, it reads against the photo — the tag on every other page
-   is untouched. */
-.projects-below .tag {
+/* The count tag sits directly in the hero copy now, over the photo, so the
+   quiet slate .tag worn elsewhere would disappear into the image. White,
+   with a border to match, it reads against the photo — the tag on every
+   other page is untouched. */
+.projects-hero .tag {
+  display: inline-flex; margin-top: var(--s3);
   color: #fff; font-weight: 600; border-color: rgba(255, 255, 255, .45);
 }
 /* Light text over the photo, same as the home hero's own copy. */
@@ -339,7 +347,6 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 .projects-hero .eyebrow::before { background: #fff; }
 .projects-hero .pagetitle h1 { color: #fff; }
 .projects-hero .pagetitle .lede { color: rgba(255, 255, 255, .82); }
-
 .hero-copy { padding-top: var(--s3); }
 .hero-copy h1 { margin-top: var(--s2); }
 .hero-copy .lede { margin-top: var(--s2); font-size: 17px; color: var(--slate); max-width: 46ch; }
@@ -353,74 +360,279 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 .home-hero .hero-copy h1 { color: #fff; }
 .home-hero .hero-copy .lede { color: rgba(255, 255, 255, .82); }
 
-/* ── dashboard metrics ────────────────────────────────────────────────────── */
-/* Two tiers, the way a real ops dashboard reads: the totals first — bigger,
-   inked, a little weight to them — then the status breakdown as a lighter
-   row underneath. Same information as one flat grid would show, but the
-   hierarchy tells a reader which numbers are the headline and which are the
-   detail, instead of leaving all seven to read as equally important. */
-.metrics-primary {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--s3);
+.home-hero .hero-copy { padding-bottom: var(--s3); }
+
+/* The hero's own row: pitch on the left, one quiet line of positioning copy
+   on the right — a glass chip on the photo, never a second CTA. */
+.hero-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s4); }
+.hero-badge {
+  flex: none; display: flex; align-items: center; gap: 12px;
+  margin-top: calc(var(--s2) + var(--s3)); padding: 12px 18px; max-width: 250px;
+  background: rgba(244, 247, 249, .1); border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: var(--r-btn);
 }
-.metric-card-primary {
+.hero-badge .badge-icon {
+  flex: none; width: 34px; height: 34px; border-radius: 8px;
+  display: grid; place-items: center; background: rgba(255, 255, 255, .14); color: #fff;
+}
+.hero-badge .badge-text { font-size: 12px; line-height: 1.4; color: rgba(255, 255, 255, .88); }
+@media (max-width: 860px) { .hero-badge { display: none; } }
+
+/* ── dashboard metrics ────────────────────────────────────────────────────── */
+/* Each KPI is a tinted icon tile, a label, a value and a trend line, with a
+   soft decorative sparkline (not real data — see Sparkline in
+   DashboardMetrics.jsx) bled into the card's own corner. */
+.kpi-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--s3);
+}
+.kpi-card {
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; align-items: flex-start;
+  width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; appearance: none;
   background: var(--surface); border: 1px solid var(--hair); border-radius: var(--r-stad);
-  padding: var(--s4); box-shadow: var(--lift-1);
+  padding: var(--s3); box-shadow: var(--lift-1);
   transition: transform .15s ease, box-shadow .15s ease;
 }
-.metric-card-primary:hover { transform: translateY(-2px); box-shadow: var(--lift-2); }
-.metric-card-primary .metric-icon.tone-primary {
-  width: 42px; height: 42px; background: var(--ink); color: var(--text-invert);
+.kpi-card:hover { transform: translateY(-2px); box-shadow: var(--lift-2); }
+.kpi-icon {
+  position: relative; z-index: 1; flex: none; width: 42px; height: 42px; margin-bottom: 14px;
+  display: grid; place-items: center; border-radius: var(--r-btn);
+  background: var(--kpi-bg); color: var(--kpi-fg);
 }
-.metric-card-primary .metric-value { font-size: 34px; }
-.metric-card-primary .metric-value.is-money { font-size: 26px; }
-.metric-card-primary .metric-label { font-size: 14px; }
+.kpi-icon .rupee-icon { font-family: var(--mono); font-size: 18px; font-weight: 700; }
+.kpi-label { position: relative; z-index: 1; font-size: 13.5px; color: var(--slate); }
+.kpi-value {
+  position: relative; z-index: 1;
+  margin-top: 4px; font-family: var(--mono); font-size: 30px; font-weight: 600;
+  letter-spacing: -0.02em; line-height: 1.15; color: var(--ink);
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+.kpi-value.is-money { font-size: 23px; }
+.kpi-trend {
+  position: relative; z-index: 1;
+  margin-top: 10px; display: flex; align-items: baseline; gap: 6px; font-size: 12.5px;
+}
+.kpi-delta { font-weight: 700; }
+.kpi-delta.trend-ok   { color: var(--ok-fg); }
+.kpi-delta.trend-bad  { color: var(--bad-fg); }
+.kpi-delta.trend-flat { color: var(--dust); }
+.kpi-trend-caption { color: var(--slate); }
 
-.metrics-status {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--s2);
-  margin-top: var(--s2);
-}
-.metric-card-status {
-  display: flex; align-items: center; gap: 14px;
-  background: var(--surface); border: 1px solid var(--hair); border-radius: var(--r-btn);
-  padding: 14px var(--s3);
-}
-.metric-card-status .metric-value.is-compact { font-size: 22px; }
-.metric-card-status .metric-label { font-size: 12.5px; margin-top: 1px; }
+/* Per-card tint — the same colour drives the icon tile and the sparkline
+   behind it. "Steel" is the app's own brand accent, tinted the way a
+   semantic token already is (pale mix behind, full colour on the glyph),
+   so "Documents captured" reads as the app's own blue without repeating
+   the exact info-blue "Active projects" already owns. */
+.kpi-card.tone-blue  { --kpi-bg: var(--info-bg); --kpi-fg: var(--info-fg); }
+.kpi-card.tone-green { --kpi-bg: var(--ok-bg);   --kpi-fg: var(--ok-fg); }
+.kpi-card.tone-steel { --kpi-bg: color-mix(in srgb, var(--accent) 14%, white); --kpi-fg: var(--accent); }
+.kpi-spark { position: absolute; right: 0; bottom: 0; width: 58%; height: 56%; color: var(--kpi-fg); opacity: .55; }
 
-.metric-icon {
-  flex: none; margin-bottom: var(--s2);
-  display: grid; place-items: center; border-radius: 50%;
-}
-.metric-card-status .metric-icon { width: 36px; height: 36px; margin-bottom: 0; }
-.metric-icon.tone-ok    { background: var(--ok-bg);   color: var(--ok-fg); }
-.metric-icon.tone-bad   { background: var(--bad-bg);  color: var(--bad-fg); }
-.metric-icon.tone-warn  { background: var(--warn-bg); color: var(--warn-fg); }
-.metric-icon.tone-info  { background: var(--info-bg); color: var(--info-fg); }
-.metric-value {
-  font-family: var(--mono); font-size: 32px; font-weight: 500;
-  letter-spacing: -0.03em; line-height: 1; color: var(--ink);
-  font-variant-numeric: tabular-nums;
-}
-.metric-label { margin-top: 6px; font-size: 13.5px; color: var(--slate); }
+@media (max-width: 640px) { .kpi-grid { grid-template-columns: 1fr; } }
 
+/* One lead tile plus four status pills — small plain-line icons (no colored
+   circle wrapper, no corner watermark), a hint of tint rather than a full
+   wash, and no arrow: the whole tile is the click target into Documents.
+   Only Awaiting approval keeps a stronger tint and a colored value, since
+   it's still the one status asking someone to act; the rest read in plain
+   ink so the row stays calm rather than a strip of four solid colors. */
+.status-grid {
+  display: grid; grid-template-columns: 1.2fr repeat(4, minmax(150px, 1fr)); gap: var(--s2);
+  margin-top: var(--s3);
+}
+.status-tile {
+  display: flex; flex-direction: column; align-items: flex-start;
+  width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; appearance: none;
+  border: 1px solid var(--hair); border-radius: var(--r-stad);
+  padding: 14px 18px;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.status-tile:hover { transform: translateY(-2px); box-shadow: var(--lift-1); }
+.status-icon { flex: none; width: 18px; height: 18px; margin-bottom: 8px; color: var(--tile-fg); }
+.status-value {
+  font-family: var(--mono); font-size: 22px; font-weight: 600; line-height: 1.15;
+  color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.status-label { margin-top: 2px; font-size: 12.5px; color: var(--slate); }
+.status-title { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.status-sub { margin-top: 2px; font-size: 12px; color: var(--slate); }
+
+.status-tile.tone-lead, .status-tile.tone-gray {
+  --tile-fg: var(--slate); background: var(--surface); border-color: var(--hair);
+}
+.status-tile.tone-ok {
+  --tile-fg: var(--ok-fg);
+  background: color-mix(in srgb, var(--ok-bg) 40%, white);
+  border-color: color-mix(in srgb, var(--ok-fg) 20%, white);
+}
+.status-tile.tone-bad {
+  --tile-fg: var(--bad-fg);
+  background: color-mix(in srgb, var(--bad-bg) 40%, white);
+  border-color: color-mix(in srgb, var(--bad-fg) 20%, white);
+}
+.status-tile.tone-warn {
+  --tile-fg: var(--warn-fg);
+  background: color-mix(in srgb, var(--warn-bg) 55%, white);
+  border-color: color-mix(in srgb, var(--warn-fg) 35%, white);
+}
+.status-tile.tone-warn .status-value { color: var(--tile-fg); }
+
+@media (max-width: 900px) { .status-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .status-grid { grid-template-columns: 1fr; } }
+
+/* ── analytics charts ─────────────────────────────────────────────────────
+   Two cards only: a larger bar chart (the number reviewers act on — which
+   project's spend needs a look) and a smaller donut (the mix of paper this
+   portfolio is made of). Both hand-rolled in CSS/SVG-free markup — a chart
+   library is a heavy dependency for two shapes this simple, and the point of
+   this page is to stay calm, not showcase a charting stack. */
+.analytics-grid {
+  display: grid; grid-template-columns: 2fr 1fr; gap: var(--s3); align-items: stretch;
+}
+.chart-card {
+  min-width: 0; background: var(--surface); border: 1px solid var(--hair); border-radius: var(--r-stad);
+  padding: var(--s4); box-shadow: var(--lift-1);
+}
+.chart-card h3 { font-size: 16px; }
+.chart-card .chart-sub { margin-top: 3px; font-size: 13px; color: var(--slate); }
+.chart-empty { margin-top: var(--s3); font-size: 14px; color: var(--dust); }
+
+.chart-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s2); }
+.chart-filter { flex: none; max-width: 150px; }
+.ctl-xs { min-height: 32px; padding: 0 10px 0 12px; font-size: 12.5px; }
+
+/* Bar chart: an axis column of tick labels beside a row of columns, each a
+   flex item stacked bottom-up so its <span class="bar"> height alone (a
+   plain percentage, set inline per row) draws the whole shape. */
+.bar-chart { display: flex; gap: var(--s2); margin-top: var(--s4); height: 250px; }
+.bar-chart-axis {
+  display: flex; flex-direction: column; justify-content: space-between;
+  font-size: 11.5px; color: var(--dust); text-align: right; padding-bottom: 28px;
+}
+.bar-chart-plot {
+  flex: 1; min-width: 0; display: flex; align-items: flex-end; gap: var(--s2);
+  border-left: 1px solid var(--hair); border-bottom: 1px solid var(--hair);
+  padding-left: var(--s2);
+}
+.bar-col {
+  flex: 1; min-width: 0; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+}
+.bar-value { font-size: 11.5px; font-weight: 500; color: var(--slate); margin-bottom: 6px; }
+.bar {
+  width: 60%; min-height: 3px; border-radius: 3px 3px 0 0;
+  background: color-mix(in srgb, var(--accent) 62%, white);
+}
+/* Two-line clamp rather than a single-line ellipsis: a name's min-content
+   contribution to the flex column above is just its longest word this way
+   (wrapping text can always break), where white-space:nowrap would have
+   forced the whole unwrapped string's width up through bar-col into the
+   chart's own layout — percentage max-width doesn't stop that, since
+   percentages are indeterminate at intrinsic-size time. */
+.bar-label {
+  margin-top: 10px; font-size: 11.5px; color: var(--slate); text-align: center;
+  width: 100%; word-break: break-word;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* Donut: a conic-gradient ring with a plain surface-colour circle punched in
+   the middle — no SVG, no library, and it re-colours from CSS custom
+   properties the same as every other chrome on the page. */
+.donut-chart { display: flex; flex-direction: column; align-items: center; gap: var(--s3); margin-top: var(--s4); }
+.donut-ring {
+  width: 148px; height: 148px; border-radius: 50%;
+  display: grid; place-items: center; flex: none;
+}
+.donut-center {
+  width: 62%; height: 62%; border-radius: 50%; background: var(--surface);
+  display: grid; place-items: center; text-align: center;
+}
+.donut-total { font-family: var(--mono); font-size: 24px; font-weight: 500; color: var(--ink); line-height: 1; }
+.donut-total-label { margin-top: 3px; font-size: 11px; color: var(--slate); }
+.donut-legend { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.donut-legend li { display: flex; align-items: center; gap: 9px; font-size: 13px; min-width: 0; }
+.legend-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; border: 1px solid var(--line); }
+.legend-label {
+  flex: 1; min-width: 0; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.legend-count { font-family: var(--mono); color: var(--slate); }
+.legend-pct { font-family: var(--mono); width: 3.5ch; text-align: right; color: var(--dust); }
+
+.dash-footer { margin-top: var(--s3); font-size: 12.5px; color: var(--dust); }
+
+@media (max-width: 900px) {
+  .analytics-grid { grid-template-columns: 1fr; }
+}
 @media (max-width: 640px) {
-  .metrics-primary { grid-template-columns: 1fr; }
-  .metrics-status { grid-template-columns: repeat(2, 1fr); }
+  .bar-chart { height: 210px; }
+  .bar-chart-axis { display: none; }
+  .bar-chart-plot { border-left: 0; padding-left: 0; }
 }
+
+/* ── projects toolbar ─────────────────────────────────────────────────────
+   A real card (.explorer, otherwise unused on this page but already built
+   for exactly this — a search-plus-filters bar), one row: search, then
+   status and sort each collapsed to their current value until touched, then
+   the grid/list switch. Nothing sits permanently expanded — a segmented row
+   of every status, shown open at all times, was more filter than the page
+   needed to offer up front. */
+.explorer.projects-toolbar-card { margin-bottom: var(--s4); overflow: visible; }
+.projects-toolbar-card .explorer-bar { flex-wrap: nowrap; }
+@media (max-width: 720px) { .projects-toolbar-card .explorer-bar { flex-wrap: wrap; } }
+
+.toolbar-search {
+  display: flex; align-items: center; gap: 9px;
+  flex: 1 1 220px; max-width: 340px; min-height: 42px; padding: 0 16px;
+  border: 1px solid transparent; border-radius: var(--r-pill);
+  background: var(--canvas); color: var(--dust);
+  transition: border-color .14s ease, background .14s ease, box-shadow .14s ease;
+}
+.toolbar-search:focus-within { border-color: var(--ink); background: var(--surface); color: var(--slate); box-shadow: var(--lift-1); }
+.toolbar-search input {
+  flex: 1; min-width: 0; border: 0; background: none; outline: none;
+  font-family: inherit; font-size: 14.5px; color: var(--ink);
+}
+
+/* Status and sort: a floating list of plain options (the same .combo/
+   .combo-menu Combobox.jsx builds a suggestion list out of), not a native
+   <select> — the one control a browser insists on rendering its own way no
+   matter how the rest of the app looks. Collapsed to "Label: current value"
+   until clicked, same as a Windows column-filter dropdown. */
+.filter-combo { flex: none; }
+.filter-trigger { display: inline-flex; align-items: center; gap: 10px; justify-content: space-between; min-width: 168px; cursor: pointer; }
+/* .ctl:focus turns the border ink on any focus, mouse clicks included — so
+   opening the menu (or clicking away to dismiss it) left the trigger
+   permanently looking "active" even once closed, indistinguishable from an
+   applied filter. :focus-visible only fires for real keyboard focus, which
+   is the only time an outline is actually earning its keep here. */
+.filter-trigger:focus:not(:focus-visible) { border-color: var(--line); }
+.filter-chevron { color: var(--slate); transition: transform .14s ease; transform: rotate(90deg); }
+.filter-chevron.is-open { transform: rotate(-90deg); }
+/* Both lists are short and fixed (five statuses, four sorts) — never long
+   enough to need their own scrollbar, so the base .combo-menu's max-height
+   (sized for Combobox.jsx's much longer suggestion lists) only clipped them
+   and forced one in here for no reason. */
+.filter-combo .combo-menu { left: auto; right: 0; width: max-content; min-width: 100%; max-height: none; overflow: visible; }
+.combo-menu button.is-selected { color: var(--ink); font-weight: 600; }
+
+/* Same track-with-a-filled-pressed-state construction as .seg, just square
+   icon buttons instead of labelled pills — a layout switch reads as an
+   instrument, not a pair of tabs. */
+.view-toggle { display: inline-flex; gap: 4px; padding: 4px; background: var(--canvas); border-radius: var(--r-btn); flex: none; }
+.view-toggle button {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border: 0; border-radius: calc(var(--r-btn) - 3px);
+  background: none; color: var(--slate); cursor: pointer;
+}
+.view-toggle button:hover { color: var(--ink); }
+.view-toggle button[aria-pressed="true"] { background: var(--ink); color: var(--text-invert); }
 
 /* ── project tiles ────────────────────────────────────────────────────────── */
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--s3); }
 
 .tile {
   display: flex; flex-direction: column; gap: 18px;
-  /* Grid only stretches cards to match the tallest one in their own row —
-     a project with a longer name or a wrapped tally row made that row
-     taller than the next one down, so cards looked uneven from row to
-     row even though each row was internally consistent. A shared
-     min-height gives every row the same floor regardless of what's
-     actually in it, so only real outliers (a name long enough to wrap
-     to a third line) still grow past it. */
-  min-height: 320px;
   padding: var(--s4);
   background: var(--surface);
   border: 1.5px solid transparent;
@@ -440,7 +652,13 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
    generated code is only ever an ID, printed small and muted right next to
    it, the way a greyed-out/disabled field reads rather than a second
    headline. */
-.tile-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+/* Reserves exactly two lines of the name below — the one part of the card
+   whose content genuinely varies (a long project name wraps, a short one
+   doesn't) — so every card gets the same header height without a made-up
+   whole-card floor. Grid's own default stretch (nothing overrides
+   align-items on .tiles) is still there underneath as a safety net for the
+   rare name that wraps to a third line. */
+.tile-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; min-height: 58px; }
 .tile .name { font-size: 22px; font-weight: 700; letter-spacing: var(--tight); }
 .tile .code {
   font-family: var(--mono); font-size: 12px; font-weight: 500;
@@ -466,29 +684,51 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 /* Each number in its own soft chip rather than a bare column — reads as a
    small dashboard strip, not a row of stray digits. */
 .tally {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
   gap: 8px; margin-top: auto; padding-top: 16px; border-top: 1px solid var(--hair);
 }
 .tally div {
-  display: flex; flex-direction: column; gap: 3px;
+  display: flex; align-items: center; gap: 8px;
   padding: 8px 10px; border-radius: var(--r-btn); background: var(--hover);
 }
+.tally svg { flex: none; color: var(--slate); }
 .tally b {
-  font-family: var(--mono); font-size: 19px; font-weight: 600; line-height: 1;
+  display: block; font-family: var(--mono); font-size: 17px; font-weight: 600; line-height: 1;
   font-variant-numeric: tabular-nums;
 }
-.tally span { font-size: 10px; font-weight: 700; letter-spacing: var(--wide); text-transform: uppercase; color: var(--slate); }
+.tally span { display: block; margin-top: 3px; font-size: 10px; font-weight: 700; letter-spacing: var(--wide); text-transform: uppercase; color: var(--slate); }
 .tally .hot { background: var(--warn-bg); }
-.tally .hot b { color: var(--warn-fg); }
+.tally .hot b, .tally .hot svg { color: var(--warn-fg); }
 
 .tile-actions { display: flex; align-items: center; gap: 12px; }
 .tile-actions .spacer { flex: 1; }
+
+/* List layout: the same project, the same facts, read as a row instead of a
+   card — for scanning a longer portfolio down the page rather than across a
+   grid. Same status pill and tally numbers as the tile, just laid out flat. */
+.plist { display: flex; flex-direction: column; gap: var(--s2); }
+.prow {
+  display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap;
+  padding: 18px var(--s4);
+  background: var(--surface); border: 1.5px solid transparent; border-radius: var(--r-stad);
+  box-shadow: var(--lift-1);
+}
+.prow.is-hot { border-color: var(--warn-fg); }
+.prow-main { flex: 1 1 240px; min-width: 0; }
+.prow-main .tile-status { margin-bottom: 8px; }
+.prow-tally { display: flex; gap: var(--s4); flex-wrap: wrap; }
+.prow-tally div { display: flex; align-items: center; gap: 8px; min-width: 84px; }
+.prow-tally svg { flex: none; color: var(--slate); }
+.prow-tally b { display: block; font-family: var(--mono); font-size: 17px; font-weight: 600; }
+.prow-tally span { display: block; margin-top: 2px; font-size: 10px; font-weight: 700; letter-spacing: var(--wide); text-transform: uppercase; color: var(--slate); }
+.prow-tally .hot b, .prow-tally .hot svg { color: var(--warn-fg); }
+.prow-actions { display: flex; align-items: center; gap: 12px; flex: none; }
 
 /* Add tile: outlined, not a filled slab. A big dark block outweighs the
    projects beside it — a site is registered monthly, an invoice hourly. */
 .tile-add {
   display: grid; place-content: center; justify-items: center; gap: 6px;
-  min-height: 250px; padding: var(--s4);
+  min-height: 296px; padding: var(--s4);
   background: transparent;
   border: 1.5px solid var(--line); border-radius: var(--r-stad);
   text-align: center; color: inherit; font: inherit; cursor: pointer;
@@ -1358,6 +1598,87 @@ table.lines tbody td:nth-child(3) .input { max-width: 260px; }
 /* Named, not counted — "3 missing" tells a reviewer there's a gap but not
    which one to go chase down; the comma list does. */
 .compare-missing { font-size: 13px; color: var(--warn-fg); padding: 0 2px 6px; }
+
+/* ── document preview (PO tab's aside) ────────────────────────────────────
+   Replaces the old bare stacked images: a real header (what this is, plus
+   the one-tap escape hatch to the full-size original), the page itself,
+   and — once there's more than one page, or the image is zoomed past its
+   own natural size — the controls to move through it. */
+.doc-preview-head { display: flex; align-items: flex-start; gap: var(--s2); padding: var(--s3) var(--s3) 0; }
+.doc-preview-head h3 { font-size: 15px; }
+.doc-preview-frame {
+  margin: var(--s2) var(--s3) 0;
+  border-radius: var(--r-btn); border: 1px solid var(--hair);
+  background: var(--canvas);
+  overflow: auto;
+  max-height: 60vh;
+}
+.doc-preview-frame img {
+  display: block; width: 100%; height: auto;
+  transform-origin: top center;
+  transition: transform .15s ease;
+}
+.doc-preview-controls {
+  display: flex; align-items: center; gap: 4px;
+  padding: var(--s2) var(--s3) var(--s3);
+}
+.doc-preview-page { font-family: var(--mono); font-size: 12.5px; color: var(--slate); padding: 0 6px; white-space: nowrap; }
+.doc-preview-nav {
+  width: 32px; height: 32px; flex: none;
+  display: grid; place-items: center;
+  border: 1px solid var(--line); border-radius: var(--r-btn);
+  background: var(--surface); color: var(--ink); cursor: pointer;
+}
+.doc-preview-nav:hover:not(:disabled) { background: var(--canvas); }
+.doc-preview-nav:disabled { opacity: .4; cursor: not-allowed; }
+.doc-preview-nav.prev svg { transform: scaleX(-1); }
+
+/* ── aside cards shared by Delivery Summary / Timeline / Issues ──────────── */
+.aside-card-head { display: flex; align-items: flex-start; gap: 12px; padding: var(--s3) var(--s3) 0; }
+.compare-links .aside-card-head { padding-top: var(--s3); }
+.aside-card-head h3 {
+  font-size: 12px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate);
+}
+.aside-card-sub { display: block; margin-top: 2px; font-size: 12.5px; color: var(--dust); }
+.aside-card-icon {
+  flex: none; width: 32px; height: 32px; margin-top: -2px;
+  display: grid; place-items: center; border-radius: var(--r-btn);
+  background: var(--info-bg); color: var(--info-fg);
+}
+.aside-card-icon-warn { background: var(--warn-bg); color: var(--warn-fg); }
+
+.kv-list { margin: var(--s2) 0 0; padding: 0 var(--s3) var(--s3); }
+.kv-list div {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
+  padding: 9px 0; border-top: 1px solid var(--hair);
+}
+.kv-list div:first-child { border-top: 0; }
+.kv-list dt { font-size: 13px; color: var(--slate); }
+.kv-list dd { margin: 0; font-size: 14px; font-weight: 500; text-align: right; }
+
+/* A dot-and-line rail down the left edge, each entry's own status colour on
+   its dot (the same d-ok/d-no/d-ink discs the rest of the app already
+   uses) — the trailing "Next delivery" entry is always present and always
+   muted, a placeholder rather than a forecast this data can't make. */
+.timeline { list-style: none; margin: var(--s2) 0 0; padding: 0 var(--s3) var(--s3); }
+.timeline li {
+  position: relative;
+  display: flex; gap: 12px;
+  padding: 0 0 var(--s3) 22px;
+  border-left: 1.5px solid var(--hair);
+  margin-left: 5px;
+}
+.timeline li:last-child { border-left-color: transparent; padding-bottom: 0; }
+.timeline li.is-future { color: var(--dust); }
+.timeline-dot {
+  position: absolute; left: -6.5px; top: 2px;
+  width: 11px; height: 11px; border-radius: 50%;
+  border: 2px solid var(--surface);
+}
+.timeline-date { font-size: 13px; font-weight: 600; color: var(--ink); }
+.timeline li.is-future .timeline-date { color: var(--dust); font-weight: 500; }
+.timeline-desc { margin-top: 2px; font-size: 12.5px; line-height: 1.5; color: var(--slate); }
 
 /* ── Purchase Bot ─────────────────────────────────────────────
    A docked panel, not a modal: the answer is read against the screen behind it,

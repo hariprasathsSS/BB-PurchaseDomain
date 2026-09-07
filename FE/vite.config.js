@@ -12,6 +12,10 @@ export default defineConfig({
       "/api": "http://localhost:8000",
       "/uploads": "http://localhost:8000",
     },
+    // .shots holds a live browser-automation profile (screenshots/CDP tooling),
+    // not source — its files get locked/rewritten while a browser session is
+    // open, which crashes Vite's fs watcher (EBUSY) if it tries to watch them.
+    watch: { ignored: ["**/.shots/**"] },
   },
   build: { outDir: "dist", emptyOutDir: true },
 });

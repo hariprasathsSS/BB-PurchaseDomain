@@ -93,6 +93,21 @@ export const IconCheck = (p) => (
   <svg {...base} {...p}><path d="M20 6L9 17l-5-5" /></svg>
 );
 
+/* Circle-enclosed variants — one glyph carries its own "badge" shape, so a
+   status tile doesn't need a separate colored circle wrapper behind a plain
+   glyph just to read as a status icon. */
+export const IconCheckCircle = (p) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="8.5" /><path d="M8.2 12.3l2.4 2.4L15.8 9" />
+  </svg>
+);
+
+export const IconXCircle = (p) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="8.5" /><path d="M9 9l6 6M15 9l-6 6" />
+  </svg>
+);
+
 /* Rotated 90deg via .is-open rather than swapped for a down-chevron: one
    element, one transition, instead of two icons crossfading. */
 export const IconChevron = (p) => (
@@ -119,4 +134,100 @@ export const IconTrash = (p) => (
 
 export const IconClock = (p) => (
   <svg {...base} {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3.2 2" /></svg>
+);
+
+export const IconGrid = (p) => (
+  <svg {...base} {...p}>
+    <rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.5" />
+    <rect x="13" y="3.5" width="7.5" height="7.5" rx="1.5" />
+    <rect x="3.5" y="13" width="7.5" height="7.5" rx="1.5" />
+    <rect x="13" y="13" width="7.5" height="7.5" rx="1.5" />
+  </svg>
+);
+
+export const IconList = (p) => (
+  <svg {...base} {...p}>
+    <path d="M8 6h13" /><path d="M8 12h13" /><path d="M8 18h13" />
+    <path d="M3.5 6h.01" /><path d="M3.5 12h.01" /><path d="M3.5 18h.01" />
+  </svg>
+);
+
+/* A lined document — the page count, distinct from IconFile's plain folded
+   corner (the document count) beside it. */
+export const IconPages = (p) => (
+  <svg {...base} {...p}>
+    <path d="M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+    <path d="M9 8h6M9 12h6M9 16h4" />
+  </svg>
+);
+
+/* An open crate — what a purchase order actually is, materials packaged up
+   and on their way. */
+export const IconPackage = (p) => (
+  <svg {...base} {...p}>
+    <path d="M21 8l-9-5-9 5 9 5 9-5z" /><path d="M3 8v8l9 5 9-5V8" /><path d="M12 13v8" />
+  </svg>
+);
+
+/* Stacked stock — the material rollup, one slab per kind on site. */
+export const IconLayers = (p) => (
+  <svg {...base} {...p}>
+    <path d="M12 3l9 5-9 5-9-5 9-5z" /><path d="M3 13l9 5 9-5" /><path d="M3 18l9 5 9-5" />
+  </svg>
+);
+
+export const IconEye = (p) => (
+  <svg {...base} {...p}>
+    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+export const IconBuilding = (p) => (
+  <svg {...base} {...p}>
+    <rect x="4" y="7" width="7" height="13" rx="1" /><rect x="13" y="3" width="7" height="17" rx="1" />
+    <path d="M7 11h1M7 14h1M7 17h1M16 7h1M16 10h1M16 13h1M16 16h1" />
+  </svg>
+);
+
+export const IconExternalLink = (p) => (
+  <svg {...base} {...p}>
+    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    <path d="M15 3h6v6" /><path d="M10 14L21 3" />
+  </svg>
+);
+
+export const IconZoomIn = (p) => (
+  <svg {...base} {...p}>
+    <circle cx="11" cy="11" r="6.5" /><path d="M16 16l4 4" /><path d="M11 8.5v5M8.5 11h5" />
+  </svg>
+);
+
+export const IconZoomOut = (p) => (
+  <svg {...base} {...p}>
+    <circle cx="11" cy="11" r="6.5" /><path d="M16 16l4 4" /><path d="M8.5 11h5" />
+  </svg>
+);
+
+/* The delivery — materials packaged and moving, the same idea IconPackage
+   already stands for, just in transit rather than sitting on a shelf. */
+export const IconTruck = (p) => (
+  <svg {...base} {...p}>
+    <rect x="1.5" y="7" width="13" height="10" rx="1" />
+    <path d="M14.5 10h4l3 3.5V17h-7z" />
+    <circle cx="6" cy="18.5" r="1.8" /><circle cx="17.5" cy="18.5" r="1.8" />
+  </svg>
+);
+
+/* A machine read this, not a person — the badge beside "AI extracted". */
+export const IconSparkle = (p) => (
+  <svg {...base} {...p}>
+    <path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6z" />
+  </svg>
+);
+
+export const IconAlertTriangle = (p) => (
+  <svg {...base} {...p}>
+    <path d="M12 4l9.5 16H2.5z" /><path d="M12 10v4" /><path d="M12 17.5h.01" />
+  </svg>
 );

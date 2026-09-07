@@ -1,6 +1,9 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { StatusPill, TypePill } from "../../components/Pills.jsx";
-import { IconArrow, IconBack, IconCheck, IconChevron, IconClose, IconTrash } from "../../components/Icons.jsx";
+import {
+  IconAlertTriangle, IconArrow, IconBack, IconCheck, IconChevron, IconClock, IconClose,
+  IconExternalLink, IconTrash, IconTruck, IconZoomIn, IconZoomOut,
+} from "../../components/Icons.jsx";
 import { AddDocumentMenu } from "../../components/AddDocumentMenu.jsx";
 import { DocumentsSection } from "../../components/DocumentsSection.jsx";
 import { Modal } from "../../components/Modal.jsx";
@@ -10,7 +13,89 @@ import { LineItems } from "../../features/review/LineItems.jsx";
 import { HEADER_KEYS, LINE_FIELDS } from "../../features/review/schema.js";
 import { api } from "../../lib/api.js";
 import { go } from "../../lib/useHashRoute.js";
-import { isLocked, isWaiting, money, qty, shortDate } from "../../lib/format.js";
+import { docTypeLabel, isLocked, isWaiting, longDate, money, qty, shortDate } from "../../lib/format.js";
+
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 3;
+const ZOOM_STEP = 0.25;
+
+/* The scanned page(s) this document was read from — page nav only shows up
+   once there's more than one to page through, and zoom is a plain CSS scale
+   on the image, not a real viewer, since these are single flat images, not
+   a PDF with its own internal structure to navigate. */
+function DocumentPreview({ filePaths }) {
+  const [pageIdx, setPageIdx] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const path = filePaths[Math.min(pageIdx, filePaths.length - 1)];
+
+  return (
+    <div className="card doc-preview">
+      <div className="doc-preview-head">
+        <div>
+          <h3>Document Preview</h3>
+          <span className="aside-card-sub">Extracted purchase order</span>
+        </div>
+        <div className="spacer" />
+        {path ? (
+          <a className="btn btn-quiet btn-xs" href={`/${path}`} target="_blank" rel="noopener noreferrer">
+            <IconExternalLink width={14} height={14} />
+            Open in new tab
+          </a>
+        ) : null}
+      </div>
+
+      {path ? (
+        <>
+          <div className="doc-preview-frame">
+            <img src={`/${path}`} alt="scanned document page" style={{ transform: `scale(${zoom})` }} />
+          </div>
+          <div className="doc-preview-controls">
+            <button
+              type="button"
+              className="doc-preview-nav prev"
+              disabled={pageIdx === 0}
+              onClick={() => setPageIdx((i) => i - 1)}
+              aria-label="Previous page"
+            >
+              <IconChevron width={16} height={16} />
+            </button>
+            <span className="doc-preview-page">{pageIdx + 1} / {filePaths.length}</span>
+            <button
+              type="button"
+              className="doc-preview-nav"
+              disabled={pageIdx === filePaths.length - 1}
+              onClick={() => setPageIdx((i) => i + 1)}
+              aria-label="Next page"
+            >
+              <IconChevron width={16} height={16} />
+            </button>
+            <div className="spacer" />
+            <button
+              type="button"
+              className="doc-preview-nav"
+              disabled={zoom <= ZOOM_MIN}
+              onClick={() => setZoom((z) => Math.max(ZOOM_MIN, +(z - ZOOM_STEP).toFixed(2)))}
+              aria-label="Zoom out"
+            >
+              <IconZoomOut width={16} height={16} />
+            </button>
+            <button
+              type="button"
+              className="doc-preview-nav"
+              disabled={zoom >= ZOOM_MAX}
+              onClick={() => setZoom((z) => Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2)))}
+              aria-label="Zoom in"
+            >
+              <IconZoomIn width={16} height={16} />
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="empty-mini" style={{ padding: "var(--s3)" }}>No scanned page for this document.</div>
+      )}
+    </div>
+  );
+}
 
 const blank = (v) => (typeof v === "string" && v.trim() === "" ? null : v === "" ? null : v);
 
@@ -224,6 +309,90 @@ function DiffLine({ line, labelA, labelB }) {
   );
 }
 
+/* The PO's own headline numbers, at a glance, above the delivery-by-
+   delivery detail below it — vendor and PO number so this card still makes
+   sense on its own if it's ever scrolled to separately from the phead above
+   it, then what the PO is worth against what has actually, verifiedly,
+   arrived. */
+function DeliverySummary({ po, deliveries, deliveredValue, status }) {
+  const statusLabel = status === "verified" ? "Verified" : status === "mismatch" ? "Mismatch" : "In progress";
+  const statusClass = status === "verified" ? "s-approved" : status === "mismatch" ? "s-rejected" : "s-pending";
+
+  return (
+    <div className="card compare-links delivery-summary">
+      <div className="aside-card-head">
+        <span className="aside-card-icon"><IconTruck width={18} height={18} /></span>
+        <div>
+          <h3>Delivery Summary</h3>
+          <span className="aside-card-sub">
+            {deliveries.length} deliver{deliveries.length === 1 ? "y" : "ies"} captured against this purchase order.
+          </span>
+        </div>
+      </div>
+      <dl className="kv-list">
+        <div><dt>Vendor</dt><dd>{po.vendor_name ?? "—"}</dd></div>
+        <div><dt>PO Number</dt><dd>{po.doc_number ?? "—"}</dd></div>
+        <div><dt>Total PO Value</dt><dd>{money(po.total_value) ?? "—"}</dd></div>
+        <div><dt>Delivered Value</dt><dd>{money(deliveredValue) ?? "—"}</dd></div>
+        <div>
+          <dt>Delivery Status</dt>
+          <dd>{status ? <span className={`pill ${statusClass}`}>{statusLabel}</span> : "—"}</dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
+/* One entry per delivery, dated by the earliest document any of its
+   Invoice/MIN Voucher/Purchase Bill actually carries — real capture dates,
+   not a promised delivery schedule this data has no concept of, which is
+   also why "Next delivery" below is always the same static placeholder
+   rather than a forecast. */
+function DeliveryTimeline({ deliveries }) {
+  const events = useMemo(() => {
+    return deliveries
+      .map((d) => {
+        const dates = d.documents.map((doc) => doc.uploaded_at).filter(Boolean).sort();
+        const types = [...new Set(d.documents.map((doc) => docTypeLabel(doc.document_type)))];
+        return { key: d.doc_number, date: dates[0], types, status: d.verification.status };
+      })
+      .filter((e) => e.date)
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [deliveries]);
+
+  return (
+    <div className="card compare-links delivery-timeline">
+      <div className="aside-card-head">
+        <span className="aside-card-icon"><IconClock width={18} height={18} /></span>
+        <h3>Delivery Timeline</h3>
+      </div>
+      <ul className="timeline">
+        {events.map((e) => (
+          <li key={e.key}>
+            <span className={`timeline-dot ${e.status === "verified" ? "d-ok" : e.status === "mismatch" ? "d-no" : "d-ink"}`} />
+            <div>
+              <div className="timeline-date">{longDate(e.date)}</div>
+              <div className="timeline-desc">
+                {e.types.join(", ")} captured.{" "}
+                {e.status === "verified" ? "All documents extracted and verified."
+                  : e.status === "mismatch" ? "Documents disagree — see Issues below."
+                  : "Still awaiting a matching document."}
+              </div>
+            </div>
+          </li>
+        ))}
+        <li className="is-future">
+          <span className="timeline-dot d-mute" />
+          <div>
+            <div className="timeline-date">Next delivery</div>
+            <div className="timeline-desc">No further deliveries yet.</div>
+          </div>
+        </li>
+      </ul>
+    </div>
+  );
+}
+
 /* Same slot the PO tab uses for the scanned image — here it's the thing a
    reviewer actually needs while looking at a list of deliveries: which ones
    disagree with themselves. Missing documents and "not verified yet" are
@@ -243,7 +412,10 @@ function DeliveryIssuesPanel({ deliveries, loading, onOpenDocument }) {
 
   return (
     <div className="card compare-links">
-      <h3>Issues</h3>
+      <div className="aside-card-head">
+        <span className="aside-card-icon aside-card-icon-warn"><IconAlertTriangle width={18} height={18} /></span>
+        <h3>Issues</h3>
+      </div>
       {!flagged.length ? (
         <div className="empty-mini">
           {deliveries?.length
@@ -531,6 +703,19 @@ export function ComparePage({
   // the same project as the PO, same as adding one from the project page.
   const project = { id: po.project_id, code: po.project_code, name: po.project_name };
 
+  // What has actually, verifiedly, arrived — an unverified delivery's
+  // claimed value stays out of this, same as its quantities stay out of
+  // delivered_qty on the materials tab (see po_reconciliation's docstring).
+  const deliveredValue = (recon?.deliveries ?? []).reduce((sum, d) => {
+    if (d.verification.status !== "verified") return sum;
+    const invoiceDoc = d.documents.find((doc) => doc.document_type === "INVOICE");
+    return sum + (Number(invoiceDoc?.total_value) || 0);
+  }, 0);
+  const deliveryStatus = !recon?.deliveries?.length ? null
+    : recon.deliveries.some((d) => d.verification.status === "mismatch") ? "mismatch"
+    : recon.deliveries.every((d) => d.verification.status === "verified") ? "verified"
+    : "pending";
+
   const locked = isLocked(po);
   const header = locked ? (po.header ?? {}) : draft?.header;
   const lines = locked ? (po.lines ?? []) : draft?.lines;
@@ -689,13 +874,7 @@ export function ComparePage({
           </div>
 
           <div className="compare-aside">
-            <div className="compare-side">
-              {po.file_paths.map((path) => (
-                <a key={path} href={`/${path}`} target="_blank" rel="noopener noreferrer">
-                  <img src={`/${path}`} alt="scanned PO page" />
-                </a>
-              ))}
-            </div>
+            <DocumentPreview filePaths={po.file_paths} />
           </div>
         </div>
         ) : section === "delivery" ? (
@@ -899,6 +1078,12 @@ export function ComparePage({
           </div>
 
           <div className="compare-aside">
+            {recon ? (
+              <>
+                <DeliverySummary po={po} deliveries={recon.deliveries} deliveredValue={deliveredValue} status={deliveryStatus} />
+                {recon.deliveries.length ? <DeliveryTimeline deliveries={recon.deliveries} /> : null}
+              </>
+            ) : null}
             <DeliveryIssuesPanel deliveries={recon?.deliveries} loading={!recon} onOpenDocument={onOpenDocument} />
           </div>
         </div>

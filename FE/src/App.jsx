@@ -18,7 +18,7 @@ import { useHashRoute } from "./lib/useHashRoute.js";
    from one hook so all three read the same lists. */
 export default function App() {
   const { tab, projectId, documentId } = useHashRoute();
-  const { projects, docs, materials, reload } = useConsoleData();
+  const { projects, docs, materials, reload, updatedAt } = useConsoleData();
 
   /* Reachable from every tab, so they live up here rather than in one of them. */
   const [reviewId, setReviewId] = useState(null);
@@ -92,6 +92,7 @@ export default function App() {
             reload={reload}
             addingProject={addingProject}
             setAddingProject={setAddingProject}
+            updatedAt={updatedAt}
           />
         ) : null}
 

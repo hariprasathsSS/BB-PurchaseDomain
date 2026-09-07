@@ -7,6 +7,18 @@ export const inr = (n) =>
 
 export const money = (n) => (n == null || n === "" ? null : `₹${inr(n)}`);
 
+/* Chart axes and bar labels need a number that fits in a handful of
+   characters — "₹11.2L" reads at a glance where the exact-rupee money()
+   above would crowd a bar chart's whole x-axis. */
+export const compactMoney = (n) => {
+  const v = Number(n) || 0;
+  const trimmed = (num) => (Number.isInteger(num) ? String(num) : num.toFixed(1));
+  if (v >= 1e7) return `₹${trimmed(v / 1e7)}Cr`;
+  if (v >= 1e5) return `₹${trimmed(v / 1e5)}L`;
+  if (v >= 1e3) return `₹${trimmed(v / 1e3)}K`;
+  return `₹${Math.round(v)}`;
+};
+
 export const qty = (n) => Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
 export const kb = (n) =>
@@ -19,6 +31,15 @@ export const shortDate = (stamp) => {
   return Number.isNaN(d.getTime())
     ? String(stamp).slice(0, 10)
     : d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+};
+
+/* Same as shortDate but with the year — a timeline spanning more than one
+   year needs it; a list of a single project's own recent documents doesn't. */
+export const longDate = (stamp) => {
+  const d = new Date(String(stamp).replace(" ", "T"));
+  return Number.isNaN(d.getTime())
+    ? String(stamp).slice(0, 10)
+    : d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 };
 
 export const projectOf = (doc) =>
@@ -138,6 +159,40 @@ export function activityOf(doc) {
     default:
       return { dot: "d-ink", what: `${kind} being read` };
   }
+}
+
+/* ── month-over-month trend ───────────────────────────────────────────────
+   The home dashboard's KPIs are running totals (all documents ever captured,
+   all money ever booked), so the honest comparison is "this running total vs.
+   what it stood at the end of last month" — not this-month-flow vs.
+   last-month-flow, which would answer a different question than the one the
+   card's own number is asking. valueOf lets one helper serve a plain count
+   (default: 1 per row) and a sum (total_value) alike. */
+export function trendVsLastMonth(items, dateKey, valueOf = () => 1) {
+  const now = new Date();
+  const cutoff = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
+
+  let total = 0;
+  let before = 0;
+  for (const item of items) {
+    const day = String(item[dateKey] || "").slice(0, 10);
+    const v = valueOf(item);
+    total += v;
+    if (day && day <= cutoff) before += v;
+  }
+
+  // `short` is the bold, colored delta a KPI card shows inline; `caption` is
+  // the same trailing phrase every case shares, so the two read as one
+  // sentence ("↑ +25%  since last month") without the card needing to know
+  // which case produced it.
+  if (before <= 0) return total > 0 ? { short: "New", caption: "since last month", tone: "ok" } : null;
+  const pct = Math.round(((total - before) / before) * 100);
+  if (pct === 0) return { short: "No change", caption: "since last month", tone: "flat" };
+  return {
+    short: `${pct > 0 ? "↑" : "↓"} ${pct > 0 ? "+" : ""}${pct}%`,
+    caption: "since last month",
+    tone: pct > 0 ? "ok" : "bad",
+  };
 }
 
 /* Shared by the project detail and material tabs so both filter identically. */
