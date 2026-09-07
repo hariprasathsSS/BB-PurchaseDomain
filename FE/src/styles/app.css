@@ -381,35 +381,38 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 /* ── dashboard metrics ────────────────────────────────────────────────────── */
 /* Each KPI is a tinted icon tile, a label, a value and a trend line, with a
    soft decorative sparkline (not real data — see Sparkline in
-   DashboardMetrics.jsx) bled into the card's own corner. */
+   DashboardMetrics.jsx) in its own lane to the right, so it never crosses
+   the text even when the value itself runs long (the money card). */
 .kpi-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--s3);
 }
 .kpi-card {
   position: relative; overflow: hidden;
-  display: flex; flex-direction: column; align-items: flex-start;
+  display: flex; align-items: flex-end; justify-content: space-between; gap: var(--s3);
   width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; appearance: none;
   background: var(--surface); border: 1px solid var(--hair); border-radius: var(--r-stad);
   padding: var(--s3); box-shadow: var(--lift-1);
   transition: transform .15s ease, box-shadow .15s ease;
 }
 .kpi-card:hover { transform: translateY(-2px); box-shadow: var(--lift-2); }
+/* Text column and sparkline are laid out side by side (not stacked as
+   background/foreground) so a long value — the money card especially —
+   can never grow into the curve; each keeps its own lane. */
+.kpi-body { flex: 1 1 auto; display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
 .kpi-icon {
-  position: relative; z-index: 1; flex: none; width: 42px; height: 42px; margin-bottom: 14px;
+  flex: none; width: 42px; height: 42px; margin-bottom: 14px;
   display: grid; place-items: center; border-radius: var(--r-btn);
   background: var(--kpi-bg); color: var(--kpi-fg);
 }
 .kpi-icon .rupee-icon { font-family: var(--mono); font-size: 18px; font-weight: 700; }
-.kpi-label { position: relative; z-index: 1; font-size: 13.5px; color: var(--slate); }
+.kpi-label { font-size: 13.5px; color: var(--slate); }
 .kpi-value {
-  position: relative; z-index: 1;
   margin-top: 4px; font-family: var(--mono); font-size: 30px; font-weight: 600;
   letter-spacing: -0.02em; line-height: 1.15; color: var(--ink);
   font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
 }
 .kpi-value.is-money { font-size: 23px; }
 .kpi-trend {
-  position: relative; z-index: 1;
   margin-top: 10px; display: flex; align-items: baseline; gap: 6px; font-size: 12.5px;
 }
 .kpi-delta { font-weight: 700; }
@@ -419,14 +422,14 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 .kpi-trend-caption { color: var(--slate); }
 
 /* Per-card tint — the same colour drives the icon tile and the sparkline
-   behind it. "Steel" is the app's own brand accent, tinted the way a
+   beside it. "Steel" is the app's own brand accent, tinted the way a
    semantic token already is (pale mix behind, full colour on the glyph),
    so "Documents captured" reads as the app's own blue without repeating
    the exact info-blue "Active projects" already owns. */
 .kpi-card.tone-blue  { --kpi-bg: var(--info-bg); --kpi-fg: var(--info-fg); }
 .kpi-card.tone-green { --kpi-bg: var(--ok-bg);   --kpi-fg: var(--ok-fg); }
 .kpi-card.tone-steel { --kpi-bg: color-mix(in srgb, var(--accent) 14%, white); --kpi-fg: var(--accent); }
-.kpi-spark { position: absolute; right: 0; bottom: 0; width: 58%; height: 56%; color: var(--kpi-fg); opacity: .55; }
+.kpi-spark { flex: 1 1 160px; max-width: 42%; min-width: 90px; height: 64px; color: var(--kpi-fg); opacity: .55; }
 
 @media (max-width: 640px) { .kpi-grid { grid-template-columns: 1fr; } }
 

@@ -1,0 +1,23 @@
+services:
+  bb-purchase:
+    build: .
+    container_name: bb-purchase
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - Backend/.env
+    volumes:
+      # Bind-mount the same files the systemd deployment already uses, in
+      # place — poc.db (sqlite) and uploads/ are runtime state, not image
+      # content, so a rebuild/redeploy never touches them. On first run on a
+      # fresh checkout, `touch Backend/poc.db` before `up` or Docker will
+      # create a directory at that path instead of a file.
+      - ./Backend/poc.db:/app/Backend/poc.db
+      - ./Backend/uploads:/app/Backend/uploads
+    # NOTE: main.py's host_ip() auto-detects a LAN IP for the phone-scan QR
+    # code only when PUBLIC_SERVER_URL isn't set in Backend/.env. Production
+    # already sets PUBLIC_SERVER_URL (see docs/OPERATIONS.md), which
+    # overrides that entirely, so bridge networking here is fine. If you ever
+    # run this without PUBLIC_SERVER_URL set, either set HOST_IP explicitly
+    # in Backend/.env or switch to `network_mode: host` (Linux hosts only).

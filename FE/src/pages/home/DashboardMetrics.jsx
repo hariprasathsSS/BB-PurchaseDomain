@@ -81,15 +81,17 @@ export function DashboardMetrics({ projects, docs }) {
             onClick={() => go(c.href)}
             aria-label={`${c.label}: ${c.value}${c.trend ? `, ${c.trend.short} ${c.trend.caption}` : ""}`}
           >
-            <span className="kpi-icon"><c.icon width={20} height={20} /></span>
-            <span className="kpi-label">{c.label}</span>
-            <span className={`kpi-value ${c.isMoney ? "is-money" : ""}`}>{c.value}</span>
-            {c.trend ? (
-              <span className="kpi-trend">
-                <span className={`kpi-delta trend-${c.trend.tone}`}>{c.trend.short}</span>
-                <span className="kpi-trend-caption">{c.trend.caption}</span>
-              </span>
-            ) : null}
+            <span className="kpi-body">
+              <span className="kpi-icon"><c.icon width={20} height={20} /></span>
+              <span className="kpi-label">{c.label}</span>
+              <span className={`kpi-value ${c.isMoney ? "is-money" : ""}`}>{c.value}</span>
+              {c.trend ? (
+                <span className="kpi-trend">
+                  <span className={`kpi-delta trend-${c.trend.tone}`}>{c.trend.short}</span>
+                  <span className="kpi-trend-caption">{c.trend.caption}</span>
+                </span>
+              ) : null}
+            </span>
             <Sparkline seed={i} className="kpi-spark-fg" />
           </button>
         ))}

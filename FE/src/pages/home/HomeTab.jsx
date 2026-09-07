@@ -1,7 +1,6 @@
 import { DashboardMetrics } from "./DashboardMetrics.jsx";
 import { DashboardCharts } from "./DashboardCharts.jsx";
 import { AddProjectModal } from "./AddProjectModal.jsx";
-import { IconBuilding } from "../../components/Icons.jsx";
 
 /* Just the pitch, the numbers — no project list, no document list. Both
    live one click away behind their own nav buttons (Projects, Documents);
@@ -27,14 +26,6 @@ export function HomeTab({ projects, docs, reload, addingProject, setAddingProjec
                 captured from a phone or the desk, read automatically, and cross-checked so
                 what's billed matches what actually arrived.
               </p>
-            </div>
-
-            {/* Quiet, not a CTA — just the one line of positioning copy the
-                mockup carries beside the pitch. Hidden below tablet width
-                rather than squeezed, since the headline needs the room more. */}
-            <div className="hero-badge">
-              <span className="badge-icon"><IconBuilding width={18} height={18} /></span>
-              <span className="badge-text">Smarter procurement<br />for a stronger tomorrow.</span>
             </div>
           </div>
         </div>

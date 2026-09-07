@@ -1078,13 +1078,13 @@ export function ComparePage({
           </div>
 
           <div className="compare-aside">
+            <DeliveryIssuesPanel deliveries={recon?.deliveries} loading={!recon} onOpenDocument={onOpenDocument} />
             {recon ? (
               <>
                 <DeliverySummary po={po} deliveries={recon.deliveries} deliveredValue={deliveredValue} status={deliveryStatus} />
                 {recon.deliveries.length ? <DeliveryTimeline deliveries={recon.deliveries} /> : null}
               </>
             ) : null}
-            <DeliveryIssuesPanel deliveries={recon?.deliveries} loading={!recon} onOpenDocument={onOpenDocument} />
           </div>
         </div>
         ) : section === "documents" ? (
