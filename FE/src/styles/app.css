@@ -1,0 +1,1854 @@
+/* ============================================================================
+   Component styles. Tokens in tokens.css, element defaults in base.css.
+   ========================================================================= */
+
+/* ── shell + floating nav ─────────────────────────────────────────────────
+   The nav docks below the top of the viewport, never flush against it. That
+   gap is what makes the cream read as paper rather than as chrome. */
+.shell { min-height: 100%; padding-bottom: var(--s12); }
+
+.nav-rail { position: sticky; top: 0; z-index: 40; background: var(--canvas); }
+.nav {
+  min-height: 64px;
+  padding: 9px 10px 9px var(--nav-inset);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: var(--surface);
+  border-radius: var(--r-stad);
+  box-shadow: var(--lift-1);
+}
+.nav .spacer { flex: 1; }
+
+.brand { font-size: 21px; font-weight: 600; letter-spacing: var(--tight); white-space: nowrap; }
+
+/* Reused wherever "Purchase" needs to read as the brand mark rather than
+   plain text — the top-nav logo and the chatbot's own name. --bad-fg is the
+   text-safe red (--signal itself is background-only, see its own comment)
+   already used for rejected/failed states, so this isn't a new color, just
+   a new place the existing one shows up. */
+.brand-red { color: var(--bad-fg); }
+
+.nav-links { display: flex; gap: 4px; }
+.nav-links button {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 9px;
+  border: 0;
+  background: none;
+  font-size: 15.5px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: var(--slate);
+  padding: 10px 18px;
+  border-radius: var(--r-btn);
+  cursor: pointer;
+  white-space: nowrap;
+}
+/* Hover on a tab that isn't the current one only ever hints — the lift
+   alone, no fill, so it can't be confused with the current tab's own,
+   permanent version of the same shadow below. */
+.nav-links button:hover:not([aria-current="page"]) {
+  color: var(--ink);
+  box-shadow: 0 -3px 8px rgba(20, 32, 46, .08);
+}
+.nav-links button[aria-current="page"] {
+  color: var(--ink);
+  font-weight: 700;
+  /* Top lift plus a full-width underline in one shadow — the underline is
+     inset, so it follows the button's own border-radius and softens at
+     each end into the curve instead of stopping at a hard square corner. */
+  box-shadow: 0 -3px 8px rgba(20, 32, 46, .08), inset 0 -2px 0 var(--ink);
+}
+
+/* Search carries its shortcut so people learn there is one. */
+.nav-find {
+  display: flex; align-items: center; gap: 10px;
+  flex: 0 1 246px; min-width: 150px;
+  min-height: 44px; padding: 0 8px 0 18px;
+  border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--canvas);
+  cursor: text;
+}
+.nav-find:focus-within { border-color: var(--ink); background: var(--surface); }
+.nav-find input {
+  flex: 1; min-width: 0;
+  border: 0; background: none; outline: none;
+  font-family: inherit; font-size: 15px; color: var(--ink);
+}
+.nav-find kbd {
+  font-family: var(--mono); font-size: 11px; color: var(--slate);
+  background: var(--surface); border: 1px solid var(--hair);
+  border-radius: var(--r-chip); padding: 3px 7px; white-space: nowrap;
+}
+
+@media (max-width: 1080px) {
+  .nav { flex-wrap: wrap; border-radius: var(--r-stad); padding: 14px 16px; }
+  .nav .spacer { display: none; }
+  .nav-find { flex: 1 1 100%; order: 5; }
+}
+
+/* Everything on the page starts on the same vertical line as the wordmark
+   in the nav above it: the rail's inset plus the pill's own. Getting this
+   wrong is invisible in isolation and obvious once the page is full. */
+.band { padding: 0 var(--gutter); }
+@media (max-width: 720px) { .band { padding: 0 var(--rail); } }
+.col { max-width: var(--col); margin: 0 auto; }
+
+.section { margin-top: var(--s8); }
+.section-head { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; margin-bottom: var(--s3); }
+.section-head .spacer { flex: 1; }
+
+/* A named section earns a rule and a darker label. At 13px slate the eyebrow
+   was the lightest thing on the page while doing the heaviest job — saying
+   where one part ends and the next begins. The rule is a typographic device,
+   not a box: it draws the boundary without adding another container to a
+   layout that deliberately avoids them.
+
+   :has() so it only applies where there is a label to sit above — a
+   section-head carrying nothing but count tags gets no stray line. */
+.section-head:has(.eyebrow) {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--hair);
+  margin-bottom: var(--s3);
+}
+.section-head .eyebrow {
+  font-size: 14px;
+  color: var(--ink);
+  letter-spacing: 0.06em;
+}
+.section-head .eyebrow::before { width: 7px; height: 7px; }
+.tag {
+  font-family: var(--mono); font-size: 12.5px; color: var(--slate);
+  border: 1px solid var(--hair); border-radius: var(--r-pill); padding: 4px 14px;
+}
+
+/* Every page's heading starts the same distance below the nav, however the
+   page is built — so switching Home / Projects / Documents doesn't shift the
+   title up or down. A photo page splits that distance between the hero
+   band's own padding (--s6) and the copy inside it (--s3); a plain page like
+   the Document Register has no hero to contribute the first half, so it
+   carries the whole gap here. Home's .hero-copy is the third case and is
+   already the sum of the two. */
+.pagetitle {
+  display: flex; align-items: flex-end; gap: var(--s3); flex-wrap: wrap;
+  margin: calc(var(--s6) + var(--s3)) 0 0;
+}
+.pagetitle .spacer { flex: 1; }
+.pagetitle .lede { margin-top: 12px; font-size: 17.5px; color: var(--slate); max-width: 46ch; }
+
+/* ── controls ─────────────────────────────────────────────────────────────
+   44px floor: these get tapped on site, on a touchscreen laptop, with gloves
+   on. That outranks the reference spec's tighter button padding. */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 46px; padding: 0 26px;
+  border: 1.5px solid transparent; border-radius: var(--r-btn);
+  font-size: 16px; font-weight: 500; letter-spacing: var(--tight);
+  cursor: pointer; white-space: nowrap;
+}
+.btn-ink { background: var(--ink); border-color: var(--ink); color: var(--text-invert); }
+.btn-ink:hover { background: var(--charcoal); }
+.btn-out { background: var(--surface); border-color: var(--ink); color: var(--ink); font-weight: 450; }
+.btn-out:hover { background: var(--canvas); }
+.btn-quiet { background: transparent; border-color: var(--line); color: var(--ink); font-weight: 450; }
+.btn-quiet:hover { background: var(--surface); }
+/* Reserved for the half of a decision that cannot be taken back. */
+.btn-signal { background: var(--signal); border-color: var(--signal); color: #fff; }
+.btn-signal:hover { background: var(--clay); }
+.btn-sm { min-height: 44px; padding: 0 20px; font-size: 15px; }
+/* Smaller still — a secondary action riding along a status pill in a row
+   (e.g. Generate Purchase Bill next to a delivery's Verified/Mismatch
+   pill), not a primary action earning btn-sm's full touch target. */
+.btn-xs { min-height: 32px; padding: 0 12px; font-size: 13px; border-radius: var(--r-btn); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.btn-wide { width: 100%; }
+
+.btn-link {
+  border: 0; background: none; padding: 0;
+  font: inherit; font-size: 14px; font-weight: 500;
+  color: var(--clay); cursor: pointer;
+}
+.btn-link:hover { text-decoration: underline; }
+
+.back {
+  display: inline-flex; align-items: center; gap: var(--s1);
+  border: 0; background: none; padding: 0;
+  font: inherit; font-size: 14px; font-weight: 500;
+  color: var(--slate); cursor: pointer;
+}
+.back:hover { color: var(--ink); }
+
+.input, select.input {
+  min-height: 46px; padding: 0 22px;
+  border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--surface); color: var(--ink);
+  font-family: inherit; font-size: 15.5px;
+}
+select.input { border-radius: var(--r-btn); padding: 0 14px; }
+.input:focus { outline: 0; border-color: var(--ink); }
+.input-search { min-width: 240px; flex: 1; max-width: 420px; }
+
+/* Toolbar-scale controls: squarer, so they read as instrumentation rather
+   than as more content. */
+.ctl {
+  min-height: 40px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: var(--r-btn);
+  background: var(--surface); color: var(--ink);
+  font-family: inherit; font-size: 14px;
+}
+.ctl:focus { outline: 0; border-color: var(--ink); }
+.ctl-search { min-width: 170px; flex: 0 1 240px; padding: 0 16px; }
+
+/* Circular open-affordance. Sits inside its card, aligned with the actions —
+   docked half-outside a corner reads as a stray dot on a rectangle. */
+.open-round {
+  width: 46px; height: 46px; flex: none;
+  display: grid; place-items: center;
+  background: var(--canvas); color: var(--ink);
+  border: 1.5px solid var(--line); border-radius: 50%;
+  cursor: pointer;
+  transition: background .14s ease, color .14s ease;
+}
+.open-round:hover { background: var(--ink); border-color: var(--ink); color: var(--text-invert); }
+
+.open-sm {
+  width: 38px; height: 38px; flex: none;
+  display: grid; place-items: center;
+  background: var(--canvas); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 50%;
+}
+
+/* ── status: filled = state, outlined = kind ──────────────────────────────
+   Colour belongs to status alone, because status is what you scan a list
+   for. Document type is metadata and stays quiet. */
+.pill {
+  display: inline-flex; align-items: center;
+  border-radius: var(--r-pill); padding: 4px 13px;
+  font-size: 11.5px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; white-space: nowrap;
+}
+.pill-type { background: transparent; border: 1px solid var(--line); color: var(--slate); }
+.s-pending  { background: var(--warn-bg); color: var(--warn-fg); }
+.s-working  { background: var(--info-bg); color: var(--info-fg); }
+.s-approved { background: var(--ok-bg);   color: var(--ok-fg); }
+.s-rejected { background: var(--bad-bg);  color: var(--bad-fg); }
+.s-failed   { background: var(--sunken);  color: var(--clay); }
+
+/* Status discs, same four hues as the pills. */
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.d-hot  { background: var(--accent); }
+.d-mute { background: var(--dust); }
+.d-ink  { background: var(--info-fg); }
+.d-ok   { background: var(--ok-fg); }
+.d-no   { background: var(--bad-fg); }
+
+/* ══ home ═════════════════════════════════════════════════════════════════
+   Five zones, and only two of them are cards — what needs doing, and the
+   portfolio. The rest sits on the cream so the page does not read as a
+   stack of floating boxes. */
+/* The first section after the hero needs less of its own top margin than a
+   section following another section would: the hero already spends --s3 of
+   its own bottom padding fading into the canvas before this margin even
+   starts, so the full --s6 here would double up into the ~96px dead zone
+   this rule used to produce. Every other inter-section gap keeps --s6. */
+#tab-home .section { margin-top: var(--s6); }
+#tab-home .home-below > .section:first-of-type { margin-top: var(--s3); }
+#tab-home .section-analytics { margin-top: var(--s4); }
+
+/* A photo band behind the pitch only — .home-hero itself carries no
+   background and no forced height: it still sizes exactly to hero-copy's
+   natural content height, so Dashboard's position in the document never
+   moves, same as before. The photo/fade instead live on ::before, absolutely
+   positioned and made taller than its own box (100% + EXTRA below) — an
+   overlay that visually bleeds past .home-hero's bottom edge into the gap
+   before Dashboard without pushing Dashboard down, since absolutely
+   positioned elements don't add to their parent's height. EXTRA is how far
+   past the pitch the photo (and the start of its fade) reaches — tune that
+   one number to land the fade wherever it should sit relative to Dashboard.
+   Positioned elements paint above static siblings by default, so without
+   .home-below's own z-index below, this overlay would sit on top of and
+   hide the Dashboard section wherever the two overlap — z-index: 1 there
+   (and on .home-hero's own text, via `.home-hero > .band`) is what keeps
+   both readable through it.
+
+   background-position/size: the band is short and wide against a tall
+   source photo (5326×3551) — much wider, proportionally, than the photo
+   itself, so plain `cover` ends up exactly width-constrained (zero
+   horizontal room to pan, only vertical) — sizing wider than the band
+   explicitly forces real horizontal overflow to exist so X is adjustable
+   too. Drop the photo in at FE/src/assets/home-hero.jpg — a plain CSS
+   url(), not a JS import, so a missing file just leaves the band looking
+   plain (the gradient alone) instead of breaking the build. */
+/* padding, not margin — a top margin on .hero-copy (a descendant with no
+   padding/border of its own in between) collapses straight through .col/
+   .band/.home-hero and out the top of this box, pushing the whole hero
+   (photo included, since ::before's top:0 is relative to this box) down by
+   that amount — that's the gap between the nav and the photo. Padding here
+   doesn't collapse, so the photo starts flush with the nav while the text
+   still gets the same spacing (moved off .hero-copy's own margin-top below). */
+.home-hero { position: relative; padding-top: var(--s4); }
+.home-hero::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: calc(100% + 90px); /* EXTRA = 90px — how far past the pitch the photo/fade reaches */
+  background:
+    linear-gradient(to bottom, rgba(10, 16, 24, .32) 0%, rgba(10, 16, 24, .32) 75%, var(--canvas) 100%),
+    url("../assets/home-hero.jpg") 70% 26% / 100% auto no-repeat;
+  /* Mirrors the crane so its boom swings toward the copy instead of away
+     from it — position/size above are untouched, this just flips the
+     rendered pixels left-right after layout, gradient included (it fades
+     top-to-bottom only, so the flip doesn't touch it). */
+  transform: scaleX(-1);
+}
+.home-hero > .band { position: relative; z-index: 1; }
+.home-below { position: relative; z-index: 1; }
+
+/* The projects page's own photo band — the same construction as .home-hero
+   above in every respect (bleed past its own box, the same overlay
+   gradient, the same fade into --canvas, the same stacking hooks), so the
+   two pages read as one design. Only the photo differs, and it isn't
+   mirrored: this one's subject already faces into the copy. */
+.projects-hero { position: relative; padding-top: var(--s6); }
+.projects-hero::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: calc(100% + 90px); /* same overhang as Home's hero */
+  background:
+    linear-gradient(to bottom, rgba(10, 16, 24, .32) 0%, rgba(10, 16, 24, .32) 75%, var(--canvas) 100%),
+    /* A second wash, left to right, under the vertical one. This photo is a
+       bright daylight shot — pale sky, pale concrete — where the home page's
+       is a dusk one, so the 32% that carries white text there doesn't carry
+       it here. Darkening only the side the copy actually sits on keeps the
+       engineer and the crane at full brightness rather than dulling the whole
+       image to rescue the text. Below the vertical layer, not above it, so
+       the fade into --canvas at the bottom stays clean to the very edge. */
+    linear-gradient(to right, rgba(10, 16, 24, .62) 0%, rgba(10, 16, 24, .34) 45%, rgba(10, 16, 24, 0) 72%),
+    url("../assets/project bg.jpg") 50% 32% / 100% auto no-repeat;
+}
+.projects-hero > .band { position: relative; z-index: 1; }
+.projects-below { position: relative; z-index: 1; }
+/* The generic .section margin-top (--s8, 64px) sat inside the hero's own
+   90px photo overhang (see .projects-hero::before's EXTRA), so the toolbar
+   card's top edge landed in the overhang's still-fading tail instead of
+   clear canvas. Push it past the overhang itself, with a bit of the usual
+   spacing on top, instead of relying on --s8 to happen to be enough. */
+.projects-below .section { margin-top: calc(90px + var(--s12)); }
+/* The hero's own padding already supplies the first half of the standard
+   heading offset (see .pagetitle), so the heading inside it only owes the
+   second — otherwise this page's title would sit --s6 lower than Home's. */
+.projects-hero .pagetitle { margin-top: var(--s3); }
+/* The count tag sits directly in the hero copy now, over the photo, so the
+   quiet slate .tag worn elsewhere would disappear into the image. White,
+   with a border to match, it reads against the photo — the tag on every
+   other page is untouched. */
+.projects-hero .tag {
+  display: inline-flex; margin-top: var(--s3);
+  color: #fff; font-weight: 600; border-color: rgba(255, 255, 255, .45);
+}
+/* Light text over the photo, same as the home hero's own copy. */
+.projects-hero .eyebrow { color: rgba(255, 255, 255, .8); }
+.projects-hero .eyebrow::before { background: #fff; }
+.projects-hero .pagetitle h1 { color: #fff; }
+.projects-hero .pagetitle .lede { color: rgba(255, 255, 255, .82); }
+.hero-copy { padding-top: var(--s3); }
+.hero-copy h1 { margin-top: var(--s2); }
+.hero-copy .lede { margin-top: var(--s2); font-size: 17px; color: var(--slate); max-width: 46ch; }
+.hero-cta { display: flex; gap: 10px; margin-top: var(--s4); flex-wrap: wrap; }
+
+/* Light text over the photo — same hero-copy markup the plain-background
+   version used, just re-coloured for a dark image behind it instead of the
+   cream page. */
+.home-hero .eyebrow { color: rgba(255, 255, 255, .8); }
+.home-hero .eyebrow::before { background: #fff; }
+.home-hero .hero-copy h1 { color: #fff; }
+.home-hero .hero-copy .lede { color: rgba(255, 255, 255, .82); }
+
+.home-hero .hero-copy { padding-bottom: var(--s3); }
+
+/* The hero's own row: pitch on the left, one quiet line of positioning copy
+   on the right — a glass chip on the photo, never a second CTA. */
+.hero-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s4); }
+.hero-badge {
+  flex: none; display: flex; align-items: center; gap: 12px;
+  margin-top: calc(var(--s2) + var(--s3)); padding: 12px 18px; max-width: 250px;
+  background: rgba(244, 247, 249, .1); border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: var(--r-btn);
+}
+.hero-badge .badge-icon {
+  flex: none; width: 34px; height: 34px; border-radius: 8px;
+  display: grid; place-items: center; background: rgba(255, 255, 255, .14); color: #fff;
+}
+.hero-badge .badge-text { font-size: 12px; line-height: 1.4; color: rgba(255, 255, 255, .88); }
+@media (max-width: 860px) { .hero-badge { display: none; } }
+
+/* ── dashboard metrics ────────────────────────────────────────────────────── */
+/* Each KPI is a tinted icon tile, a label, a value and a trend line, with a
+   soft decorative sparkline (not real data — see Sparkline in
+   DashboardMetrics.jsx) in its own lane to the right, so it never crosses
+   the text even when the value itself runs long (the money card). */
+.kpi-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--s3);
+}
+.kpi-card {
+  position: relative; overflow: hidden;
+  display: flex; align-items: flex-end; justify-content: space-between; gap: var(--s3);
+  width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; appearance: none;
+  background: var(--surface); border: 1px solid var(--hair); border-radius: var(--r-stad);
+  padding: var(--s3); box-shadow: var(--lift-1);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.kpi-card:hover { transform: translateY(-2px); box-shadow: var(--lift-2); }
+/* Text column and sparkline are laid out side by side (not stacked as
+   background/foreground) so a long value — the money card especially —
+   can never grow into the curve; each keeps its own lane. */
+.kpi-body { flex: 1 1 auto; display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.kpi-icon {
+  flex: none; width: 42px; height: 42px; margin-bottom: 14px;
+  display: grid; place-items: center; border-radius: var(--r-btn);
+  background: var(--kpi-bg); color: var(--kpi-fg);
+}
+.kpi-icon .rupee-icon { font-family: var(--mono); font-size: 18px; font-weight: 700; }
+.kpi-label { font-size: 13.5px; color: var(--slate); }
+.kpi-value {
+  margin-top: 4px; font-family: var(--mono); font-size: 30px; font-weight: 600;
+  letter-spacing: -0.02em; line-height: 1.15; color: var(--ink);
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+.kpi-value.is-money { font-size: 23px; }
+.kpi-trend {
+  margin-top: 10px; display: flex; align-items: baseline; gap: 6px; font-size: 12.5px;
+}
+.kpi-delta { font-weight: 700; }
+.kpi-delta.trend-ok   { color: var(--ok-fg); }
+.kpi-delta.trend-bad  { color: var(--bad-fg); }
+.kpi-delta.trend-flat { color: var(--dust); }
+.kpi-trend-caption { color: var(--slate); }
+
+/* Per-card tint — the same colour drives the icon tile and the sparkline
+   beside it. "Steel" is the app's own brand accent, tinted the way a
+   semantic token already is (pale mix behind, full colour on the glyph),
+   so "Documents captured" reads as the app's own blue without repeating
+   the exact info-blue "Active projects" already owns. */
+.kpi-card.tone-blue  { --kpi-bg: var(--info-bg); --kpi-fg: var(--info-fg); }
+.kpi-card.tone-green { --kpi-bg: var(--ok-bg);   --kpi-fg: var(--ok-fg); }
+.kpi-card.tone-steel { --kpi-bg: color-mix(in srgb, var(--accent) 14%, white); --kpi-fg: var(--accent); }
+.kpi-spark { flex: 1 1 160px; max-width: 42%; min-width: 90px; height: 64px; color: var(--kpi-fg); opacity: .55; }
+
+@media (max-width: 640px) { .kpi-grid { grid-template-columns: 1fr; } }
+
+/* One lead tile plus four status pills — small plain-line icons (no colored
+   circle wrapper, no corner watermark), a hint of tint rather than a full
+   wash, and no arrow: the whole tile is the click target into Documents.
+   Only Awaiting approval keeps a stronger tint and a colored value, since
+   it's still the one status asking someone to act; the rest read in plain
+   ink so the row stays calm rather than a strip of four solid colors. */
+.status-grid {
+  display: grid; grid-template-columns: 1.2fr repeat(4, minmax(150px, 1fr)); gap: var(--s2);
+  margin-top: var(--s3);
+}
+.status-tile {
+  display: flex; flex-direction: column; align-items: flex-start;
+  width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; appearance: none;
+  border: 1px solid var(--hair); border-radius: var(--r-stad);
+  padding: 14px 18px;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.status-tile:hover { transform: translateY(-2px); box-shadow: var(--lift-1); }
+.status-icon { flex: none; width: 18px; height: 18px; margin-bottom: 8px; color: var(--tile-fg); }
+.status-value {
+  font-family: var(--mono); font-size: 22px; font-weight: 600; line-height: 1.15;
+  color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.status-label { margin-top: 2px; font-size: 12.5px; color: var(--slate); }
+.status-title { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.status-sub { margin-top: 2px; font-size: 12px; color: var(--slate); }
+
+.status-tile.tone-lead, .status-tile.tone-gray {
+  --tile-fg: var(--slate); background: var(--surface); border-color: var(--hair);
+}
+.status-tile.tone-ok {
+  --tile-fg: var(--ok-fg);
+  background: color-mix(in srgb, var(--ok-bg) 40%, white);
+  border-color: color-mix(in srgb, var(--ok-fg) 20%, white);
+}
+.status-tile.tone-bad {
+  --tile-fg: var(--bad-fg);
+  background: color-mix(in srgb, var(--bad-bg) 40%, white);
+  border-color: color-mix(in srgb, var(--bad-fg) 20%, white);
+}
+.status-tile.tone-warn {
+  --tile-fg: var(--warn-fg);
+  background: color-mix(in srgb, var(--warn-bg) 55%, white);
+  border-color: color-mix(in srgb, var(--warn-fg) 35%, white);
+}
+.status-tile.tone-warn .status-value { color: var(--tile-fg); }
+
+@media (max-width: 900px) { .status-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .status-grid { grid-template-columns: 1fr; } }
+
+/* ── analytics charts ─────────────────────────────────────────────────────
+   Two cards only: a larger bar chart (the number reviewers act on — which
+   project's spend needs a look) and a smaller donut (the mix of paper this
+   portfolio is made of). Both hand-rolled in CSS/SVG-free markup — a chart
+   library is a heavy dependency for two shapes this simple, and the point of
+   this page is to stay calm, not showcase a charting stack. */
+.analytics-grid {
+  display: grid; grid-template-columns: 2fr 1fr; gap: var(--s3); align-items: stretch;
+}
+.chart-card {
+  min-width: 0; background: var(--surface); border: 1px solid var(--hair); border-radius: var(--r-stad);
+  padding: var(--s4); box-shadow: var(--lift-1);
+}
+.chart-card h3 { font-size: 16px; }
+.chart-card .chart-sub { margin-top: 3px; font-size: 13px; color: var(--slate); }
+.chart-empty { margin-top: var(--s3); font-size: 14px; color: var(--dust); }
+
+.chart-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s2); }
+.chart-filter { flex: none; max-width: 150px; }
+.ctl-xs { min-height: 32px; padding: 0 10px 0 12px; font-size: 12.5px; }
+
+/* Bar chart: an axis column of tick labels beside a row of columns, each a
+   flex item stacked bottom-up so its <span class="bar"> height alone (a
+   plain percentage, set inline per row) draws the whole shape. */
+.bar-chart { display: flex; gap: var(--s2); margin-top: var(--s4); height: 250px; }
+.bar-chart-axis {
+  display: flex; flex-direction: column; justify-content: space-between;
+  font-size: 11.5px; color: var(--dust); text-align: right; padding-bottom: 28px;
+}
+.bar-chart-plot {
+  flex: 1; min-width: 0; display: flex; align-items: flex-end; gap: var(--s2);
+  border-left: 1px solid var(--hair); border-bottom: 1px solid var(--hair);
+  padding-left: var(--s2);
+}
+.bar-col {
+  flex: 1; min-width: 0; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+}
+.bar-value { font-size: 11.5px; font-weight: 500; color: var(--slate); margin-bottom: 6px; }
+.bar {
+  width: 60%; min-height: 3px; border-radius: 3px 3px 0 0;
+  background: color-mix(in srgb, var(--accent) 62%, white);
+}
+/* Two-line clamp rather than a single-line ellipsis: a name's min-content
+   contribution to the flex column above is just its longest word this way
+   (wrapping text can always break), where white-space:nowrap would have
+   forced the whole unwrapped string's width up through bar-col into the
+   chart's own layout — percentage max-width doesn't stop that, since
+   percentages are indeterminate at intrinsic-size time. */
+.bar-label {
+  margin-top: 10px; font-size: 11.5px; color: var(--slate); text-align: center;
+  width: 100%; word-break: break-word;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* Donut: a conic-gradient ring with a plain surface-colour circle punched in
+   the middle — no SVG, no library, and it re-colours from CSS custom
+   properties the same as every other chrome on the page. */
+.donut-chart { display: flex; flex-direction: column; align-items: center; gap: var(--s3); margin-top: var(--s4); }
+.donut-ring {
+  width: 148px; height: 148px; border-radius: 50%;
+  display: grid; place-items: center; flex: none;
+}
+.donut-center {
+  width: 62%; height: 62%; border-radius: 50%; background: var(--surface);
+  display: grid; place-items: center; text-align: center;
+}
+.donut-total { font-family: var(--mono); font-size: 24px; font-weight: 500; color: var(--ink); line-height: 1; }
+.donut-total-label { margin-top: 3px; font-size: 11px; color: var(--slate); }
+.donut-legend { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.donut-legend li { display: flex; align-items: center; gap: 9px; font-size: 13px; min-width: 0; }
+.legend-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; border: 1px solid var(--line); }
+.legend-label {
+  flex: 1; min-width: 0; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.legend-count { font-family: var(--mono); color: var(--slate); }
+.legend-pct { font-family: var(--mono); width: 3.5ch; text-align: right; color: var(--dust); }
+
+.dash-footer { margin-top: var(--s3); font-size: 12.5px; color: var(--dust); }
+
+@media (max-width: 900px) {
+  .analytics-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .bar-chart { height: 210px; }
+  .bar-chart-axis { display: none; }
+  .bar-chart-plot { border-left: 0; padding-left: 0; }
+}
+
+/* ── projects toolbar ─────────────────────────────────────────────────────
+   A real card (.explorer, otherwise unused on this page but already built
+   for exactly this — a search-plus-filters bar), one row: search, then
+   status and sort each collapsed to their current value until touched, then
+   the grid/list switch. Nothing sits permanently expanded — a segmented row
+   of every status, shown open at all times, was more filter than the page
+   needed to offer up front. */
+.explorer.projects-toolbar-card { margin-bottom: var(--s4); overflow: visible; }
+.projects-toolbar-card .explorer-bar { flex-wrap: nowrap; }
+@media (max-width: 720px) { .projects-toolbar-card .explorer-bar { flex-wrap: wrap; } }
+
+.toolbar-search {
+  display: flex; align-items: center; gap: 9px;
+  flex: 1 1 220px; max-width: 340px; min-height: 42px; padding: 0 16px;
+  border: 1px solid transparent; border-radius: var(--r-pill);
+  background: var(--canvas); color: var(--dust);
+  transition: border-color .14s ease, background .14s ease, box-shadow .14s ease;
+}
+.toolbar-search:focus-within { border-color: var(--ink); background: var(--surface); color: var(--slate); box-shadow: var(--lift-1); }
+.toolbar-search input {
+  flex: 1; min-width: 0; border: 0; background: none; outline: none;
+  font-family: inherit; font-size: 14.5px; color: var(--ink);
+}
+
+/* Status and sort: a floating list of plain options (the same .combo/
+   .combo-menu Combobox.jsx builds a suggestion list out of), not a native
+   <select> — the one control a browser insists on rendering its own way no
+   matter how the rest of the app looks. Collapsed to "Label: current value"
+   until clicked, same as a Windows column-filter dropdown. */
+.filter-combo { flex: none; }
+.filter-trigger { display: inline-flex; align-items: center; gap: 10px; justify-content: space-between; min-width: 168px; cursor: pointer; }
+/* .ctl:focus turns the border ink on any focus, mouse clicks included — so
+   opening the menu (or clicking away to dismiss it) left the trigger
+   permanently looking "active" even once closed, indistinguishable from an
+   applied filter. :focus-visible only fires for real keyboard focus, which
+   is the only time an outline is actually earning its keep here. */
+.filter-trigger:focus:not(:focus-visible) { border-color: var(--line); }
+.filter-chevron { color: var(--slate); transition: transform .14s ease; transform: rotate(90deg); }
+.filter-chevron.is-open { transform: rotate(-90deg); }
+/* Both lists are short and fixed (five statuses, four sorts) — never long
+   enough to need their own scrollbar, so the base .combo-menu's max-height
+   (sized for Combobox.jsx's much longer suggestion lists) only clipped them
+   and forced one in here for no reason. */
+.filter-combo .combo-menu { left: auto; right: 0; width: max-content; min-width: 100%; max-height: none; overflow: visible; }
+.combo-menu button.is-selected { color: var(--ink); font-weight: 600; }
+
+/* Same track-with-a-filled-pressed-state construction as .seg, just square
+   icon buttons instead of labelled pills — a layout switch reads as an
+   instrument, not a pair of tabs. */
+.view-toggle { display: inline-flex; gap: 4px; padding: 4px; background: var(--canvas); border-radius: var(--r-btn); flex: none; }
+.view-toggle button {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border: 0; border-radius: calc(var(--r-btn) - 3px);
+  background: none; color: var(--slate); cursor: pointer;
+}
+.view-toggle button:hover { color: var(--ink); }
+.view-toggle button[aria-pressed="true"] { background: var(--ink); color: var(--text-invert); }
+
+/* ── project tiles ────────────────────────────────────────────────────────── */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--s3); }
+
+.tile {
+  display: flex; flex-direction: column; gap: 18px;
+  padding: var(--s4);
+  background: var(--surface);
+  border: 1.5px solid transparent;
+  border-radius: var(--r-stad);
+  box-shadow: var(--lift-1);
+  transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+.tile:hover { transform: translateY(-3px); border-color: var(--line); box-shadow: var(--lift-2); }
+/* The one project with a person waiting on it gets a plain outline instead
+   of the old whole-surface wash — legible at a glance across a full grid
+   without every hot card turning the page yellow, and quieter than a
+   coloured rail. */
+.tile.is-hot { border-color: var(--warn-fg); }
+.tile.is-hot:hover { border-color: var(--warn-fg); }
+
+/* The name is what a person actually calls the project, so it leads — the
+   generated code is only ever an ID, printed small and muted right next to
+   it, the way a greyed-out/disabled field reads rather than a second
+   headline. */
+/* Reserves exactly two lines of the name below — the one part of the card
+   whose content genuinely varies (a long project name wraps, a short one
+   doesn't) — so every card gets the same header height without a made-up
+   whole-card floor. Grid's own default stretch (nothing overrides
+   align-items on .tiles) is still there underneath as a safety net for the
+   rare name that wraps to a third line. */
+.tile-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; min-height: 58px; }
+.tile .name { font-size: 22px; font-weight: 700; letter-spacing: var(--tight); }
+.tile .code {
+  font-family: var(--mono); font-size: 12px; font-weight: 500;
+  letter-spacing: -0.01em; color: var(--slate); opacity: .6;
+  word-break: break-all;
+}
+
+/* Cards stop being interchangeable: this says whether the project needs you,
+   so a portfolio can be scanned without opening anything. */
+.tile-status {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 12px 4px 10px; margin-bottom: 12px;
+  border-radius: var(--r-pill);
+  font-size: 10.5px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase;
+}
+.tile-status .dot { width: 7px; height: 7px; }
+.st-action { background: var(--warn-bg); color: var(--warn-fg); }
+.st-track  { background: var(--ok-bg);   color: var(--ok-fg); }
+.st-proc   { background: var(--info-bg); color: var(--info-fg); }
+.st-none   { background: var(--sunken);  color: var(--slate); }
+
+/* Each number in its own soft chip rather than a bare column — reads as a
+   small dashboard strip, not a row of stray digits. */
+.tally {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+  gap: 8px; margin-top: auto; padding-top: 16px; border-top: 1px solid var(--hair);
+}
+.tally div {
+  display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden;
+  padding: 8px 10px; border-radius: var(--r-btn); background: var(--hover);
+}
+.tally svg { flex: none; color: var(--slate); }
+.tally b {
+  display: block; font-family: var(--mono); font-size: 17px; font-weight: 600; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+/* A one-word label (DOCUMENTS, AWAITING) has nowhere to break, so at a
+   narrow zoom/viewport it used to run past its own chip and get painted over
+   by the next chip's background instead of just wrapping — min-width:0 above
+   lets the flex/grid item actually shrink instead of holding its content's
+   natural width, and this lets a label that still doesn't fit wrap onto a
+   second line within its own box rather than bleed sideways into it. */
+.tally span {
+  display: block; margin-top: 3px; font-size: 10px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate); overflow-wrap: break-word;
+}
+.tally .hot { background: var(--warn-bg); }
+.tally .hot b, .tally .hot svg { color: var(--warn-fg); }
+
+.tile-actions { display: flex; align-items: center; gap: 12px; }
+.tile-actions .spacer { flex: 1; }
+
+/* List layout: the same project, the same facts, read as a row instead of a
+   card — for scanning a longer portfolio down the page rather than across a
+   grid. Same status pill and tally numbers as the tile, just laid out flat. */
+.plist { display: flex; flex-direction: column; gap: var(--s2); }
+.prow {
+  display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap;
+  padding: 18px var(--s4);
+  background: var(--surface); border: 1.5px solid transparent; border-radius: var(--r-stad);
+  box-shadow: var(--lift-1);
+}
+.prow.is-hot { border-color: var(--warn-fg); }
+.prow-main { flex: 1 1 240px; min-width: 0; }
+.prow-main .tile-status { margin-bottom: 8px; }
+.prow-tally { display: flex; gap: var(--s4); flex-wrap: wrap; }
+.prow-tally div { display: flex; align-items: center; gap: 8px; min-width: 84px; }
+.prow-tally svg { flex: none; color: var(--slate); }
+.prow-tally b { display: block; font-family: var(--mono); font-size: 17px; font-weight: 600; }
+.prow-tally span { display: block; margin-top: 2px; font-size: 10px; font-weight: 700; letter-spacing: var(--wide); text-transform: uppercase; color: var(--slate); }
+.prow-tally .hot b, .prow-tally .hot svg { color: var(--warn-fg); }
+.prow-actions { display: flex; align-items: center; gap: 12px; flex: none; }
+
+/* Add tile: outlined, not a filled slab. A big dark block outweighs the
+   projects beside it — a site is registered monthly, an invoice hourly. */
+.tile-add {
+  display: grid; place-content: center; justify-items: center; gap: 6px;
+  min-height: 296px; padding: var(--s4);
+  background: transparent;
+  border: 1.5px solid var(--line); border-radius: var(--r-stad);
+  text-align: center; color: inherit; font: inherit; cursor: pointer;
+}
+.tile-add:hover { border-color: var(--ink); }
+.tile-add .ring {
+  width: 58px; height: 58px; margin-bottom: 14px;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--ink); border-radius: 50%;
+}
+.tile-add:hover .ring { background: var(--ink); color: var(--text-invert); }
+.tile-add .t { font-size: 19px; font-weight: 500; letter-spacing: var(--tight); }
+.tile-add .d { font-size: 14.5px; color: var(--slate); max-width: 27ch; }
+.tile-add.is-only { grid-column: 1 / -1; }
+
+/* Add-document dropdown, anchored to the card's action row. */
+.menu {
+  position: absolute; z-index: 20;
+  top: calc(100% + 8px); left: 0; right: 0;
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--r-btn);
+  box-shadow: var(--lift-2);
+  overflow: hidden;
+}
+.menu button {
+  display: flex; gap: 12px;
+  width: 100%; padding: 14px 18px;
+  border: 0; background: none;
+  text-align: left; color: var(--text); cursor: pointer;
+}
+.menu button + button { border-top: 1px solid var(--hair); }
+.menu button:hover { background: var(--hover); }
+.menu .ico { flex: none; color: var(--clay); padding-top: 2px; }
+.menu .t { font-size: 15px; font-weight: 500; display: block; }
+.menu .d { font-size: 13px; color: var(--slate); display: block; }
+
+/* A free-typing field with a suggestion list (Combobox.jsx) — a PO number
+   field offering every PO already on file in this project is the first use.
+   Same floating-card language as .menu above, just for a flat list of plain
+   values instead of icon+title+description rows. */
+/* .combo itself stretches to the field's full width (it's a flex item in
+   .field-grid label, same as a plain .input would be) — but the <input>
+   nested inside it is no longer a *direct* flex child once it's wrapped, so
+   it falls back to its own intrinsic size instead of inheriting that
+   stretch, landing narrower than .combo (and so narrower than .combo-menu,
+   which is sized off .combo) unless told explicitly to fill it. */
+.combo { position: relative; }
+.combo .input { width: 100%; }
+.combo-menu {
+  position: absolute; z-index: 20;
+  top: calc(100% + 6px); left: 0; right: 0;
+  max-height: 220px; overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--hair); border-radius: var(--r-btn);
+  box-shadow: var(--lift-2);
+}
+.combo-menu button {
+  display: block; width: 100%; padding: 11px 16px;
+  border: 0; border-top: 1px solid var(--hair); background: none;
+  text-align: left; font: inherit; font-size: 15px; color: var(--text);
+  cursor: pointer;
+}
+.combo-menu button:first-child { border-top: 0; }
+.combo-menu button:hover { background: var(--hover); }
+
+/* ── recent activity ──────────────────────────────────────────────────────── */
+.activity {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: var(--r-stad);
+  overflow: hidden;
+}
+.act-row {
+  display: grid;
+  /* Capped, not fractional. On fr units these columns grew with the viewport,
+     so on a wide screen the vendor, what-happened and project sat a third of a
+     screen apart and the eye had to travel between them. Capping clusters a
+     row's facts together and leaves the slack at the right, where it costs
+     nothing. */
+  grid-template-columns: 10px minmax(150px, 250px) minmax(200px, 440px)
+                         minmax(140px, 200px) 76px;
+  gap: var(--s2); align-items: center;
+  width: 100%; padding: 14px 26px;
+  border: 0; border-top: 1px solid var(--hair);
+  background: none; text-align: left; font: inherit; color: inherit;
+  cursor: pointer;
+}
+.act-row:first-child { border-top: 0; }
+.act-row:hover { background: var(--hover); }
+.act-vend { font-size: 15px; font-weight: 500; }
+.act-what { font-size: 14px; color: var(--slate); }
+.act-proj { font-family: var(--mono); font-size: 12.5px; color: var(--slate); }
+.act-when { font-family: var(--mono); font-size: 12.5px; color: var(--slate); text-align: right; }
+@media (max-width: 920px) {
+  .act-row { grid-template-columns: 10px 1fr auto; }
+  .act-proj { display: none; }
+}
+
+/* ══ project detail ═══════════════════════════════════════════════════════
+   Recomposed around the workflow rather than the components: identity, then
+   one panel that does all the narrowing-down, then the answers. */
+#tab-project .section { margin-top: 28px; }
+#tab-project .section.spaced { margin-top: var(--s8); }
+#tab-project .section-head { margin-bottom: 18px; }
+
+.phead {
+  margin-top: var(--s4);
+  padding: 22px 30px 0;
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: var(--r-stad);
+}
+.phead-main { display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap; margin-top: 14px; }
+.phead-main .spacer { flex: 1; }
+.phead .code {
+  font-family: var(--mono); font-size: 32px; font-weight: 500;
+  letter-spacing: -0.03em; line-height: 1.05; word-break: break-all;
+}
+.phead .pname { font-size: 16.5px; color: var(--slate); margin-top: 5px; }
+.phead-actions { display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap; }
+
+/* The project's own numbers inline on a hairline — a stat strip here would be
+   four more boxes on a page whose problem was boxes. */
+.phead-meta {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 20px; padding: 14px 0;
+  border-top: 1px solid var(--hair);
+  font-size: 14px; color: var(--slate);
+}
+.phead-meta b { font-family: var(--mono); font-weight: 500; color: var(--ink); }
+.phead-meta .sep { color: var(--dust); }
+.phead-meta .warn b { color: var(--clay); }
+.phead-meta .spacer { flex: 1; }
+
+/* Site tabs, filters and results in one panel: they are three steps of a
+   single act, and three separate cards made them look like three subjects. */
+/* Overview / Purchase Orders / Invoices / Materials — an underline tab strip
+   rather than the pill-segmented control used for site switching above:
+   these are different *sections* of the page, not different scopes of the
+   same list, so they read as a different kind of choice. */
+.ptabs {
+  display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap;
+  margin-top: var(--s3);
+  /* Fixed regardless of content — Quote Analysis's own "Upload quotation"
+     button (44px, .btn-sm) only shows on that one tab; without a floor
+     here, the row shrinks to fit the shorter Documents/Materials buttons
+     alone on every other tab, so the same buttons land at a different
+     height depending which tab happens to be active. */
+  min-height: 44px;
+  border-bottom: 1px solid var(--hair);
+}
+/* :not(.btn) — an action button sharing this row (e.g. Quote Analysis's
+   Upload quotation) is a real .btn, not a tab, and needs none of this reset.
+   Without the exclusion, `.ptabs button`'s own type selector out-specifies
+   a bare class like .btn-ink and silently strips its background/border. */
+.ptabs button:not(.btn) {
+  border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  background: none; padding: 0 0 14px;
+  font-size: 15px; font-weight: 500; color: var(--slate);
+  cursor: pointer;
+}
+.ptabs button:not(.btn):hover { color: var(--ink); }
+.ptabs button:not(.btn)[aria-current="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+.ptabs .spacer { flex: 1; }
+
+.explorer {
+  margin-top: var(--s2);
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: var(--r-stad);
+  overflow: hidden;
+}
+.explorer-bar { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; padding: 18px 26px; }
+.explorer-bar .spacer { flex: 1; }
+.explorer-count { font-family: var(--mono); font-size: 13px; color: var(--slate); }
+.explorer-count b { color: var(--ink); font-weight: 500; }
+
+/* One track, so switching site reads as switching a view rather than as
+   picking from a row of loose chips. */
+.seg { display: inline-flex; gap: 4px; padding: 4px; background: var(--canvas); border-radius: var(--r-pill); flex-wrap: wrap; }
+.seg button {
+  display: inline-flex; align-items: center; gap: var(--s1);
+  min-height: 38px; padding: 0 18px;
+  border: 0; border-radius: var(--r-pill);
+  background: none; color: var(--slate);
+  font-size: 14.5px; font-weight: 500;
+  cursor: pointer; white-space: nowrap;
+}
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--text-invert); }
+.seg .n { font-family: var(--mono); font-size: 12.5px; opacity: .75; }
+
+.toolbar {
+  display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap;
+  padding: 12px 26px;
+  border-top: 1px solid var(--hair);
+  background: var(--sunken);
+}
+.toolbar .spacer { flex: 1; }
+.toolbar .lbl { font-size: 12.5px; color: var(--slate); }
+.toolbar .clear {
+  border: 0; background: none; padding: 0 4px;
+  font: inherit; font-size: 13.5px; color: var(--clay); cursor: pointer;
+}
+.toolbar .clear:hover { text-decoration: underline; }
+
+/* Columns, not cards: the point of a document list is comparing the same
+   field down the page, which floating cards actively prevent.
+
+   Every text column carries a share of extra width (minmax(floor, Nfr)),
+   not just one — a single fr track soaking up all the room a wide viewport
+   frees is what made this misalign at full width: everything else stayed
+   pinned to its old fixed size while one column ballooned, so the header
+   labels no longer sat where the eye expected them relative to the data
+   beneath. Short, fixed-content columns (ids, pills, the arrow) stay fixed
+   on purpose — a status pill doesn't read better 200px wide. */
+.dgrid {
+  --cols: 92px 112px minmax(160px, 1.8fr) minmax(90px, .7fr) minmax(110px, .9fr)
+          minmax(110px, .9fr) 96px minmax(100px, .8fr) 40px;
+}
+.dhead, .drow { display: grid; grid-template-columns: var(--cols); gap: 14px; align-items: center; }
+/* A grid item's implicit min-width is its content's own width, not the
+   track's — so a long vendor name or reference number would rather
+   overflow into the next column than actually shrink to the track it was
+   given (this is what breaks inside a narrower container, e.g. a modal,
+   even though the exact same row is fine at a full page's width). Every
+   cell gets to shrink and truncate instead. */
+.dhead > *, .drow > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dhead {
+  padding: 11px 26px;
+  border-top: 1px solid var(--hair);
+  background: var(--sunken);
+  font-size: 10.5px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate);
+}
+.dhead .r, .drow .c-amt { text-align: right; }
+.drow {
+  width: 100%; padding: 13px 26px;
+  border: 0; border-top: 1px solid var(--hair);
+  background: none; text-align: left; color: inherit; font: inherit;
+  cursor: pointer;
+}
+.drow:hover { background: var(--hover); }
+.drow:hover .open-sm { background: var(--ink); border-color: var(--ink); color: var(--text-invert); }
+.c-id   { font-family: var(--mono); font-size: 13px; color: var(--slate); }
+.c-vend { font-size: 15.5px; font-weight: 500; }
+.c-site { font-size: 14px; color: var(--slate); }
+.c-ref  { font-family: var(--mono); font-size: 13px; color: var(--slate); }
+.c-amt  { font-family: var(--mono); font-size: 15px; font-variant-numeric: tabular-nums; }
+.c-amt.pending { font-size: 13px; color: var(--dust); }
+.c-date { font-family: var(--mono); font-size: 12.5px; color: var(--slate); }
+
+/* Below the width nine columns need, the row folds onto two lines rather
+   than scrolling sideways. The amount stays hard right either way. */
+@media (max-width: 1180px) {
+  .dhead { display: none; }
+  .drow { display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 16px 22px; }
+  .drow .c-vend { order: -1; flex: 1 1 100%; }
+  .drow .c-amt { margin-left: auto; }
+}
+
+/* ── document register ────────────────────────────────────────────────────
+   The same row as a project's document list, plus the two columns a
+   cross-project view needs — a page thumbnail and the project code. */
+.dgrid.reg {
+  --cols: 34px 92px 112px minmax(150px, 1.8fr) minmax(110px, .9fr)
+          minmax(110px, .9fr) minmax(100px, .8fr) 96px minmax(110px, .8fr) 40px;
+}
+
+/* Rectangular, not circular: a document is a rectangle, and the crop has to
+   leave enough of the page to tell a dense invoice from a one-line challan. */
+.c-thumb {
+  width: 34px; height: 42px;
+  border-radius: 3px; overflow: hidden;
+  background: var(--sunken);
+  border: 1px solid var(--hair);
+  display: grid; place-items: center;
+  color: var(--dust);
+}
+.c-thumb img {
+  width: 100%; height: 100%;
+  object-fit: cover; object-position: top center;  /* the letterhead identifies it */
+  display: block;
+}
+.c-proj { font-family: var(--mono); font-size: 12.5px; color: var(--slate); }
+
+@media (max-width: 1180px) {
+  .drow .c-thumb { order: -2; }
+  .drow .c-proj { font-size: 12px; }
+}
+
+/* ── batch extraction summary ─────────────────────────────────────────────── */
+.batch-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.batch-row {
+  display: flex; align-items: center; gap: var(--s2);
+  padding: 12px 4px; border-top: 1px solid var(--hair);
+}
+.batch-row:first-child { border-top: none; }
+.batch-row .c-thumb:has(img) { cursor: pointer; }
+.batch-row-main { flex: 1; min-width: 0; }
+.batch-row-id { font-family: var(--mono); font-size: 13px; }
+
+.caption { margin-top: 20px; max-width: 244px; }
+.caption .eyebrow { margin-bottom: 9px; }
+.caption h3 { font-size: 21px; line-height: 1.2; }
+.caption .meta { margin-top: 8px; font-size: 14.5px; color: var(--slate); }
+.caption .stamp { margin-top: 12px; display: flex; gap: 14px; align-items: center; font-family: var(--mono); font-size: 12.5px; color: var(--slate); }
+
+/* ── filter bar (materials) ───────────────────────────────────────────────── */
+.filter-bar { display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap; margin-bottom: var(--s4); }
+.filter-bar label { display: inline-flex; align-items: center; gap: var(--s1); font-size: 13px; color: var(--slate); }
+
+/* ── tables: kept where numbers are meant to be compared down a column ────── */
+.card { background: var(--surface); border: 1px solid var(--hair); border-radius: var(--r-stad); overflow: hidden; }
+.table-wrap { overflow-x: auto; }
+table.data { width: 100%; border-collapse: collapse; font-size: 15.5px; }
+table.data thead th {
+  text-align: left; padding: 12px 20px;
+  background: var(--sunken);
+  font-size: 10.5px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate); white-space: nowrap;
+}
+table.data tbody td { padding: 16px 20px; border-top: 1px solid var(--hair); vertical-align: middle; }
+table.data tbody tr:hover { background: var(--hover); }
+table.data td.num, table.data th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+table.data td.mono { font-family: var(--mono); font-size: 13px; }
+table.data td.r, table.data th.r { text-align: right; }
+table.data th:first-child, table.data td:first-child { padding-left: 26px; }
+table.data th:last-child,  table.data td:last-child  { padding-right: 26px; }
+
+/* ── materials rollup ─────────────────────────────────────────────────────
+   A comparison table, so it is tuned for reading down a column rather than
+   across a row: fixed numeric widths, tighter rows than the document list,
+   and a header that survives scrolling. */
+/* Fixed layout, columns sized by the <colgroup> in QuoteAnalysisSection.jsx
+   — the actions column is already as wide as its own "Remove this
+   quotation?" confirm state needs, so entering that state never has to
+   widen the column (and so never shifts any other row) the way content-
+   driven auto layout would have. */
+table.data.quote-list { table-layout: fixed; }
+table.data.rollup { table-layout: fixed; font-size: 15px; }
+table.data.rollup tbody td { padding-top: 13px; padding-bottom: 13px; }
+
+.rollup .c-mat {
+  font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rollup .c-unit {
+  font-size: 12.5px; font-weight: 600;
+  letter-spacing: var(--wide); text-transform: uppercase;
+  color: var(--slate);
+}
+.rollup .num.strong { font-size: 15.5px; font-weight: 600; color: var(--ink); }
+
+/* Zebra only past the point where a row can be lost mid-scan — on three rows
+   it is decoration, on thirty it is what keeps your eye on the line. */
+.rollup tbody tr:nth-child(even) { background: color-mix(in srgb, var(--sunken) 45%, transparent); }
+.rollup tbody tr:hover { background: var(--hover); }
+
+.rollup-wrap.is-tall { max-height: 30rem; overflow-y: auto; }
+.rollup-wrap.is-tall thead th { position: sticky; top: 0; z-index: 1; }
+
+/* Ordered vs. delivered, per material — the numbers earn their color: full
+   or over delivery reads as done, a shortfall reads as still owed, and
+   nothing yet is quiet rather than alarming. */
+.rollup .num.ok   { color: var(--ok-fg); }
+.rollup .num.warn { color: var(--clay); }
+.rollup .num.mute { color: var(--dust); }
+
+.rollup-toggle {
+  width: 22px; height: 22px; flex: none; margin: -2px 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; background: none; padding: 0; color: var(--slate); cursor: pointer;
+  transition: transform .14s ease, color .14s ease;
+}
+.rollup-toggle:hover { color: var(--ink); }
+.rollup-toggle.is-open { transform: rotate(90deg); color: var(--ink); }
+.rollup-mat-cell { display: flex; align-items: center; gap: 6px; }
+
+/* The expanded breakdown: one card per side, so "ordered" and "delivered"
+   never bleed into the same list. */
+tr.rollup-detail td { padding: 0 20px var(--s3); background: var(--hover); }
+.rollup-breakdown { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); padding-top: var(--s2); }
+.rollup-breakdown h4 {
+  font-size: 11px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate); margin-bottom: 6px;
+}
+.rollup-breakdown ul { list-style: none; margin: 0; padding: 0; }
+.rollup-breakdown li {
+  display: flex; justify-content: space-between; gap: var(--s2);
+  padding: 7px 0; border-top: 1px solid var(--hair); font-size: 13.5px;
+}
+.rollup-breakdown li:first-child { border-top: 0; }
+.rollup-breakdown .qty { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rollup-breakdown .empty-mini { font-size: 13px; color: var(--dust); padding: 7px 0; }
+@media (max-width: 640px) { .rollup-breakdown { grid-template-columns: 1fr; } }
+
+/* A label that links through to the document it names — same size/position
+   as the plain-text version it sits beside, just clickable. Used inside a
+   rollup breakdown row and inside the delivery issues panel alike. */
+.link-btn {
+  background: none; border: 0; padding: 0; margin: 0; font: inherit;
+  color: var(--clay); text-align: left; cursor: pointer;
+}
+.link-btn:hover { text-decoration: underline; }
+
+/* The delivery issues panel (ComparePage.jsx, Delivery info tab) — one block
+   per mismatched site/office pair, in the aside slot the PO tab gives the
+   scanned image. */
+.delivery-issue { padding: var(--s2) var(--s3); border-top: 1px solid var(--hair); }
+.delivery-issue:first-of-type { border-top: 0; }
+.delivery-issue-head { display: flex; align-items: baseline; gap: var(--s1); margin-bottom: 4px; }
+/* The two document names carry the colour, not the connecting words — they
+   are what a reviewer is actually looking for ("which two disagree?"), and
+   .link-btn was previously overriding the lead's own red on exactly the
+   words that mattered while "and"/"disagree" kept it. */
+.delivery-issue-lead { font-size: 13px; color: var(--slate); margin: 0 0 6px; }
+.delivery-issue-lead .link-btn { color: var(--bad-fg); font-weight: 700; }
+/* What is wrong on this line — the document a material is missing from, or
+   the two quantities that disagree. Marked so the eye lands on it without
+   reading the sentence around it. */
+.issue-where { color: var(--bad-fg); font-weight: 700; }
+.delivery-issue-lines { list-style: none; margin: 0; padding: 0; font-size: 13px; color: var(--slate); }
+.delivery-issue-lines li { padding: 4px 0; border-top: 1px solid var(--hair); }
+.delivery-issue-lines li:first-child { border-top: 0; }
+
+@media (max-width: 640px) {
+  table.data.rollup { table-layout: auto; }
+  .rollup .c-mat { white-space: normal; }
+}
+
+.empty { padding: var(--s6) var(--s3); text-align: center; color: var(--dust); font-size: 15px; }
+
+/* ── quote analysis ───────────────────────────────────────────────────────── */
+/* Text-only row actions (retry / remove / confirm / cancel) — same visual
+   language as .toolbar .clear, generalised out of that one context. */
+.row-link {
+  border: 0; background: none; padding: 0; margin: 0 0 0 var(--s2);
+  display: inline-flex; align-items: center; gap: 4px;
+  font: inherit; font-size: 13.5px; color: var(--slate); cursor: pointer;
+}
+.row-link:first-child { margin-left: 0; }
+.row-link:hover { color: var(--ink); text-decoration: underline; }
+.row-link.warn:hover { color: var(--signal); }
+/* gap, not the buttons' own margins: the "Delete?" ahead of them is a bare
+   text node, so it isn't an element child — which made :first-child match
+   the *Confirm button* instead and strip exactly the margin that was meant
+   to separate the two. Spacing the row from the container can't be fooled
+   that way. */
+.row-actions { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+.row-actions .row-link { margin-left: 0; }
+/* A yes/no pair, coloured as answers rather than as risk — go/stop, the way
+   an accept-or-reject prompt reads. Icon-only: the question sitting right
+   beside them ("Delete?") already says what is being answered, so the words
+   were carrying no meaning the tick and cross don't. Each keeps a 26px
+   target and names itself to a screen reader — see the aria-labels at the
+   call sites. */
+.row-link.go, .row-link.stop {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: inline-grid; place-items: center;
+}
+.row-link.go:hover, .row-link.stop:hover { text-decoration: none; }
+.row-link.go { color: var(--ok-fg); }
+.row-link.go:hover { color: var(--ok-fg); background: var(--ok-bg); }
+.row-link.stop { color: var(--bad-fg); }
+.row-link.stop:hover { color: var(--bad-fg); background: var(--bad-bg); }
+
+.recommend-head { padding: var(--s3) var(--s3) 0; }
+.recommend-head h3 {
+  font-size: 12px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate); margin-bottom: 4px;
+}
+.recommend-head .d { font-size: 13.5px; color: var(--dust); }
+.recommend-list { list-style: none; margin: 0; padding: var(--s2) var(--s3) var(--s3); }
+.recommend-list li {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding: 9px 0; border-top: 1px solid var(--hair); font-size: 14.5px;
+}
+.recommend-list li:first-child { border-top: 0; }
+.rec-mat { font-weight: 500; min-width: 160px; }
+.rec-arrow { color: var(--dust); }
+.rec-vendor { font-weight: 500; }
+.rec-rate { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.rec-grade {
+  font-size: 12.5px; color: var(--slate); border: 1px solid var(--hair);
+  border-radius: var(--r-pill); padding: 2px 9px;
+}
+
+.rec-manual {
+  font-size: 12px; font-weight: 600; color: var(--info-fg); background: var(--info-bg);
+  border-radius: var(--r-pill); padding: 3px 10px;
+}
+.rec-alt { font-size: 13px; color: var(--dust); }
+
+/* The comparison matrix reuses table.data.rollup's column/cell styling
+   (.num.ok/.mute/.strong) as-is — only the per-cell grade sub-line, the
+   material name's unit suffix, and the clickable-cell button are new.
+
+   table-layout is the one thing NOT reused from .rollup, though: .rollup's
+   fixed layout splits the card's full width evenly across however many
+   columns exist, which is right for a rollup (it has a stable, known
+   column count) but wrong here — 3 vendor quotations and 6 both stretch to
+   fill the same width either way, so fewer quotations means each column
+   gets padded out with empty space rather than just taking what its own
+   numbers need. Auto layout sizes every column off its own content
+   instead, so the table only ever takes the room a given comparison
+   actually needs — .table-wrap's own overflow-x still carries a wide one
+   (many vendors) exactly as it already did. Per-column alignment (.num/.r)
+   is a text-align rule on the cell, unaffected by which layout mode sizes
+   the columns around it. */
+table.data.quote-matrix { table-layout: auto; width: auto; min-width: 100%; }
+.quote-matrix .cell-grade { font-size: 11.5px; color: var(--slate); font-weight: 400; margin-top: 2px; }
+.quote-matrix .c-mat .unit { font-size: 12.5px; color: var(--dust); font-weight: 400; }
+
+/* Every priced cell is a button standing in for a table cell — every part
+   of table.data's .num/.ok/.strong styling has to reach through it, so it
+   resets to plain text rather than looking like a button, and fills the
+   cell's own padding rather than adding its own. */
+table.data td.quote-cell { padding: 0; }
+.quote-cell-btn {
+  display: block; width: 100%; padding: 16px 20px;
+  border: 0; background: none; cursor: pointer;
+  font: inherit; color: inherit; text-align: inherit;
+}
+.quote-cell-btn:hover { background: var(--hover); }
+.quote-cell:last-child .quote-cell-btn { padding-right: 26px; }
+.cell-flag {
+  font-size: 10.5px; font-weight: 700; letter-spacing: var(--wide); text-transform: uppercase;
+  margin-top: 3px; color: var(--ok-fg);
+}
+.cell-flag.mute { color: var(--dust); font-weight: 600; }
+
+/* ── modal ────────────────────────────────────────────────────────────────── */
+.backdrop {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(20, 20, 19, .45);
+  display: grid; place-items: center;
+  padding: var(--s3); overflow: auto;
+}
+.modal {
+  width: 100%; max-width: 480px;
+  background: var(--surface);
+  border-radius: var(--r-stad);
+  box-shadow: var(--lift-2);
+}
+.modal-lg { max-width: 1000px; }
+
+/* Frosted-glass variant — a lighter-weight confirmation sitting on top of
+   an already-open screen (e.g. the Generate Purchase Bill mismatch choice)
+   reads better as a pane of ice over the page than as another opaque card
+   stacked on the first. */
+.backdrop-glacier { background: rgba(190, 214, 230, .35); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.modal-glacier {
+  background: linear-gradient(165deg, rgba(255, 255, 255, .82), rgba(224, 240, 250, .68));
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, .65);
+  box-shadow: 0 24px 60px -12px rgba(30, 60, 90, .35), inset 0 1px 0 rgba(255, 255, 255, .7);
+}
+.modal-glacier .modal-head h2 { color: var(--ink); }
+.modal-head { display: flex; align-items: flex-start; gap: var(--s2); padding: var(--s4) var(--s4) var(--s3); }
+.modal-head h2 { font-size: 22px; }
+.modal-head .for { font-family: var(--mono); font-size: 13px; color: var(--slate); margin-top: 4px; }
+.modal-head .spacer { flex: 1; }
+.modal-body { padding: 0 var(--s4) var(--s4); }
+.modal-lg .modal-body { max-height: 70vh; overflow-y: auto; }
+/* flex-wrap so a footer too narrow for its buttons wraps onto a second row
+   instead of spilling past the card's own rounded edge (see the Generate
+   Purchase Bill popup, sized via Modal's maxWidth precisely so it doesn't
+   have to). */
+.modal-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s1); padding: var(--s3) var(--s4) var(--s4); }
+.modal-foot .spacer { flex: 1; }
+
+.close-x {
+  flex: none; width: 44px; height: 44px;
+  border: 1px solid var(--line); border-radius: 50%;
+  background: var(--surface); color: var(--slate);
+  display: grid; place-items: center;
+  cursor: pointer;
+}
+.close-x:hover { background: var(--canvas); color: var(--ink); }
+.close-x:disabled { opacity: .4; cursor: not-allowed; }
+.close-x:disabled:hover { background: var(--surface); color: var(--slate); }
+
+/* A compact, icon-only destructive action sitting in a row of full-size
+   .btn buttons (e.g. a project page's Print/Export/Add document) — smaller
+   and quieter by design, since the action it triggers is the one nobody
+   should reach for casually. */
+.icon-btn-danger {
+  flex: none; width: 38px; height: 38px;
+  border: 1px solid var(--line); border-radius: var(--r-btn);
+  background: var(--surface); color: var(--slate);
+  display: grid; place-items: center;
+  cursor: pointer;
+}
+.icon-btn-danger:hover { background: var(--bad-bg); color: var(--bad-fg); border-color: var(--bad-fg); }
+
+/* ── forms ────────────────────────────────────────────────────────────────── */
+.form { display: flex; flex-direction: column; gap: var(--s3); }
+.form label { display: flex; flex-direction: column; gap: 6px; }
+.form label > span,
+.field-grid label > span {
+  font-size: 11.5px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate);
+}
+.form .hint { font-size: 13px; color: var(--slate); }
+.row { display: flex; gap: var(--s1); }
+
+/* A soft tinted card with a left accent and an icon badge, not a solid block
+   of saturated colour — the badge is a pseudo-element, absolutely
+   positioned into reserved left padding rather than laid out via flex, so
+   it works the same whether a banner is one line of plain text or (several
+   callers do this) a heading plus a bulleted list plus a button on its own
+   line — nothing about their internal layout has to change for this. */
+.banner {
+  position: relative;
+  padding: 14px 18px 14px 50px; border-radius: var(--r-stad);
+  border: 1px solid var(--hair); border-left: 3px solid transparent;
+  box-shadow: var(--lift-1);
+  font-size: 14px; line-height: 1.5; color: var(--text);
+  margin-bottom: var(--s3);
+}
+.banner::before {
+  content: ""; position: absolute; left: 16px; top: 14px;
+  width: 22px; height: 22px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 12px; font-weight: 700; line-height: 1; color: #fff;
+}
+.banner-err  { border-left-color: var(--bad-fg);  background: color-mix(in srgb, var(--bad-bg) 45%, var(--surface)); }
+.banner-err::before  { content: "✕"; background: var(--bad-fg); }
+.banner-ok   { border-left-color: var(--ok-fg);   background: color-mix(in srgb, var(--ok-bg) 45%, var(--surface)); }
+.banner-ok::before   { content: "✓"; background: var(--ok-fg); }
+.banner-wait { border-left-color: var(--info-fg); background: color-mix(in srgb, var(--info-bg) 45%, var(--surface)); }
+.banner-wait::before { content: "i"; background: var(--info-fg); font-family: Georgia, serif; font-style: italic; }
+.banner-warn { border-left-color: var(--warn-fg); background: color-mix(in srgb, var(--warn-bg) 45%, var(--surface)); }
+.banner-warn::before { content: "!"; background: var(--warn-fg); }
+
+/* ── upload ───────────────────────────────────────────────────────────────── */
+.drop {
+  padding: var(--s6) var(--s3);
+  border: 1.5px dashed var(--line); border-radius: var(--r-stad);
+  background: var(--canvas);
+  text-align: center; cursor: pointer;
+}
+.drop:hover, .drop.over { border-color: var(--ink); background: var(--sunken); }
+.drop .t { font-size: 16px; font-weight: 500; margin-top: var(--s1); }
+.drop .d { font-size: 13.5px; color: var(--slate); margin-top: 4px; }
+
+.filelist { list-style: none; margin: var(--s3) 0 0; padding: 0; font-size: 14px; }
+.filelist li { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) 0; border-bottom: 1px solid var(--hair); }
+.filelist .fname { flex: 1; word-break: break-all; }
+.filelist .fsize { font-family: var(--mono); font-size: 12.5px; color: var(--slate); }
+.drop-one { border: 0; background: none; color: var(--slate); font-size: 18px; line-height: 1; padding: 0 4px; cursor: pointer; }
+.drop-one:hover { color: var(--signal); }
+
+/* ── scan / QR ────────────────────────────────────────────────────────────── */
+.qr-frame {
+  background: #fff;
+  border: 1px solid var(--hair); border-radius: var(--r-stad);
+  padding: var(--s3);
+  display: grid; place-items: center;
+}
+.qr-frame svg { width: 100%; height: auto; display: block; max-width: 280px; }
+.steps { margin: var(--s3) 0 0; padding-left: var(--s3); font-size: 14px; color: var(--slate); }
+.steps li { margin-bottom: 6px; }
+.kv { margin-top: var(--s3); border-top: 1px solid var(--hair); padding-top: var(--s2); font-size: 13px; }
+.kv div { display: flex; justify-content: space-between; gap: var(--s2); padding: 4px 0; }
+.kv span:first-child { color: var(--slate); }
+.kv span:last-child { font-family: var(--mono); text-align: right; word-break: break-all; }
+.countdown { font-weight: 700; font-family: var(--mono); }
+.countdown.warn { color: var(--clay); }
+.countdown.expired { color: var(--signal); }
+
+/* ── review ───────────────────────────────────────────────────────────────── */
+.doc-pages-count { font-size: 12px; color: var(--ink-3); margin-bottom: var(--s1); }
+.doc-pages { display: flex; gap: var(--s1); flex-wrap: wrap; margin-bottom: var(--s3); }
+.doc-pages img {
+  width: 92px; height: 118px; object-fit: cover;
+  border-radius: var(--r-btn); border: 1px solid var(--hair); display: block;
+}
+/* A generated Purchase Bill's stand-in for a scanned page thumbnail — same
+   92x118 slot as .doc-pages img, just a clipped, scaled-down crop of the
+   real voucher (see PurchaseBillPreview) instead of a photo. 760px is the
+   voucher's own comfortable render width; 92/760 is the scale that fits it
+   into the thumbnail's width, same top-left crop .doc-pages img gets via
+   object-position. */
+.pb-thumb {
+  width: 92px; height: 118px; flex: none;
+  padding: 0; border: 1px solid var(--hair); border-radius: var(--r-btn);
+  background: #fff; overflow: hidden; cursor: pointer;
+}
+.pb-thumb .pb-voucher-preview {
+  width: 760px; margin: 0; padding: 14px; border: 0;
+  transform: scale(0.1211); transform-origin: top left;
+  pointer-events: none;
+}
+.field-section + .field-section { margin-top: var(--s3); }
+.field-section h3 {
+  font-size: 12px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate); margin-bottom: var(--s1);
+}
+/* minmax(200px, 300px), not an unbounded 1fr — a section with only one
+   field (Dates has just doc_date_raw) previously had that field's own
+   1fr track absorb the entire row's width, rendering it far wider than
+   any field in a fuller section right above or below it. Capping the
+   track keeps every field a similar, sensible input width regardless of
+   how many others happen to share its row.
+
+   300px specifically (not the rounder 340px this started at): at the
+   review modal's own width, 3 columns of 340px don't quite fit — auto-fit
+   only ever fits 2, so a 3-field section (e.g. doc_number/po_number/
+   dc_number) wrapped its 3rd field onto its own mostly-empty row instead
+   of sitting beside the other two. 300px is the largest cap that still
+   lets 3 fit side by side there. */
+.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 300px)); gap: 10px; }
+.field-grid label { display: flex; flex-direction: column; gap: 4px; }
+.field-grid .display { font-family: var(--mono); font-size: 14px; padding: 10px 0 2px; }
+/* Scoped to the review form specifically — every field here sits in a
+   dense list of its own, so it can afford to be noticeably more compact
+   than a lone search box or a project-creation form elsewhere, without
+   shrinking .input everywhere it's used app-wide. */
+.field-grid .input, .field-grid select.input {
+  min-height: 38px; padding: 0 16px; font-size: 14px;
+}
+/* A completeness gate's reason, sitting right above the field it's actually
+   about (ReviewModal passes these in as HeaderFields' fieldErrors) rather
+   than bundled into one banner wherever the Decision section happens to be. */
+/* min-height, not just line-height — the slot is rendered blank (a single
+   space) for every field in a row once any one of them has a real message,
+   so it needs a floor even with no visible glyphs to size itself against. */
+.field-error { min-height: 16px; font-size: 12.5px; font-weight: 500; color: var(--bad-fg); line-height: 1.35; }
+/* The field wears its own problem: a reviewer scanning the form sees which
+   input is wrong without reading anything, and the sentence underneath only
+   has to say why. */
+.field-grid label.is-invalid > span { color: var(--bad-fg); }
+.field-grid label.is-invalid .input,
+.field-grid label.is-invalid select.input {
+  border-color: var(--bad-fg);
+  background: color-mix(in srgb, var(--bad-bg) 22%, var(--surface));
+}
+.field-grid label.is-invalid .input:focus { border-color: var(--bad-fg); outline: 2px solid var(--bad-bg); }
+
+table.lines { font-size: 13px; }
+table.lines thead th { padding: 10px var(--s1); }
+table.lines tbody td { padding: 6px var(--s1); }
+table.lines th:first-child, table.lines td:first-child { padding-left: var(--s1); }
+table.lines th:last-child,  table.lines td:last-child  { padding-right: var(--s1); }
+table.lines .input { min-height: 36px; font-size: 13px; border-radius: var(--r-chip); width: 100%; padding: 0 8px; }
+/* Description and Material (LINE_FIELDS/QUOTE_LINE_FIELDS both put them
+   first, right after the # column) have no width of their own — with
+   table-layout:auto that lets them balloon to whatever's left once the
+   narrow numeric columns take their share. Capped down to about three
+   quarters of that so HSN/Qty/Unit/Rate/Amount/Tax % get their own room
+   back instead of being squeezed to the edge. */
+table.lines tbody td:nth-child(2) .input,
+table.lines tbody td:nth-child(3) .input { max-width: 260px; }
+/* A line another document in this delivery disagrees about — the marker sits
+   on the line itself and the detail comes on hover, so a clean table stays
+   clean and a reviewer never has to hold two screens side by side. */
+.line-issue-cell { width: 28px; text-align: center; }
+.line-issue {
+  display: inline-grid; place-items: center;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--warn-fg); color: #fff;
+  font-family: Georgia, serif; font-style: italic;
+  font-size: 12px; font-weight: 700; line-height: 1;
+  cursor: help;
+}
+
+.reviewer-row { display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap; }
+.reviewer-row .input { flex: 1; min-width: 180px; max-width: 280px; }
+.reject-panel { display: flex; flex-direction: column; gap: var(--s1); margin-top: var(--s2); max-width: 520px; }
+.reject-panel textarea {
+  border: 1px solid var(--line); border-radius: var(--r-btn); padding: var(--s2);
+  font-family: inherit; font-size: 14.5px; resize: vertical; min-height: 72px;
+}
+
+/* ── compare (PO vs. invoice) ──────────────────────────────────────────────
+   The PO is the document this page was opened for, so it gets the width and
+   the primary column; the scanned page and any matching invoices are
+   supporting material in a narrow, secondary sidebar — not equal billing. */
+.compare-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--s3); align-items: start; }
+@media (max-width: 900px) { .compare-layout { grid-template-columns: 1fr; } }
+
+.compare-main { padding: var(--s4); }
+
+.compare-aside {
+  display: flex; flex-direction: column; gap: var(--s3);
+  position: sticky; top: calc(var(--s3) + 88px);
+}
+.compare-side { display: flex; flex-direction: column; gap: var(--s1); }
+.compare-side img {
+  width: 100%; height: auto; display: block;
+  border-radius: var(--r-stad); border: 1px solid var(--hair);
+}
+
+.compare-links { padding: var(--s3); }
+.compare-links h3 {
+  font-size: 12px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate); margin-bottom: var(--s2);
+}
+.compare-link-row {
+  display: flex; align-items: center; gap: var(--s2);
+  width: 100%; padding: 12px 14px;
+  border: 1px solid var(--hair); border-radius: var(--r-btn);
+  background: var(--surface); color: inherit; font: inherit; text-align: left;
+}
+.compare-link-row + .compare-link-row { margin-top: var(--s1); }
+.compare-link-row:hover { background: var(--hover); border-color: var(--line); }
+/* The row used to be one big button; opening a document and deleting it are
+   two different actions now, so the open half is its own inner button
+   (flex:1, no border/background of its own — the row around it already has
+   both) and delete sits beside it rather than nested inside. */
+.compare-link-open {
+  display: flex; align-items: center; gap: var(--s2); flex: 1; min-width: 0;
+  border: 0; background: none; padding: 0; margin: 0;
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.compare-link-delete {
+  flex: none; display: grid; place-items: center;
+  width: 30px; height: 30px; border-radius: var(--r-btn);
+  border: 0; background: none; color: var(--dust); cursor: pointer;
+}
+.compare-link-delete:hover { background: var(--bad-bg); color: var(--bad-fg); }
+.compare-link-main { flex: 1; min-width: 0; }
+.compare-link-num-row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.compare-link-num { font-size: 14.5px; font-weight: 500; flex: none; }
+.compare-link-vendor {
+  font-size: 12.5px; color: var(--slate);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.compare-link-meta {
+  font-size: 12.5px; color: var(--slate); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.empty-mini { font-size: 13px; color: var(--dust); }
+
+/* Delivered-so-far per material, against the PO's own ordered quantity. */
+.recon-materials { list-style: none; margin: 0; padding: 0; }
+.recon-materials li {
+  display: flex; justify-content: space-between; gap: var(--s2);
+  padding: 8px 0; border-top: 1px solid var(--hair); font-size: 13.5px;
+}
+.recon-materials li:first-child { border-top: 0; }
+.recon-mat-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recon-mat-qty { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--slate); }
+.recon-materials li.is-over .recon-mat-qty { color: var(--bad-fg); font-weight: 600; }
+
+/* One delivery — one or two copies of the same invoice (site, office). A
+   plain heading row, not a .compare-link-row itself, since it isn't
+   clickable on its own; each copy underneath still is. */
+.compare-delivery + .compare-delivery { margin-top: var(--s2); }
+.compare-delivery-head {
+  display: flex; align-items: center; gap: var(--s2);
+  /* Right padding matches .compare-link-row's own (14px) so the delete icon
+     here lands in exactly the same column as the delete icons below it. */
+  padding: 0 14px 6px 2px;
+}
+/* Without this, the head row's own spacer div does nothing — pill, Generate
+   Purchase Bill and the delete icon end up bunched right after the vendor
+   name instead of reaching the row's right edge, out of line with the
+   delete icons on the .compare-link-rows below. */
+.compare-delivery-head .spacer { flex: 1; }
+.compare-delivery-head .compare-link-meta { margin-top: 0; }
+.compare-delivery .compare-link-row { margin-top: 6px; }
+/* Named, not counted — "3 missing" tells a reviewer there's a gap but not
+   which one to go chase down; the comma list does. */
+.compare-missing { font-size: 13px; color: var(--warn-fg); padding: 0 2px 6px; }
+
+/* ── document preview (PO tab's aside) ────────────────────────────────────
+   Replaces the old bare stacked images: a real header (what this is, plus
+   the one-tap escape hatch to the full-size original), the page itself,
+   and — once there's more than one page, or the image is zoomed past its
+   own natural size — the controls to move through it. */
+.doc-preview-head { display: flex; align-items: flex-start; gap: var(--s2); padding: var(--s3) var(--s3) 0; }
+.doc-preview-head h3 { font-size: 15px; }
+.doc-preview-frame {
+  margin: var(--s2) var(--s3) 0;
+  border-radius: var(--r-btn); border: 1px solid var(--hair);
+  background: var(--canvas);
+  overflow: auto;
+  max-height: 60vh;
+}
+.doc-preview-frame img {
+  display: block; width: 100%; height: auto;
+  transform-origin: top center;
+  transition: transform .15s ease;
+}
+.doc-preview-controls {
+  display: flex; align-items: center; gap: 4px;
+  padding: var(--s2) var(--s3) var(--s3);
+}
+.doc-preview-page { font-family: var(--mono); font-size: 12.5px; color: var(--slate); padding: 0 6px; white-space: nowrap; }
+.doc-preview-nav {
+  width: 32px; height: 32px; flex: none;
+  display: grid; place-items: center;
+  border: 1px solid var(--line); border-radius: var(--r-btn);
+  background: var(--surface); color: var(--ink); cursor: pointer;
+}
+.doc-preview-nav:hover:not(:disabled) { background: var(--canvas); }
+.doc-preview-nav:disabled { opacity: .4; cursor: not-allowed; }
+.doc-preview-nav.prev svg { transform: scaleX(-1); }
+
+/* ── aside cards shared by Delivery Summary / Timeline / Issues ──────────── */
+.aside-card-head { display: flex; align-items: flex-start; gap: 12px; padding: var(--s3) var(--s3) 0; }
+.compare-links .aside-card-head { padding-top: var(--s3); }
+.aside-card-head h3 {
+  font-size: 12px; font-weight: 700; letter-spacing: var(--wide);
+  text-transform: uppercase; color: var(--slate);
+}
+.aside-card-sub { display: block; margin-top: 2px; font-size: 12.5px; color: var(--dust); }
+.aside-card-icon {
+  flex: none; width: 32px; height: 32px; margin-top: -2px;
+  display: grid; place-items: center; border-radius: var(--r-btn);
+  background: var(--info-bg); color: var(--info-fg);
+}
+.aside-card-icon-warn { background: var(--warn-bg); color: var(--warn-fg); }
+
+.kv-list { margin: var(--s2) 0 0; padding: 0 var(--s3) var(--s3); }
+.kv-list div {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
+  padding: 9px 0; border-top: 1px solid var(--hair);
+}
+.kv-list div:first-child { border-top: 0; }
+.kv-list dt { font-size: 13px; color: var(--slate); }
+.kv-list dd { margin: 0; font-size: 14px; font-weight: 500; text-align: right; }
+
+/* A dot-and-line rail down the left edge, each entry's own status colour on
+   its dot (the same d-ok/d-no/d-ink discs the rest of the app already
+   uses) — the trailing "Next delivery" entry is always present and always
+   muted, a placeholder rather than a forecast this data can't make. */
+.timeline { list-style: none; margin: var(--s2) 0 0; padding: 0 var(--s3) var(--s3); }
+.timeline li {
+  position: relative;
+  display: flex; gap: 12px;
+  padding: 0 0 var(--s3) 22px;
+  border-left: 1.5px solid var(--hair);
+  margin-left: 5px;
+}
+.timeline li:last-child { border-left-color: transparent; padding-bottom: 0; }
+.timeline li.is-future { color: var(--dust); }
+.timeline-dot {
+  position: absolute; left: -6.5px; top: 2px;
+  width: 11px; height: 11px; border-radius: 50%;
+  border: 2px solid var(--surface);
+}
+.timeline-date { font-size: 13px; font-weight: 600; color: var(--ink); }
+.timeline li.is-future .timeline-date { color: var(--dust); font-weight: 500; }
+.timeline-desc { margin-top: 2px; font-size: 12.5px; line-height: 1.5; color: var(--slate); }
+
+/* ── Purchase Bot ─────────────────────────────────────────────
+   A docked panel, not a modal: the answer is read against the screen behind it,
+   so nothing gets a backdrop and nothing traps focus. */
+
+.chat-bubble {
+  position: fixed; right: var(--s3); bottom: var(--s3); z-index: 40;
+  width: 52px; height: 52px; border-radius: var(--r-pill);
+  display: grid; place-items: center;
+  background: var(--ink); color: var(--text-invert);
+  border: 0; cursor: pointer; box-shadow: var(--lift-2);
+}
+.chat-bubble:hover { background: var(--charcoal); }
+
+.chat-dock {
+  position: fixed; right: var(--s3); bottom: var(--s3); z-index: 40;
+  display: flex; flex-direction: column;
+  width: min(400px, calc(100vw - var(--s4)));
+  height: min(560px, calc(100vh - var(--s8)));
+  background: var(--surface); border-radius: var(--r-stad);
+  box-shadow: var(--lift-2); overflow: hidden;
+}
+
+.chat-head { display: flex; align-items: flex-start; gap: var(--s2); padding: 14px var(--s2) 10px; }
+.chat-head h2 { font-size: 20px; letter-spacing: var(--tight); }
+.chat-head .spacer { flex: 1; }
+
+/* Replaces the title row entirely rather than squeezing beside it — the
+   panel is only 400px wide, too narrow for a question and two buttons to
+   share space with "Ask the data" and its subtitle. */
+.chat-close-confirm { display: flex; align-items: center; gap: var(--s1); width: 100%; font-size: 14px; }
+.chat-close-confirm .spacer { flex: 1; }
+
+.chat-log {
+  flex: 1; overflow-y: auto; padding: 0 var(--s2) 14px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+
+.chat-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.chat-empty p { font-size: 14.5px; color: var(--text); margin-bottom: 2px; }
+.chat-empty .btn { text-align: left; white-space: normal; }
+
+/* The question is the inset one — white is for lifted things, and the panel is
+   already the lifted surface, so a bubble here has to sink instead. */
+.chat-turn.is-user {
+  align-self: flex-end; max-width: 85%;
+  background: var(--sunken); border-radius: var(--r-stad);
+  padding: 9px 14px;
+}
+.chat-turn.is-assistant { max-width: 95%; }
+.chat-turn.is-failed .chat-text { color: var(--bad-fg); }
+.chat-text { font-size: 16px; line-height: 1.5; white-space: pre-wrap; }
+.chat-wait { color: var(--slate); font-size: 14.5px; }
+
+/* The result is the answer, not a footnote to it — so it sits in the turn
+   with its own frame. Sticky header because a twenty-row answer scrolls
+   inside the turn. */
+.chat-result {
+  margin-top: var(--s1);
+  border: 1px solid var(--hair); border-radius: var(--r-btn);
+  overflow: hidden;
+}
+.chat-result .chat-rows { margin-top: 0; border-radius: 0; }
+.chat-result-foot {
+  padding: 5px 10px;
+  border-top: 1px solid var(--hair); background: var(--sunken);
+  font-family: var(--mono); font-size: 12px; color: var(--slate);
+}
+.chat-rows { margin-top: 6px; max-height: 200px; overflow: auto; }
+.chat-rows thead th { position: sticky; top: 0; z-index: 1; }
+.chat-rows table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.chat-rows th, .chat-rows td {
+  padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--hair);
+  white-space: nowrap;
+}
+.chat-rows th {
+  position: sticky; top: 0; background: var(--surface);
+  font-family: var(--mono); font-weight: 600; letter-spacing: 0.02em; color: var(--slate);
+}
+.chat-rows td { font-variant-numeric: tabular-nums; color: var(--text); }
+
+.chat-ask { display: flex; gap: var(--s1); padding: 12px var(--s2); border-top: 1px solid var(--hair); }
+.chat-ask input {
+  flex: 1; min-width: 0; padding: 10px var(--s2);
+  border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--canvas); font: inherit; font-size: 15px; color: var(--text);
+}
+.chat-ask input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chat-ask .btn { border-radius: var(--r-pill); padding: 0 14px; }
+
+/* ── print ────────────────────────────────────────────────────────────────
+   The site office pins the day's intake on a wall, so the register has to
+   survive a printer: chrome, controls and anything mid-interaction go. */
+@media print {
+  body { background: #fff; }
+  .nav-rail, .btn, .close-x, .tile-actions, .tile-add, .backdrop,
+  .toolbar, .filter-bar, .input, .open-round, .open-sm,
+  .chat-bubble, .chat-dock { display: none !important; }
+  .band { padding: 0; }
+  .tile, .card, .phead, .explorer, .activity {
+    box-shadow: none; border: 1px solid var(--line); break-inside: avoid;
+  }
+  table.data thead { display: table-header-group; }
+  table.data tbody tr { break-inside: avoid; }
+}
+
+/* ── Purchase Bill voucher (print only) ──────────────────────────────────
+   Portalled onto <body> — see PurchaseBillVoucher.jsx for why. Invisible on
+   screen; :has() below only fires print's #root-hiding rule while this
+   exists in the DOM at all, so every other print path (the rules just
+   above) is unaffected. */
+.pb-voucher { display: none; }
+@media print {
+  body:has(.pb-voucher) #root { display: none !important; }
+  body:has(.pb-voucher) .pb-voucher {
+    display: block; position: absolute; top: 0; left: 0; width: 100%;
+    padding: 28px; font-family: Arial, Helvetica, sans-serif; color: #000;
+  }
+}
+.pb-voucher h1 { text-align: center; font-size: 20px; letter-spacing: .04em; margin: 0 0 10px; }
+.pb-voucher-org { text-align: center; font-weight: 700; font-size: 14px; }
+.pb-voucher-addr { text-align: center; font-size: 12.5px; }
+.pb-voucher-gst { text-align: center; font-weight: 700; font-size: 12.5px; margin-bottom: 14px; }
+.pb-voucher-info {
+  width: 100%; border: 1px solid #000; border-collapse: collapse;
+  font-size: 12.5px; margin-bottom: 14px;
+}
+.pb-voucher-info td { padding: 5px 8px; border: none; }
+.pb-voucher-info tr:not(:last-child) td { border-bottom: 1px solid #ddd; }
+.pb-voucher-info .pb-voucher-label { font-weight: 700; width: 14%; white-space: nowrap; }
+.pb-voucher-info td:nth-child(2) { width: 36%; }
+.pb-voucher-lines {
+  width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 4px;
+}
+.pb-voucher-lines th, .pb-voucher-lines td { border: 1px solid #000; padding: 6px 8px; text-align: left; }
+.pb-voucher-lines th { font-weight: 700; background: #f2f2f2; }
+.pb-voucher-totals { width: 260px; margin-left: auto; border-collapse: collapse; font-size: 12.5px; }
+.pb-voucher-totals td { border: 1px solid #000; padding: 5px 10px; }
+.pb-voucher-totals td:first-child { font-weight: 700; }
+.pb-voucher-totals td:last-child { text-align: right; }
+.pb-voucher-net td { font-weight: 700; }
+.pb-voucher-words { margin-top: 16px; font-size: 12.5px; font-weight: 700; }
+.pb-voucher-narration { margin-top: 20px; font-size: 12.5px; font-weight: 700; }
+
+/* On-screen counterpart of the same voucher, for a generated Purchase Bill
+   with no scanned page to show in the review screen's usual slot — same
+   markup and classes as the print version above, just visible and boxed
+   like a document preview instead of hidden and full-bleed. */
+.pb-voucher-preview {
+  border: 1px solid var(--hair); border-radius: var(--r-stad);
+  background: #fff; color: #000;
+  padding: 24px; margin-bottom: var(--s3);
+  font-family: Arial, Helvetica, sans-serif;
+  overflow-x: auto;
+}

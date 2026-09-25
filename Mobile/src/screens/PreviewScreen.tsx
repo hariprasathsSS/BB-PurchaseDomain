@@ -19,8 +19,10 @@ import type { RootStackParamList } from '../../App';
 type Props = NativeStackScreenProps<RootStackParamList, 'Preview'>;
 
 export default function PreviewScreen({ route, navigation }: Props) {
-  const { uri } = route.params;
-  const [docType, setDocType] = useState<DocType>('INVOICE');
+  const { uri, intent } = route.params;
+  /* Starts on whatever Camera's own pills were set to (see there for why) —
+     still fully changeable here, same as it always was. */
+  const [docType, setDocType] = useState<DocType>(intent ?? 'INVOICE');
   const [notes, setNotes] = useState('');
 
   const draftPages = useSession((s) => s.draftPages);

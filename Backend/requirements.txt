@@ -2,3 +2,8 @@ fastapi
 uvicorn[standard]
 python-multipart
 qrcode
+anthropic
+openai>=1.40
+openpyxl
+pypdfium2
+pillow

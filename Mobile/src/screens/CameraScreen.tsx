@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AppBar, Btn } from '../ui';
-import { T } from '../theme';
+import { DOC_LABEL, DOC_PILL, DOC_TYPES, T, type DocType } from '../theme';
 import { totalPages, useSession } from '../store';
 import type { RootStackParamList } from '../../App';
 
@@ -12,6 +12,11 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Camera'>;
 export default function CameraScreen({ navigation }: Props) {
   const [permission, requestPermission] = useCameraPermissions();
   const [busy, setBusy] = useState(false);
+  /* What the next shot is expected to be — still just a starting point for
+     Preview's own picker, not a commitment; picking "Purchase Order" here is
+     the phone's equivalent of the web console's "Scan PO" button, so the
+     type doesn't have to be re-picked for every capture in a run of them. */
+  const [intent, setIntent] = useState<DocType>('INVOICE');
   const camera = useRef<CameraView>(null);
 
   const queue = useSession((s) => s.queue);
@@ -24,7 +29,7 @@ export default function CameraScreen({ navigation }: Props) {
       // quality 0.6 keeps a document page around 300-600 KB, which uploads
       // over site Wi-Fi without a separate compression step.
       const shot = await camera.current?.takePictureAsync({ quality: 0.6 });
-      if (shot?.uri) navigation.navigate('Preview', { uri: shot.uri });
+      if (shot?.uri) navigation.navigate('Preview', { uri: shot.uri, intent });
     } finally {
       setBusy(false);
     }
@@ -56,6 +61,33 @@ export default function CameraScreen({ navigation }: Props) {
           </Pressable>
         }
       />
+
+      {/* Only offered at the start of a document — once pages are being
+          added to one already in progress, its type was already set on
+          Preview, and switching it here would suggest it applies to a
+          document it doesn't. */}
+      {draftPages.length === 0 && (
+        <View style={s.intentBar}>
+          {DOC_TYPES.map((t) => {
+            const on = t === intent;
+            const c = DOC_PILL[t];
+            return (
+              <Pressable
+                key={t}
+                onPress={() => setIntent(t)}
+                style={[
+                  s.intentPill,
+                  { backgroundColor: on ? c.bg : 'transparent', borderColor: on ? c.fg : 'rgba(255,255,255,0.3)' },
+                ]}
+              >
+                <Text style={[s.intentPillText, { color: on ? c.fg : 'rgba(255,255,255,0.78)' }]}>
+                  {DOC_LABEL[t]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
 
       <View style={s.cameraWrap}>
         <CameraView ref={camera} style={StyleSheet.absoluteFill} facing="back" />
@@ -102,6 +134,14 @@ export default function CameraScreen({ navigation }: Props) {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: T.navy },
+
+  intentBar: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 12 },
+  intentPill: {
+    flex: 1, height: 34, borderRadius: T.radiusSm, borderWidth: 1.5,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  intentPillText: { fontSize: 11.5, fontWeight: '700' },
+
   cameraWrap: { flex: 1, backgroundColor: '#0d1724' },
   overlay: {
     position: 'absolute',
@@ -116,7 +156,7 @@ const s = StyleSheet.create({
     width: '84%',
     height: '74%',
     borderWidth: 2,
-    borderColor: 'rgba(233,161,59,0.9)',
+    borderColor: 'rgba(127,168,204,0.9)',
     borderRadius: 10,
     borderStyle: 'dashed',
   },
@@ -130,7 +170,7 @@ const s = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 14,
   },
-  draftBadgeText: { color: T.gold, fontSize: 12.5, fontWeight: '600' },
+  draftBadgeText: { color: T.accent, fontSize: 12.5, fontWeight: '600' },
 
   bar: {
     backgroundColor: T.navy,

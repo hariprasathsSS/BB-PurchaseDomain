@@ -143,11 +143,11 @@ const s = StyleSheet.create({
   summary: {
     paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: '#e4ebf2',
+    backgroundColor: T.borderSoft,
     borderBottomWidth: 1,
     borderBottomColor: T.border,
   },
-  summaryText: { fontSize: 12.5, fontWeight: '700', color: '#33465c' },
+  summaryText: { fontSize: 12.5, fontWeight: '700', color: T.navy },
 
   list: { padding: 16, paddingBottom: 24 },
   empty: { textAlign: 'center', color: T.muted, fontSize: 13, paddingVertical: 40 },
@@ -183,12 +183,12 @@ const s = StyleSheet.create({
     width: 74,
     height: 74,
     borderRadius: 37,
-    backgroundColor: '#e2f4ea',
+    backgroundColor: T.okBg,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 18,
   },
-  tickMark: { fontSize: 38, color: '#1d7245', fontWeight: '700' },
+  tickMark: { fontSize: 38, color: T.ok, fontWeight: '700' },
   okTitle: { fontSize: 18, fontWeight: '700', color: T.text },
   okBody: { fontSize: 13.5, color: T.muted, textAlign: 'center', marginTop: 6, lineHeight: 19 },
 });

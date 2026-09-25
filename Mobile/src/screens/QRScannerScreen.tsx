@@ -112,7 +112,7 @@ const s = StyleSheet.create({
     width: 236,
     height: 236,
     borderWidth: 3,
-    borderColor: T.gold,
+    borderColor: T.accent,
     borderRadius: 16,
     backgroundColor: 'transparent',
   },
