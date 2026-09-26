@@ -655,11 +655,14 @@ def insert_document(
     already has rendered page paths in hand — see store_batch_pages, used
     once the pages have been split into documents by content rather than by
     upload — doesn't have to re-derive this shape by hand."""
+    # A SCAN document starts hidden from every listing until the console
+    # decides Process or Draft for its batch — an UPLOAD never has that
+    # decision to make, so it's visible immediately, same as always.
     con.execute(
         "INSERT INTO documents (id, project_id, site_id, session_id, source, document_type,"
-        " file_paths, page_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        " file_paths, page_count, awaiting_scan_decision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (doc_id, project_id, site_id, session_id, source, document_type,
-         json.dumps(rel_paths), len(rel_paths)),
+         json.dumps(rel_paths), len(rel_paths), 1 if source == "SCAN" else 0),
     )
     return {
         "document_id": doc_id,
@@ -729,7 +732,6 @@ def queue_extraction(background: BackgroundTasks, documents: list[dict]) -> None
 
 @app.post("/api/v1/documents/batch-upload")
 def batch_upload(
-    background: BackgroundTasks,
     session_id: str = Depends(current_session),
     files: list[UploadFile] = File(...),
     page_counts: str = Form(...),
@@ -748,6 +750,10 @@ def batch_upload(
     example above would mean two documents, not three: parse_document_types
     ignores it entirely (falling back to UNCLASSIFIED for every document)
     unless its count matches exactly.
+
+    Unlike web_upload, this does not queue extraction — a scanned batch sits at
+    PENDING until the console decides, from the still-open Scan modal, whether
+    to Process it now or leave it as a draft (see process_batch below).
     """
     counts = parse_page_counts(page_counts, len(files))
     hints = parse_document_types(document_types, len(counts))
@@ -769,7 +775,6 @@ def batch_upload(
             document_type_hints=hints,
         )
 
-    queue_extraction(background, documents)
     return {"session_id": session_id, "total": len(documents), "documents": documents}
 
 
@@ -1047,8 +1052,13 @@ SELECT d.*, p.code AS project_code, p.name AS project_name,
 
 @app.get("/api/v1/documents")
 def list_documents(session_id: str | None = None, project_id: str | None = None,
-                   status: str | None = None, limit: int = 100):
-    where, args = [], []
+                   status: str | None = None, awaiting_decision: bool = False, limit: int = 100):
+    """awaiting_decision=False (the default, for every caller except the Scan
+    modal's own poll) excludes a scanned batch the console hasn't yet chosen
+    Process or Draft for — it isn't merely unprocessed, it isn't listed at
+    all. Passing true flips that around, for exactly the one screen that
+    needs to find those batches in order to offer the decision."""
+    where, args = ["d.awaiting_scan_decision = ?"], [1 if awaiting_decision else 0]
     if session_id:
         where.append("d.session_id = ?")
         args.append(session_id)
@@ -1726,6 +1736,43 @@ def reextract(document_id: str, background: BackgroundTasks):
         raise HTTPException(409, f"Cannot re-extract a document that is {row['status']}")
     background.add_task(extract.process, document_id)
     return {"document_id": document_id, "status": "PROCESSING"}
+
+
+def _confirm_scan_batch(document_ids: list[str]) -> None:
+    """Clears awaiting_scan_decision — the batch stops being invisible and
+    becomes an ordinary document, whichever of Process/Draft was chosen."""
+    with db.db() as con:
+        placeholders = ",".join("?" * len(document_ids))
+        con.execute(
+            f"UPDATE documents SET awaiting_scan_decision = 0 WHERE id IN ({placeholders})",
+            document_ids,
+        )
+
+
+@app.post("/api/v1/documents/process-batch")
+def process_batch(background: BackgroundTasks, body: dict):
+    """The console's "Process" choice for a batch the phone just scanned in —
+    the explicit decision that replaces batch_upload's old auto-extract.
+    Confirms the batch (see _confirm_scan_batch) and runs the same
+    _extract_all as any other batch, reconcile_batch included, just
+    triggered by a click instead of by the upload itself."""
+    document_ids = (body or {}).get("document_ids") or []
+    if not document_ids:
+        raise HTTPException(400, "document_ids required")
+    _confirm_scan_batch(document_ids)
+    background.add_task(_extract_all, document_ids)
+    return {"document_ids": document_ids, "status": "PROCESSING"}
+
+
+@app.post("/api/v1/documents/draft-batch")
+def draft_batch(body: dict):
+    """The console's "Draft" choice — confirms the batch as a plain document
+    at PENDING, same as _confirm_scan_batch, but never queues extraction."""
+    document_ids = (body or {}).get("document_ids") or []
+    if not document_ids:
+        raise HTTPException(400, "document_ids required")
+    _confirm_scan_batch(document_ids)
+    return {"document_ids": document_ids, "status": "PENDING"}
 
 
 @app.put("/api/v1/documents/{document_id}")

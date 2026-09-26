@@ -24,7 +24,10 @@ export const api = {
   createProject: (name) => send("/api/v1/projects", "POST", { name }),
   deleteProject: (id) => fetch(`/api/v1/projects/${id}`, { method: "DELETE" }).then(json),
 
-  listDocuments: () => get("/api/v1/documents").then((d) => d.documents ?? []),
+  listDocuments: (filters) => {
+    const qs = filters ? `?${new URLSearchParams(filters).toString()}` : "";
+    return get(`/api/v1/documents${qs}`).then((d) => d.documents ?? []);
+  },
   getDocument: (id) => get(`/api/v1/documents/${id}`),
   saveDocument: (id, edits) => send(`/api/v1/documents/${id}`, "PUT", edits),
   deleteDocument: (id) => fetch(`/api/v1/documents/${id}`, { method: "DELETE" }).then(json),
@@ -33,6 +36,14 @@ export const api = {
   rejectDocument: (id, rejectedBy, reason) =>
     send(`/api/v1/documents/${id}/reject`, "POST", { rejected_by: rejectedBy, reason }),
   retryExtraction: (id) => fetch(`/api/v1/documents/${id}/extract`, { method: "POST" }),
+  /* The console's Process/Draft choice for a batch just scanned in from the
+     phone (see process_batch / draft_batch in Backend/main.py) — both clear
+     awaiting_scan_decision so the batch stops being hidden; Process also
+     queues extraction, Draft leaves it sitting at PENDING in Documents. */
+  processDocuments: (documentIds) =>
+    send("/api/v1/documents/process-batch", "POST", { document_ids: documentIds }),
+  draftDocuments: (documentIds) =>
+    send("/api/v1/documents/draft-batch", "POST", { document_ids: documentIds }),
 
   /* Same delivery billed twice through two channels (site copy, office
      copy) — found automatically by vendor + invoice number at extraction

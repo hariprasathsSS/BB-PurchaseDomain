@@ -108,6 +108,13 @@ CREATE TABLE IF NOT EXISTS documents (
   site_id        TEXT REFERENCES sites(id),
   session_id     TEXT REFERENCES scanner_sessions(id),
   source         TEXT NOT NULL CHECK (source IN ('SCAN','UPLOAD')),
+  -- Set on insert for a SCAN document, cleared the moment the console picks
+  -- Process or Draft for the batch it arrived in (see process_batch /
+  -- draft_batch in main.py). Every listing filters this out by default, so a
+  -- scanned batch the office hasn't looked at yet stays invisible — not
+  -- merely unprocessed — until that decision is made. Always 0 for UPLOAD,
+  -- which never has anything to decide.
+  awaiting_scan_decision INTEGER NOT NULL DEFAULT 0,
 
   document_type  TEXT NOT NULL DEFAULT 'UNCLASSIFIED'
                  CHECK (document_type IN
@@ -355,6 +362,7 @@ _MIGRATIONS = {
         ("extracted_json", "TEXT"),
         ("duplicate_of", "TEXT REFERENCES documents(id)"),
         ("error", "TEXT"),
+        ("awaiting_scan_decision", "INTEGER NOT NULL DEFAULT 0"),
     ],
     "doc_headers": [
         ("min_number", "TEXT"),

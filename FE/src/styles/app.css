@@ -1345,6 +1345,27 @@ table.data td.quote-cell { padding: 0; }
 }
 .icon-btn-danger:hover { background: var(--bad-bg); color: var(--bad-fg); border-color: var(--bad-fg); }
 
+/* The notification bell in TopNav — same compact icon-button shape as
+   .icon-btn-danger, neutral rather than destructive. notif-dot is the red
+   marker for at least one scanned batch still awaiting Process/Draft; it's
+   removed only once every such batch is actually confirmed (see
+   usePendingScans), never just by opening or closing the dropdown/modal. */
+.icon-btn {
+  flex: none; width: 38px; height: 38px;
+  border: 1px solid var(--line); border-radius: var(--r-btn);
+  background: var(--surface); color: var(--slate);
+  display: grid; place-items: center;
+  cursor: pointer; position: relative;
+}
+.icon-btn:hover { background: var(--hover); }
+.notif-dot {
+  position: absolute; top: 6px; right: 6px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--bad-fg); border: 1.5px solid var(--surface);
+}
+.notif-menu { left: auto; right: 0; width: 340px; max-height: 60vh; overflow-y: auto; }
+.notif-empty { padding: 16px 18px; font-size: 14px; color: var(--slate); }
+
 /* ── forms ────────────────────────────────────────────────────────────────── */
 .form { display: flex; flex-direction: column; gap: var(--s3); }
 .form label { display: flex; flex-direction: column; gap: 6px; }
@@ -1413,6 +1434,7 @@ table.data td.quote-cell { padding: 0; }
 .qr-frame svg { width: 100%; height: auto; display: block; max-width: 280px; }
 .steps { margin: var(--s3) 0 0; padding-left: var(--s3); font-size: 14px; color: var(--slate); }
 .steps li { margin-bottom: 6px; }
+.modal-body p.hint { margin: var(--s3) 0 0; font-size: 13px; color: var(--slate); }
 .kv { margin-top: var(--s3); border-top: 1px solid var(--hair); padding-top: var(--s2); font-size: 13px; }
 .kv div { display: flex; justify-content: space-between; gap: var(--s2); padding: 4px 0; }
 .kv span:first-child { color: var(--slate); }
