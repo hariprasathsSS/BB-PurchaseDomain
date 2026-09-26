@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS documents (
   is_handwritten INTEGER NOT NULL DEFAULT 0,
 
   status         TEXT NOT NULL DEFAULT 'PENDING'
-                 CHECK (status IN ('PENDING','PROCESSING','EXTRACTED','APPROVED','REJECTED','FAILED')),
+                 CHECK (status IN ('DRAFT','PENDING','PROCESSING','EXTRACTED','APPROVED','REJECTED','FAILED')),
   extracted_json TEXT,
   duplicate_of   TEXT REFERENCES documents(id),
   error          TEXT,
@@ -413,12 +413,13 @@ _DOCUMENT_COLUMNS = (
 
 def migrate_document_type_check(con: sqlite3.Connection) -> None:
     """SQLite can't ALTER a CHECK constraint — adding a new valid
-    document_type needs the table rebuilt. Idempotent: a no-op once the
-    table's own stored CREATE TABLE text already allows every type DOC_TYPES
-    lists (checked via the newest one added, 'PURCHASE_BILL', so a database
-    that already has 'INWARD' but predates 'PURCHASE_BILL' still gets
-    rebuilt once more). Must run after migrate() — depends on every column
-    above already existing under its real name.
+    document_type or status needs the table rebuilt. Idempotent: a no-op once
+    the table's own stored CREATE TABLE text already allows every type
+    DOC_TYPES lists and every status the app uses (checked via the newest
+    ones added, 'PURCHASE_BILL' and 'DRAFT', so a database that already has
+    one but predates the other still gets rebuilt once more). Must run after
+    migrate() — depends on every column above already existing under its
+    real name.
 
     Builds the replacement under a temporary name, copies into it, drops the
     original, then renames the temp table into place — deliberately not the
@@ -433,7 +434,7 @@ def migrate_document_type_check(con: sqlite3.Connection) -> None:
     row = con.execute(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'documents'"
     ).fetchone()
-    if row is None or "PURCHASE_BILL" in row["sql"]:
+    if row is None or ("PURCHASE_BILL" in row["sql"] and "DRAFT" in row["sql"]):
         return
 
     cols = ", ".join(_DOCUMENT_COLUMNS)
@@ -454,7 +455,7 @@ def migrate_document_type_check(con: sqlite3.Connection) -> None:
           is_handwritten INTEGER NOT NULL DEFAULT 0,
           status         TEXT NOT NULL DEFAULT 'PENDING'
                          CHECK (status IN
-                           ('PENDING','PROCESSING','EXTRACTED','APPROVED','REJECTED','FAILED')),
+                           ('DRAFT','PENDING','PROCESSING','EXTRACTED','APPROVED','REJECTED','FAILED')),
           extracted_json TEXT,
           duplicate_of   TEXT REFERENCES documents(id),
           error          TEXT,

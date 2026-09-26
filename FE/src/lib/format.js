@@ -87,7 +87,7 @@ export const DOC_TYPE_LABELS = {
 };
 export const docTypeLabel = (t) => DOC_TYPE_LABELS[t] ?? t;
 export const DOC_STATUSES = [
-  "PENDING", "PROCESSING", "EXTRACTED", "APPROVED", "REJECTED", "FAILED",
+  "DRAFT", "PENDING", "PROCESSING", "EXTRACTED", "APPROVED", "REJECTED", "FAILED",
 ];
 
 export const titleCase = (s) => s.charAt(0) + s.slice(1).toLowerCase();
@@ -95,6 +95,7 @@ export const titleCase = (s) => s.charAt(0) + s.slice(1).toLowerCase();
 /* EXTRACTED reads as "pending" because it still needs a human — the document
    is done being read, not done being handled. */
 const STATUS_CLASS = {
+  DRAFT: "s-draft",
   PENDING: "s-pending",
   PROCESSING: "s-working",
   EXTRACTED: "s-pending",
@@ -105,6 +106,7 @@ const STATUS_CLASS = {
 export const statusClass = (status) => STATUS_CLASS[status] ?? "s-pending";
 
 export const isWaiting = (doc) => doc.status === "PENDING" || doc.status === "PROCESSING";
+export const isDraft = (doc) => doc.status === "DRAFT";
 export const isLocked = (doc) => doc.status === "APPROVED" || doc.status === "REJECTED";
 /* "Awaiting review" means a person, not a machine: extraction is finished and
    the document is sitting there wanting a decision. */
@@ -156,6 +158,8 @@ export function activityOf(doc) {
       return { dot: "d-hot", what: "Read — waiting on your decision" };
     case "FAILED":
       return { dot: "d-no", what: `Could not be read — ${doc.error || "unknown error"}` };
+    case "DRAFT":
+      return { dot: "d-mute", what: `${kind} saved as draft` };
     default:
       return { dot: "d-ink", what: `${kind} being read` };
   }

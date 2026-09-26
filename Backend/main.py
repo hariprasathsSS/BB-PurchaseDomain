@@ -1766,13 +1766,20 @@ def process_batch(background: BackgroundTasks, body: dict):
 
 @app.post("/api/v1/documents/draft-batch")
 def draft_batch(body: dict):
-    """The console's "Draft" choice — confirms the batch as a plain document
-    at PENDING, same as _confirm_scan_batch, but never queues extraction."""
+    """The console's "Draft" choice — confirms the batch (see
+    _confirm_scan_batch) and parks it at DRAFT instead of PENDING, so it
+    never looks like it's queued for extraction and never gets any."""
     document_ids = (body or {}).get("document_ids") or []
     if not document_ids:
         raise HTTPException(400, "document_ids required")
     _confirm_scan_batch(document_ids)
-    return {"document_ids": document_ids, "status": "PENDING"}
+    with db.db() as con:
+        placeholders = ",".join("?" * len(document_ids))
+        con.execute(
+            f"UPDATE documents SET status = 'DRAFT' WHERE id IN ({placeholders})",
+            document_ids,
+        )
+    return {"document_ids": document_ids, "status": "DRAFT"}
 
 
 @app.put("/api/v1/documents/{document_id}")

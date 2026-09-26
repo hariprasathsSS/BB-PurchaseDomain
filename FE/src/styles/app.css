@@ -229,6 +229,7 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
   text-transform: uppercase; white-space: nowrap;
 }
 .pill-type { background: transparent; border: 1px solid var(--line); color: var(--slate); }
+.s-draft    { background: var(--sunken);  color: var(--slate); }
 .s-pending  { background: var(--warn-bg); color: var(--warn-fg); }
 .s-working  { background: var(--info-bg); color: var(--info-fg); }
 .s-approved { background: var(--ok-bg);   color: var(--ok-fg); }
@@ -992,6 +993,8 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 }
 .drow:hover { background: var(--hover); }
 .drow:hover .open-sm { background: var(--ink); border-color: var(--ink); color: var(--text-invert); }
+.drow-draft { cursor: default; }
+.drow-draft:hover { background: none; }
 .c-id   { font-family: var(--mono); font-size: 13px; color: var(--slate); }
 .c-vend { font-size: 15.5px; font-weight: 500; }
 .c-site { font-size: 14px; color: var(--slate); }
