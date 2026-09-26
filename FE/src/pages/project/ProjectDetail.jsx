@@ -20,7 +20,9 @@ const SECTIONS = [
   { id: "quotes", label: "Quote Analysis" },
 ];
 
-export function ProjectDetail({ project, docs, materials, reload, onOpenDocument, onAddDocument, onScan }) {
+export function ProjectDetail({
+  project, docs, materials, reload, onOpenDocument, onAddDocument, onScan, onProcessed,
+}) {
   const [section, setSection] = useState("po");
   // Owned here rather than inside QuoteAnalysisSection so the button that
   // flips it can sit in the shared tab row instead of its own header line.
@@ -211,6 +213,7 @@ export function ProjectDetail({ project, docs, materials, reload, onOpenDocument
             emptyLabel="No documents in this project yet."
             bulkActions
             reload={reload}
+            onProcessed={onProcessed}
           />
         </Modal>
       ) : null}

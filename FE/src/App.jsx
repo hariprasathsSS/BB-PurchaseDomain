@@ -116,6 +116,7 @@ export default function App() {
             onAddProject={() => setAddingProject(true)}
             onAddDocument={setUploadFor}
             onScan={setScanFor}
+            onProcessed={setBatchIds}
           />
         ) : null}
 

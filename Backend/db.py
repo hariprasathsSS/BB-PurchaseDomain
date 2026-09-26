@@ -317,6 +317,19 @@ CREATE TABLE IF NOT EXISTS deleted_documents (
   deleted_at       TEXT NOT NULL
 );
 
+-- Every "edit an approved document" decision (see update_document in
+-- main.py) gets its own row here. doc_headers.edited_by/edited_at still
+-- hold only the *latest* one — every other reader of "who last touched
+-- this" keeps working unchanged — but the Delivery/Document Timeline reads
+-- this table instead, so editing the same document twice adds a second
+-- event rather than just moving the first one's timestamp.
+CREATE TABLE IF NOT EXISTS document_edits (
+  id          INTEGER PRIMARY KEY,
+  document_id TEXT NOT NULL REFERENCES documents(id),
+  edited_by   TEXT NOT NULL,
+  edited_at   TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS ix_headers_date ON doc_headers(doc_date);
 CREATE INDEX IF NOT EXISTS ix_documents_project ON documents(project_id);
 CREATE INDEX IF NOT EXISTS ix_sites_project ON sites(project_id);
@@ -324,6 +337,7 @@ CREATE INDEX IF NOT EXISTS ix_quotations_project ON quotations(project_id);
 CREATE INDEX IF NOT EXISTS ix_quotation_lines_quotation ON quotation_lines(quotation_id);
 CREATE INDEX IF NOT EXISTS ix_quote_picks_project ON quote_picks(project_id);
 CREATE INDEX IF NOT EXISTS ix_deleted_documents_po ON deleted_documents(project_id, po_number);
+CREATE INDEX IF NOT EXISTS ix_document_edits_doc ON document_edits(document_id);
 """
 
 

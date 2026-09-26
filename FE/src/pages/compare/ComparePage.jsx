@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusPill, TypePill } from "../../components/Pills.jsx";
 import {
   IconAlertTriangle, IconArrow, IconBack, IconCheck, IconChevron, IconClock, IconClose,
@@ -97,6 +97,17 @@ function DocumentPreview({ filePaths }) {
   );
 }
 
+// What sits on the line in place of an icon — same small dot for every
+// kind of event; what happened is in the text, not the marker's colour.
+function EventLine({ ev }) {
+  return (
+    <li>
+      <span className="timeline-event-dot" />
+      {ev.text} — <span className="timeline-event-time">{eventTime(ev.at)}</span>
+    </li>
+  );
+}
+
 /* The PO document's own history — captured, approved/rejected, and edited
    (the pencil-edit toggle lets an approved PO be corrected same as any
    other document) — same event vocabulary and dot-and-line rail as a
@@ -107,19 +118,20 @@ function DocumentTimeline({ doc }) {
   const events = useMemo(() => {
     const label = docTypeLabel(doc.document_type);
     const list = [];
-    if (doc.uploaded_at) list.push({ at: doc.uploaded_at, text: `${label} captured` });
+    if (doc.uploaded_at) list.push({ at: doc.uploaded_at, kind: "captured", text: `${label} captured` });
     if (doc.status === "APPROVED" && doc.header?.reviewed_at) {
-      list.push({ at: doc.header.reviewed_at, text: `${label} approved by ${doc.header.reviewed_by ?? "—"}` });
+      list.push({
+        at: doc.header.reviewed_at, kind: "approved",
+        text: `${label} approved by ${doc.header.reviewed_by ?? "—"}`,
+      });
     } else if (doc.status === "REJECTED" && doc.header?.reviewed_at) {
       list.push({
-        at: doc.header.reviewed_at,
+        at: doc.header.reviewed_at, kind: "rejected",
         text: `${label} rejected by ${doc.header.reviewed_by ?? "—"}`
           + (doc.header.rejection_reason ? ` — ${doc.header.rejection_reason}` : ""),
       });
     }
-    if (doc.header?.edited_by && doc.header?.edited_at) {
-      list.push({ at: doc.header.edited_at, text: `${label} edited by ${doc.header.edited_by}` });
-    }
+    list.push(...editEvents(doc.header?.edit_history, doc.header?.edited_by, doc.header?.edited_at, label));
     return list.sort((a, b) => toMs(a.at) - toMs(b.at));
   }, [doc]);
 
@@ -132,11 +144,7 @@ function DocumentTimeline({ doc }) {
         <h3>Document Timeline</h3>
       </div>
       <ul className="timeline-events timeline-events-standalone">
-        {events.map((ev, i) => (
-          <li key={i}>
-            {ev.text} — <span className="timeline-event-time">{eventTime(ev.at)}</span>
-          </li>
-        ))}
+        {events.map((ev, i) => <EventLine key={i} ev={ev} />)}
       </ul>
     </div>
   );
@@ -404,6 +412,17 @@ const toMs = (stamp) => {
   return new Date(/[+-]\d\d:\d\d$|Z$/.test(s) ? s : `${s}+00:00`).getTime();
 };
 
+/* One "edited" event per actual edit (see document_edits in db.py), not
+   one whose timestamp just kept moving every time the same approved
+   document was corrected again. Falls back to the single edited_by/
+   edited_at pair doc_headers still carries for a document edited before
+   that table existed, so its one known edit doesn't just vanish. */
+function editEvents(history, fallbackBy, fallbackAt, label) {
+  const list = history?.length ? history
+    : (fallbackBy && fallbackAt ? [{ edited_by: fallbackBy, edited_at: fallbackAt }] : []);
+  return list.map((e) => ({ at: e.edited_at, kind: "edited", text: `${label} edited by ${e.edited_by}` }));
+}
+
 /* One entry per delivery, oldest first — "Next delivery" (below) reads
    naturally as moving forward in time from the one before it, and only runs
    out once every real delivery has had its turn.
@@ -420,7 +439,7 @@ const toMs = (stamp) => {
    deliveries' history is currently showing, independent of one another:
    opening one doesn't close any other that's already open, only its own
    title click does that. */
-function DeliveryTimeline({ deliveries }) {
+function DeliveryTimeline({ deliveries, maxHeightPx }) {
   const entries = useMemo(() => {
     return deliveries
       .map((d) => {
@@ -431,21 +450,22 @@ function DeliveryTimeline({ deliveries }) {
         // clickable rows (see po_reconciliation in main.py).
         [...d.documents, ...(d.deleted_documents ?? [])].forEach((doc) => {
           const label = docTypeLabel(doc.document_type);
-          if (doc.uploaded_at) events.push({ at: doc.uploaded_at, text: `${label} captured` });
+          if (doc.uploaded_at) events.push({ at: doc.uploaded_at, kind: "captured", text: `${label} captured` });
           if (doc.status === "APPROVED" && doc.reviewed_at) {
-            events.push({ at: doc.reviewed_at, text: `${label} approved by ${doc.reviewed_by ?? "—"}` });
+            events.push({
+              at: doc.reviewed_at, kind: "approved",
+              text: `${label} approved by ${doc.reviewed_by ?? "—"}`,
+            });
           } else if (doc.status === "REJECTED" && doc.reviewed_at) {
             events.push({
-              at: doc.reviewed_at,
+              at: doc.reviewed_at, kind: "rejected",
               text: `${label} rejected by ${doc.reviewed_by ?? "—"}`
                 + (doc.rejection_reason ? ` — ${doc.rejection_reason}` : ""),
             });
           }
-          if (doc.edited_by && doc.edited_at) {
-            events.push({ at: doc.edited_at, text: `${label} edited by ${doc.edited_by}` });
-          }
+          events.push(...editEvents(doc.edit_history, doc.edited_by, doc.edited_at, label));
           if (doc.deleted_at) {
-            events.push({ at: doc.deleted_at, text: `${label} deleted` });
+            events.push({ at: doc.deleted_at, kind: "deleted", text: `${label} deleted` });
           }
         });
         // Sorted by actual instant, not by the raw string — uploaded_at
@@ -479,32 +499,39 @@ function DeliveryTimeline({ deliveries }) {
         <span className="aside-card-icon"><IconClock width={18} height={18} /></span>
         <h3>Delivery Timeline</h3>
       </div>
-      <ul className="timeline">
+      <ul className="timeline" style={{ maxHeight: `${maxHeightPx || 600}px` }}>
         {entries.map((e) => {
           const isOpen = openKeys.has(e.key);
+          // Collapsed, only the most recent few show — oldest to newest,
+          // same order as the full list — with a hint below them to expand
+          // for whatever's earlier. Open, the full history's there instead.
+          const shown = e.events.slice(-5);
+          const earlierCount = e.events.length - shown.length;
           return (
             <li key={e.key}>
               <span className={`timeline-dot ${e.status === "verified" ? "d-ok" : e.status === "mismatch" ? "d-no" : "d-ink"}`} />
-              <div>
-                <button
-                  type="button"
-                  className={`timeline-toggle ${isOpen ? "is-open" : ""}`}
-                  onClick={() => toggleOpen(e.key)}
-                  aria-expanded={isOpen}
-                >
-                  <span className="timeline-date">
-                    {longDate(e.date)}{e.docNumber ? ` · ${e.docNumber}` : ""}
-                  </span>
-                </button>
-                {isOpen ? (
-                  <ul className="timeline-events">
-                    {e.events.map((ev, j) => (
-                      <li key={j}>
-                        {ev.text} — <span className="timeline-event-time">{eventTime(ev.at)}</span>
-                      </li>
-                    ))}
-                  </ul>
+              <div
+                className="timeline-entry"
+                role="button"
+                tabIndex={0}
+                aria-expanded={isOpen}
+                onClick={() => toggleOpen(e.key)}
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    toggleOpen(e.key);
+                  }
+                }}
+              >
+                <span className="timeline-date">
+                  {e.docNumber ? `${e.docNumber} · ` : ""}{longDate(e.date)}
+                </span>
+                {!isOpen && earlierCount > 0 ? (
+                  <div className="timeline-more">Click to see {earlierCount} previous</div>
                 ) : null}
+                <ul className="timeline-events">
+                  {(isOpen ? e.events : shown).map((ev, j) => <EventLine key={j} ev={ev} />)}
+                </ul>
               </div>
             </li>
           );
@@ -649,6 +676,22 @@ export function ComparePage({
   // generatePurchaseBillFor below. Null once resolved or cancelled.
   const [pbMismatchFor, setPbMismatchFor] = useState(null);
   const [generatingPbFor, setGeneratingPbFor] = useState(null);
+
+  // Delivery Timeline's own cap tracks the Delivery info tab's main column
+  // instead of sitting at a fixed height regardless of it — past 1200px of
+  // that column, the timeline's own max-height grows by the same amount it
+  // grew by, so it keeps roughly in step with a tab that's already long
+  // rather than looking stunted next to it.
+  const deliveryMainRef = useRef(null);
+  const [deliveryMainHeight, setDeliveryMainHeight] = useState(0);
+  useEffect(() => {
+    const el = deliveryMainRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => setDeliveryMainHeight(entry.contentRect.height));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [section]);
+  const timelineMaxHeight = 600 + Math.max(0, deliveryMainHeight - 1200);
 
   useEffect(() => {
     let cancelled = false;
@@ -1074,7 +1117,7 @@ export function ComparePage({
         </div>
         ) : section === "delivery" ? (
         <div className="compare-layout">
-          <div className="card compare-main">
+          <div className="card compare-main" ref={deliveryMainRef}>
             <h3 style={{ padding: "var(--s3) var(--s3) 0" }}>
               {recon?.deliveries?.length
                 ? `${recon.deliveries.length} deliver${recon.deliveries.length === 1 ? "y" : "ies"}`
@@ -1277,7 +1320,9 @@ export function ComparePage({
             {recon ? (
               <>
                 <DeliverySummary po={po} deliveries={recon.deliveries} deliveredValue={deliveredValue} status={deliveryStatus} />
-                {recon.deliveries.length ? <DeliveryTimeline deliveries={recon.deliveries} /> : null}
+                {recon.deliveries.length ? (
+                  <DeliveryTimeline deliveries={recon.deliveries} maxHeightPx={timelineMaxHeight} />
+                ) : null}
               </>
             ) : null}
           </div>

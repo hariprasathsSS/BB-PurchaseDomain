@@ -1734,7 +1734,11 @@ table.lines tbody td:nth-child(3) .input { max-width: 260px; }
    <li> elements under the same .timeline ancestor, and a bare ".timeline
    li" matches both, which used to hand the rail's own flex/border/padding
    down onto every event line too. */
-.timeline { list-style: none; margin: var(--s2) 0 0; padding: 0 var(--s3) var(--s3); }
+/* Capped and scrolling as soon as the content itself reaches the max-height
+   (set inline — see DeliveryTimeline's maxHeightPx), not gated behind a
+   delivery-count guess — otherwise the rail would out-grow the viewport
+   and drag .compare-aside's own position: sticky down with it. */
+.timeline { list-style: none; margin: var(--s2) 0 0; padding: 0 var(--s3) var(--s3); overflow-y: auto; }
 .timeline > li {
   position: relative;
   display: flex; gap: 12px;
@@ -1752,30 +1756,33 @@ table.lines tbody td:nth-child(3) .input { max-width: 260px; }
 .timeline-date { font-size: 13px; font-weight: 600; color: var(--ink); }
 .timeline > li.is-future .timeline-date { color: var(--dust); font-weight: 500; }
 .timeline-desc { margin-top: 2px; font-size: 12.5px; line-height: 1.5; color: var(--slate); }
-/* The delivery's date+invoice line, clicked to expand/collapse its own
-   event history below — one open at a time (see DeliveryTimeline's openKey). */
-.timeline-toggle {
-  display: flex; align-items: center; gap: 6px;
-  border: 0; background: none; padding: 0; margin: 0; cursor: pointer; text-align: left;
-  color: inherit; font: inherit;
-}
+/* The whole delivery block — date, invoice number and (once open) its own
+   event history — is the click target, not just the date line, so there's
+   nowhere in a delivery a reviewer can miss and think it's inert. Each
+   delivery opens/closes independently (see DeliveryTimeline's openKeys). */
+.timeline-entry { cursor: pointer; }
+.timeline-entry:hover .timeline-date { color: var(--ink); text-decoration: underline; }
+/* The collapsed prompt to expand and see everything before the one event
+   already showing — a plain note, not another event on the rail (a bare
+   div, not a .timeline-events li). */
+.timeline-more { margin: 4px 0 0 18px; font-size: 12px; font-style: italic; color: var(--dust); }
 /* One delivery's own event history — captured/approved/rejected/edited, in
    order, each as one flowing line with its own time trailing at the end
-   rather than in a separate leading column. Its own smaller dot-and-line
-   rail, same idea as the outer .timeline's, so an open delivery reads as a
-   real timeline of individual events rather than a plain bullet list. */
+   rather than in a separate leading column. Same dot-and-line rail as
+   before, just a small plain dot in place of the icon — what actually
+   happened still reads apart at a glance via the dot's tone colour. */
 .timeline-events { list-style: none; margin: 8px 0 0; padding: 0 0 0 4px; }
 .timeline-events li {
   position: relative;
-  padding: 0 0 8px 14px;
+  padding: 0 0 8px 18px;
   border-left: 1.5px solid var(--hair);
   font-size: 12.5px; line-height: 1.5; color: var(--slate);
 }
 .timeline-events li:last-child { border-left-color: transparent; padding-bottom: 0; }
-.timeline-events li::before {
-  content: ""; position: absolute; left: -4.5px; top: 4px;
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--slate); border: 1.5px solid var(--surface);
+.timeline-event-dot {
+  position: absolute; left: -4px; top: 5px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #6b7887;
 }
 .timeline-event-time { color: var(--dust); }
 /* Used bare (a single document's own history — see DocumentTimeline on the

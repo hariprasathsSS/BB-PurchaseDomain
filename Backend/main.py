@@ -1099,12 +1099,21 @@ def get_document(document_id: str):
         lines = con.execute(
             "SELECT * FROM doc_lines WHERE document_id = ? ORDER BY line_no", (document_id,)
         ).fetchall()
+        edits = con.execute(
+            "SELECT edited_by, edited_at FROM document_edits WHERE document_id = ? ORDER BY id",
+            (document_id,),
+        ).fetchall()
 
     header_dict = dict(header) if header else None
     if header_dict:
         header_dict["vendor_gstin_checksum_ok"] = extract.gstin_checksum_ok(header_dict.get("vendor_gstin"))
         header_dict["buyer_gstin_checksum_ok"] = extract.gstin_checksum_ok(header_dict.get("buyer_gstin"))
         header_dict["vendor_gstin_is_self"] = extract.gstin_is_self(header_dict.get("vendor_gstin"))
+        # The full edit sequence — see document_edits in db.py — for
+        # DocumentTimeline. Falls back to nothing here; the FE fills in the
+        # single edited_by/edited_at pair itself for a document edited
+        # before this table existed.
+        header_dict["edit_history"] = [dict(e) for e in edits]
 
     return row_to_document(row) | {
         "header": header_dict,
@@ -1487,6 +1496,30 @@ def po_reconciliation(po_document_id: str):
             (po_row["project_id"], po_row["doc_number"]),
         ).fetchall()
 
+        # Every edit ever made to any document (live or since deleted) this
+        # PO's Delivery Timeline could show — fetched once for all of them
+        # rather than once per document, then handed to _doc_row below and
+        # to the deleted-document rows just after. See document_edits in
+        # db.py: doc_headers.edited_by/edited_at only ever hold the latest
+        # one, which used to make editing a document twice look like one
+        # edit whose time kept moving.
+        all_doc_ids = {
+            d["document_id"]
+            for g in groups.values()
+            for d in g["invoices"] + g["notes"] + g["inward"] + g["purchase_bills"]
+        } | {d["document_id"] for d in deleted_rows}
+        edits_by_doc: dict[str, list[dict]] = {}
+        if all_doc_ids:
+            placeholders = ",".join("?" * len(all_doc_ids))
+            for r in con.execute(
+                f"SELECT document_id, edited_by, edited_at FROM document_edits"
+                f" WHERE document_id IN ({placeholders}) ORDER BY id",
+                tuple(all_doc_ids),
+            ):
+                edits_by_doc.setdefault(r["document_id"], []).append(
+                    {"edited_by": r["edited_by"], "edited_at": r["edited_at"]}
+                )
+
         deleted_by_key: dict[tuple, list[dict]] = {}
         for d in deleted_rows:
             doc_type = d["document_type"]
@@ -1509,6 +1542,7 @@ def po_reconciliation(po_document_id: str):
                 "status": "DELETED", "uploaded_at": d["uploaded_at"],
                 "reviewed_by": d["reviewed_by"], "reviewed_at": d["reviewed_at"],
                 "edited_by": d["edited_by"], "edited_at": d["edited_at"],
+                "edit_history": edits_by_doc.get(d["document_id"], []),
                 "rejection_reason": d["rejection_reason"], "deleted_at": d["deleted_at"],
             })
 
@@ -1656,6 +1690,7 @@ def po_reconciliation(po_document_id: str):
                     "status": d["status"], "uploaded_at": d["uploaded_at"],
                     "reviewed_by": d["reviewed_by"], "reviewed_at": d["reviewed_at"],
                     "edited_by": d["edited_by"], "edited_at": d["edited_at"],
+                    "edit_history": edits_by_doc.get(d["document_id"], []),
                     "rejection_reason": d["rejection_reason"],
                 }
 
@@ -1938,9 +1973,18 @@ def update_document(document_id: str, body: dict):
         if was_approved:
             edited_by = str((body or {}).get("edited_by", "")).strip()
             if edited_by:
+                edited_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
                 con.execute(
                     "UPDATE doc_headers SET edited_by = ?, edited_at = ? WHERE document_id = ?",
-                    (edited_by, datetime.now(timezone.utc).isoformat(timespec="seconds"), document_id),
+                    (edited_by, edited_at, document_id),
+                )
+                # The full sequence of edits, not just the latest one — see
+                # document_edits in db.py. Editing the same approved document
+                # a second time must add a second Timeline event, not just
+                # move the first one's timestamp.
+                con.execute(
+                    "INSERT INTO document_edits (document_id, edited_by, edited_at) VALUES (?, ?, ?)",
+                    (document_id, edited_by, edited_at),
                 )
 
     return get_document(document_id)

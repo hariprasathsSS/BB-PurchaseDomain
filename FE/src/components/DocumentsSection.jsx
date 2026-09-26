@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { FilterBar } from "./FilterBar.jsx";
+import { Modal } from "./Modal.jsx";
 import { StatusPill, TypePill } from "./Pills.jsx";
 import { IconArrow, IconFile } from "./Icons.jsx";
 import { api } from "../lib/api.js";
-import { IMAGE_RE, isWaiting, matchesFilter, money, refOf, shortDate } from "../lib/format.js";
+import { IMAGE_RE, isDraft, isWaiting, matchesFilter, money, refOf, shortDate } from "../lib/format.js";
 
 /* The same register row + filter bar the overall Document Register uses
    (DocumentsTab), reused wherever a scoped list of documents needs the same
@@ -24,6 +25,7 @@ export function DocumentsSection({
   emptyLabel = "Nothing here yet.",
   bulkActions = false,
   reload,
+  onProcessed,
 }) {
   const [filter, setFilter] = useState({ q: "", project: "", type: "", status: "" });
   const [selected, setSelected] = useState(() => new Set());
@@ -40,10 +42,10 @@ export function DocumentsSection({
     [shown, selected]
   );
   const allShownSelected = shown.length > 0 && selectedDocs.length === shown.length;
-  // PENDING is a document the console chose "Draft" for (or one that just
-  // hasn't been picked up yet) — confirmed, but extraction was never queued.
-  // Process only makes sense while every selected row is still in that state.
-  const canProcess = selectedDocs.length > 0 && selectedDocs.every((d) => d.status === "PENDING");
+  // DRAFT is a document the console chose "Draft" for — confirmed, but
+  // extraction was never queued. Process only makes sense while every
+  // selected row is still sitting in that state.
+  const canProcess = selectedDocs.length > 0 && selectedDocs.every(isDraft);
   const canDelete = selectedDocs.length > 0;
 
   const toggleOne = (id) => {
@@ -65,12 +67,17 @@ export function DocumentsSection({
   };
 
   const runProcess = async () => {
+    const ids = selectedDocs.map((d) => d.document_id);
     setWorking(true);
     setActionErr("");
     try {
-      await api.processDocuments(selectedDocs.map((d) => d.document_id));
+      await api.processDocuments(ids);
       setSelected(new Set());
       await reload?.();
+      // Same "Documents extracted" summary a fresh scan/upload batch opens
+      // into (see BatchSummaryModal) — these documents just got queued for
+      // extraction the same way, so they wait on the same screen.
+      onProcessed?.(ids);
     } catch (e) {
       setActionErr(`Could not process — ${e.message}`);
     } finally {
@@ -125,25 +132,33 @@ export function DocumentsSection({
       {actionErr ? <div className="banner banner-err">{actionErr}</div> : null}
 
       {confirmingDelete ? (
-        <div className="banner banner-err">
-          <div>
+        <Modal
+          title="Delete documents"
+          subtitle={`${selectedDocs.length} document${selectedDocs.length === 1 ? "" : "s"} selected`}
+          closable={!working}
+          onClose={() => setConfirmingDelete(false)}
+          footer={
+            <>
+              <div className="spacer" />
+              <button
+                className="btn btn-out"
+                type="button"
+                onClick={() => setConfirmingDelete(false)}
+                disabled={working}
+              >
+                Cancel
+              </button>
+              <button className="btn btn-signal" type="button" onClick={runDelete} disabled={working}>
+                {working ? "Deleting…" : "Delete"}
+              </button>
+            </>
+          }
+        >
+          <p>
             Delete {selectedDocs.length} document{selectedDocs.length === 1 ? "" : "s"}? This can't
             be undone.
-          </div>
-          <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-            <button className="btn btn-signal btn-sm" type="button" onClick={runDelete} disabled={working}>
-              {working ? "Deleting…" : "Delete"}
-            </button>
-            <button
-              className="btn btn-out btn-sm"
-              type="button"
-              onClick={() => setConfirmingDelete(false)}
-              disabled={working}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+          </p>
+        </Modal>
       ) : null}
 
       <div className="section-head">
