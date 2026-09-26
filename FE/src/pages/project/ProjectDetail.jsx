@@ -94,29 +94,6 @@ export function ProjectDetail({
             </div>
           </div>
 
-          {confirmingDelete ? (
-            <div className="banner banner-err" style={{ marginTop: 16 }}>
-              <div>
-                Delete {project.code} and everything under it — every document, invoice, PO and
-                quotation? This can't be undone.
-              </div>
-              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-                <button className="btn btn-signal btn-sm" type="button" onClick={deleteProject} disabled={deleting}>
-                  {deleting ? "Deleting…" : "Delete project"}
-                </button>
-                <button
-                  className="btn btn-out btn-sm"
-                  type="button"
-                  onClick={() => setConfirmingDelete(false)}
-                  disabled={deleting}
-                >
-                  Cancel
-                </button>
-              </div>
-              {deleteErr ? <div style={{ marginTop: 8 }}>{deleteErr}</div> : null}
-            </div>
-          ) : null}
-
           {/* The project's own numbers on a hairline — a stat strip here would
               be four more boxes on a page whose problem was boxes. */}
           <div className="phead-meta">
@@ -215,6 +192,37 @@ export function ProjectDetail({
             reload={reload}
             onProcessed={onProcessed}
           />
+        </Modal>
+      ) : null}
+
+      {confirmingDelete ? (
+        <Modal
+          title="Delete project"
+          subtitle={project.code}
+          closable={!deleting}
+          onClose={() => setConfirmingDelete(false)}
+          footer={
+            <>
+              <div className="spacer" />
+              <button
+                className="btn btn-out"
+                type="button"
+                onClick={() => setConfirmingDelete(false)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button className="btn btn-signal" type="button" onClick={deleteProject} disabled={deleting}>
+                {deleting ? "Deleting…" : "Delete project"}
+              </button>
+            </>
+          }
+        >
+          <p>
+            Delete {project.code} and everything under it — every document, invoice, PO and
+            quotation? This can't be undone.
+          </p>
+          {deleteErr ? <div className="banner banner-err">{deleteErr}</div> : null}
         </Modal>
       ) : null}
 
