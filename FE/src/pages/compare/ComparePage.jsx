@@ -318,9 +318,9 @@ function PoMaterialsSection({ materials, loading, onOpenDocument }) {
    actually makes a delivery's quantity count toward the PO (see
    po_reconciliation's docstring in main.py). */
 function VerificationPill({ status }) {
-  if (status === "verified") return <span className="pill s-approved">Verified</span>;
-  if (status === "mismatch") return <span className="pill s-rejected">Mismatch</span>;
-  return <span className="pill s-pending">Awaiting verification</span>;
+  if (status === "verified") return <span className="pill s-approved" title="Verified">Verified</span>;
+  if (status === "mismatch") return <span className="pill s-rejected" title="Mismatch">Mismatch</span>;
+  return <span className="pill s-pending" title="Awaiting verification">Awaiting verification</span>;
 }
 
 /* One delivery's diff line between two named documents — labelA/labelB are
@@ -389,7 +389,7 @@ function DeliverySummary({ po, deliveries, deliveredValue, status }) {
         <div><dt>Delivered Value</dt><dd>{money(deliveredValue) ?? "—"}</dd></div>
         <div>
           <dt>Delivery Status</dt>
-          <dd>{status ? <span className={`pill ${statusClass}`}>{statusLabel}</span> : "—"}</dd>
+          <dd>{status ? <span className={`pill ${statusClass}`} title={statusLabel}>{statusLabel}</span> : "—"}</dd>
         </div>
       </dl>
     </div>
@@ -942,20 +942,22 @@ export function ComparePage({
               <div className="pname">Purchase order — {po.project_name}</div>
             </div>
             <div className="spacer" />
-            <StatusPill status={po.status} />
-            <AddDocumentMenu
-              onScan={() => onScan(project)}
-              onUpload={() => onAddDocument(project)}
-            />
-            <button
-              className="btn btn-out btn-sm"
-              type="button"
-              onClick={() => setConfirmingDeletePo(true)}
-              style={{ marginLeft: 10 }}
-            >
-              <IconTrash width={16} height={16} />
-              Delete
-            </button>
+            <div className="phead-actions">
+              <StatusPill status={po.status} />
+              <AddDocumentMenu
+                onScan={() => onScan(project)}
+                onUpload={() => onAddDocument(project)}
+              />
+              <button
+                className="icon-btn-danger"
+                type="button"
+                aria-label="Delete PO"
+                title="Delete PO"
+                onClick={() => setConfirmingDeletePo(true)}
+              >
+                <IconTrash width={16} height={16} />
+              </button>
+            </div>
           </div>
 
           <div className="phead-meta">

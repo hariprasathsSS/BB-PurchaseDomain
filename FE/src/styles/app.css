@@ -222,11 +222,16 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 /* ── status: filled = state, outlined = kind ──────────────────────────────
    Colour belongs to status alone, because status is what you scan a list
    for. Document type is metadata and stays quiet. */
+/* inline-block, not inline-flex: text-overflow has no effect on a flex
+   container's own content, and every pill here is plain text — so this is
+   also what lets max-width + ellipsis below work on the pill itself instead
+   of needing a nested block-level child per pill. */
 .pill {
-  display: inline-flex; align-items: center;
+  display: inline-block; vertical-align: middle;
   border-radius: var(--r-pill); padding: 4px 13px;
   font-size: 11.5px; font-weight: 700; letter-spacing: var(--wide);
   text-transform: uppercase; white-space: nowrap;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
 }
 .pill-type { background: transparent; border: 1px solid var(--line); color: var(--slate); }
 .s-draft    { background: var(--sunken);  color: var(--slate); }
@@ -927,7 +932,7 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
   border: 1px solid var(--hair);
   border-radius: var(--r-stad);
 }
-.phead-main { display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap; margin-top: 14px; }
+.phead-main { display: flex; align-items: flex-end; flex-wrap: wrap; margin-top: 14px; }
 .phead-main .spacer { flex: 1; }
 .phead .code {
   font-family: var(--mono); font-size: 32px; font-weight: 500;
@@ -958,6 +963,7 @@ select.input { border-radius: var(--r-btn); padding: 0 14px; }
 .ptabs {
   display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap;
   margin-top: var(--s3);
+  margin-bottom: var(--s3);
   /* Fixed regardless of content — Quote Analysis's own "Upload quotation"
      button (44px, .btn-sm) only shows on that one tab; without a floor
      here, the row shrinks to fit the shorter Documents/Materials buttons

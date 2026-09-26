@@ -70,7 +70,9 @@ export function IncomingBatchModal({ documents, onProcess, onDraft, onClose }) {
                 <div className="batch-row-id">{id}</div>
                 {d.project_name ? <div className="c-ref">{d.project_code} — {d.project_name}</div> : null}
               </div>
-              <span className="pill">{d.page_count} page{d.page_count === 1 ? "" : "s"}</span>
+              <span className="pill" title={`${d.page_count} page${d.page_count === 1 ? "" : "s"}`}>
+                {d.page_count} page{d.page_count === 1 ? "" : "s"}
+              </span>
             </li>
           );
         })}

@@ -4,7 +4,7 @@ import { docTypeLabel, statusClass } from "../lib/format.js";
    Outlined pill = type, secondary metadata. See app.css for why. */
 
 export const StatusPill = ({ status }) => (
-  <span className={`pill ${statusClass(status)}`}>{status}</span>
+  <span className={`pill ${statusClass(status)}`} title={status}>{status}</span>
 );
 
 export const TypePill = ({ type }) => {

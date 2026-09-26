@@ -167,86 +167,88 @@ export function DocumentsSection({
         {pending ? <span className="tag">{pending} still reading</span> : null}
       </div>
 
-      <div className={`dgrid reg${bulkActions ? " selectable" : ""}`}>
-        <div className="dhead">
-          {bulkActions ? (
-            <span className="c-check">
-              <input
-                type="checkbox"
-                checked={allShownSelected}
-                onChange={toggleAll}
-                aria-label="Select all shown documents"
-              />
-            </span>
-          ) : null}
-          <span />
-          <span>Document</span>
-          <span>Status</span>
-          <span>Vendor</span>
-          <span>Project</span>
-          <span>Reference</span>
-          <span className="r">Amount</span>
-          <span>Type</span>
-          <span>Captured</span>
-          <span />
-        </div>
-
-        {shown.length ? shown.map((d) => {
-          const file = d.file_paths?.[0];
-          const isImage = file && IMAGE_RE.test(file);
-          return (
-            <div
-              key={d.document_id}
-              className="drow"
-              role="button"
-              tabIndex={0}
-              onClick={() => onOpenDocument(d.document_id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onOpenDocument(d.document_id);
-                }
-              }}
-              aria-label={`Review ${d.document_id}`}
-            >
-              {bulkActions ? (
-                <span className="c-check" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={selected.has(d.document_id)}
-                    onChange={() => toggleOne(d.document_id)}
-                    aria-label={`Select ${d.document_id}`}
-                  />
-                </span>
-              ) : null}
-              <span className="c-thumb">
-                {isImage
-                  ? <img src={`/${file}`} alt="" loading="lazy" />
-                  : <IconFile width={18} height={18} />}
+      <div className="card">
+        <div className={`dgrid reg${bulkActions ? " selectable" : ""}`}>
+          <div className="dhead">
+            {bulkActions ? (
+              <span className="c-check">
+                <input
+                  type="checkbox"
+                  checked={allShownSelected}
+                  onChange={toggleAll}
+                  aria-label="Select all shown documents"
+                />
               </span>
-
-              <span className="c-id">{d.document_id.slice(0, 8)}</span>
-              <span><StatusPill status={d.status} /></span>
-              <span className="c-vend">{d.vendor_name ?? "—"}</span>
-              <span className="c-proj">{d.project_code ?? "—"}</span>
-              <span className="c-ref">{refOf(d) ?? "—"}</span>
-              {money(d.total_value)
-                ? <span className="c-amt">{money(d.total_value)}</span>
-                : <span className="c-amt pending">{isWaiting(d) ? "reading…" : "—"}</span>}
-              <span><TypePill type={d.document_type} /></span>
-              <span className="c-date">
-                {d.source === "SCAN" ? "Scanned" : "Uploaded"} {shortDate(d.uploaded_at)}
-              </span>
-              <span className="open-sm" aria-hidden="true">
-                <IconArrow width={18} height={18} />
-              </span>
-            </div>
-          );
-        }) : (
-          <div className="empty">
-            {docs.length ? "No document matches these filters." : emptyLabel}
+            ) : null}
+            <span />
+            <span>Document</span>
+            <span>Status</span>
+            <span>Vendor</span>
+            <span>Project</span>
+            <span>Reference</span>
+            <span className="r">Amount</span>
+            <span>Type</span>
+            <span>Captured</span>
+            <span />
           </div>
-        )}
+
+          {shown.length ? shown.map((d) => {
+            const file = d.file_paths?.[0];
+            const isImage = file && IMAGE_RE.test(file);
+            return (
+              <div
+                key={d.document_id}
+                className="drow"
+                role="button"
+                tabIndex={0}
+                onClick={() => onOpenDocument(d.document_id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onOpenDocument(d.document_id);
+                  }
+                }}
+                aria-label={`Review ${d.document_id}`}
+              >
+                {bulkActions ? (
+                  <span className="c-check" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(d.document_id)}
+                      onChange={() => toggleOne(d.document_id)}
+                      aria-label={`Select ${d.document_id}`}
+                    />
+                  </span>
+                ) : null}
+                <span className="c-thumb">
+                  {isImage
+                    ? <img src={`/${file}`} alt="" loading="lazy" />
+                    : <IconFile width={18} height={18} />}
+                </span>
+
+                <span className="c-id">{d.document_id.slice(0, 8)}</span>
+                <span><StatusPill status={d.status} /></span>
+                <span className="c-vend">{d.vendor_name ?? "—"}</span>
+                <span className="c-proj">{d.project_code ?? "—"}</span>
+                <span className="c-ref">{refOf(d) ?? "—"}</span>
+                {money(d.total_value)
+                  ? <span className="c-amt">{money(d.total_value)}</span>
+                  : <span className="c-amt pending">{isWaiting(d) ? "reading…" : "—"}</span>}
+                <span><TypePill type={d.document_type} /></span>
+                <span className="c-date">
+                  {d.source === "SCAN" ? "Scanned" : "Uploaded"} {shortDate(d.uploaded_at)}
+                </span>
+                <span className="open-sm" aria-hidden="true">
+                  <IconArrow width={18} height={18} />
+                </span>
+              </div>
+            );
+          }) : (
+            <div className="empty">
+              {docs.length ? "No document matches these filters." : emptyLabel}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
