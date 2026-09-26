@@ -10,6 +10,7 @@ export function FilterBar({
   projects = null,   // pass a project list to show the project select
   dates = false,
   placeholder = "Search document ID or project…",
+  actions = null,    // extra controls (e.g. bulk Process/Delete) on the same line as the filters
 }) {
   const set = (patch) => onChange({ ...value, ...patch });
 
@@ -78,6 +79,8 @@ export function FilterBar({
           </label>
         </>
       ) : null}
+
+      {actions ? <div className="filter-bar-actions">{actions}</div> : null}
     </div>
   );
 }

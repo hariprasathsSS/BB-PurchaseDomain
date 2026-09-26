@@ -232,6 +232,12 @@ export const IconAlertTriangle = (p) => (
   </svg>
 );
 
+export const IconEdit = (p) => (
+  <svg {...base} {...p}>
+    <path d="M4 20l1-4.5L15.5 5 19 8.5 8.5 19z" /><path d="M13.5 6.5L17.5 10.5" />
+  </svg>
+);
+
 export const IconBell = (p) => (
   <svg {...base} {...p}>
     <path d="M6 9a6 6 0 0 1 12 0c0 4 1.5 5.5 2 6H4c.5-.5 2-2 2-6z" />

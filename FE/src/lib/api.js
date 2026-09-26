@@ -76,11 +76,6 @@ export const api = {
   createSession: (projectId) =>
     send("/api/v1/sessions", "POST", { project_id: projectId, created_by: "web" }),
 
-  /* A file download, not JSON: the response carries Content-Disposition, so
-     the browser saves it. Returned as a URL rather than fetched — an anchor
-     gets the filename the server chose, which a blob round-trip would lose. */
-  exportUrl: (projectId) => `/api/v1/projects/${projectId}/export`,
-
   /* Multipart, so it does not go through send(). One file is one document —
      no document-type hint from the console; the classifier's own read of the
      pixels is what decides what gets stored. */

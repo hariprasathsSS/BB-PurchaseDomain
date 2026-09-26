@@ -186,6 +186,12 @@ CREATE TABLE IF NOT EXISTS doc_headers (
   reviewed_by       TEXT,
   reviewed_at       TEXT,
   rejection_reason  TEXT,
+  -- Set only when an already-APPROVED document is reopened and saved again
+  -- (the pencil-edit toggle in ReviewModal) — who touched it and when,
+  -- kept separate from reviewed_by/reviewed_at so the original approval
+  -- itself is never overwritten.
+  edited_by         TEXT,
+  edited_at         TEXT,
 
   -- Set only when extract.reconcile_batch silently overwrote a field this
   -- document's own extraction misread — a reference number two sibling
@@ -282,12 +288,42 @@ CREATE TABLE IF NOT EXISTS quote_picks (
   PRIMARY KEY (project_id, material_id)
 );
 
+-- A document (INVOICE/DELIVERY/INWARD/PURCHASE_BILL) is gone once deleted —
+-- documents/doc_headers/doc_lines really are removed, on purpose (see
+-- delete_document in main.py) — but po_reconciliation's Delivery Timeline
+-- still needs to say "<type> deleted — <time>" for it, including for a
+-- delivery every one of whose documents has since been removed. This is a
+-- one-way audit trail, not a soft-delete: nothing here is ever read back
+-- into a live document, only folded into a Delivery Timeline entry by
+-- po_number/doc_number/dc_number the same way a live document would be
+-- grouped. No foreign keys — document_id it names is already gone by the
+-- time this row is written.
+CREATE TABLE IF NOT EXISTS deleted_documents (
+  id               INTEGER PRIMARY KEY,
+  document_id      TEXT NOT NULL,
+  project_id       TEXT,
+  document_type    TEXT,
+  doc_number       TEXT,
+  po_number        TEXT,
+  dc_number        TEXT,
+  vendor_id        TEXT,
+  vendor_name      TEXT,
+  uploaded_at      TEXT,
+  reviewed_by      TEXT,
+  reviewed_at      TEXT,
+  edited_by        TEXT,
+  edited_at        TEXT,
+  rejection_reason TEXT,
+  deleted_at       TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS ix_headers_date ON doc_headers(doc_date);
 CREATE INDEX IF NOT EXISTS ix_documents_project ON documents(project_id);
 CREATE INDEX IF NOT EXISTS ix_sites_project ON sites(project_id);
 CREATE INDEX IF NOT EXISTS ix_quotations_project ON quotations(project_id);
 CREATE INDEX IF NOT EXISTS ix_quotation_lines_quotation ON quotation_lines(quotation_id);
 CREATE INDEX IF NOT EXISTS ix_quote_picks_project ON quote_picks(project_id);
+CREATE INDEX IF NOT EXISTS ix_deleted_documents_po ON deleted_documents(project_id, po_number);
 """
 
 
@@ -368,6 +404,8 @@ _MIGRATIONS = {
         ("min_number", "TEXT"),
         ("vehicle_number", "TEXT"),
         ("correction_note", "TEXT"),
+        ("edited_by", "TEXT"),
+        ("edited_at", "TEXT"),
     ],
     "doc_lines": [
         ("accept_qty", "REAL"),

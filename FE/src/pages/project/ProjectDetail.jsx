@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { IconBack, IconDownload, IconPlus, IconPrint, IconTrash } from "../../components/Icons.jsx";
+import { IconBack, IconPlus, IconTrash } from "../../components/Icons.jsx";
 import { AddDocumentMenu } from "../../components/AddDocumentMenu.jsx";
 import { DocumentsSection } from "../../components/DocumentsSection.jsx";
 import { Modal } from "../../components/Modal.jsx";
@@ -76,21 +76,6 @@ export function ProjectDetail({ project, docs, materials, reload, onOpenDocument
             </div>
             <div className="spacer" />
             <div className="phead-actions">
-              <button className="btn btn-out btn-sm" type="button" onClick={() => window.print()}>
-                <IconPrint width={16} height={16} />
-                Print
-              </button>
-              {/* An anchor, not a fetch: the server names the file in its
-                  Content-Disposition, and letting the browser handle the
-                  download keeps that name. */}
-              <a
-                className="btn btn-out btn-sm"
-                href={api.exportUrl(project.id)}
-                title="Summary, documents, line items and materials rollup as .xlsx"
-              >
-                <IconDownload width={16} height={16} />
-                Export
-              </a>
               <AddDocumentMenu
                 onScan={() => onScan(project)}
                 onUpload={() => onAddDocument(project)}
@@ -224,6 +209,8 @@ export function ProjectDetail({ project, docs, materials, reload, onOpenDocument
             docs={projectDocs}
             onOpenDocument={onOpenDocument}
             emptyLabel="No documents in this project yet."
+            bulkActions
+            reload={reload}
           />
         </Modal>
       ) : null}

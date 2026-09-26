@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { StatusPill, TypePill } from "../../components/Pills.jsx";
 import {
   IconAlertTriangle, IconArrow, IconBack, IconCheck, IconChevron, IconClock, IconClose,
-  IconExternalLink, IconTrash, IconTruck, IconZoomIn, IconZoomOut,
+  IconEdit, IconExternalLink, IconTrash, IconTruck, IconZoomIn, IconZoomOut,
 } from "../../components/Icons.jsx";
 import { AddDocumentMenu } from "../../components/AddDocumentMenu.jsx";
 import { DocumentsSection } from "../../components/DocumentsSection.jsx";
@@ -13,7 +13,7 @@ import { LineItems } from "../../features/review/LineItems.jsx";
 import { HEADER_KEYS, LINE_FIELDS } from "../../features/review/schema.js";
 import { api } from "../../lib/api.js";
 import { go } from "../../lib/useHashRoute.js";
-import { docTypeLabel, isLocked, isWaiting, longDate, money, qty, shortDate } from "../../lib/format.js";
+import { docTypeLabel, eventTime, isLocked, isWaiting, longDate, money, qty, shortDate } from "../../lib/format.js";
 
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 3;
@@ -93,6 +93,51 @@ function DocumentPreview({ filePaths }) {
       ) : (
         <div className="empty-mini" style={{ padding: "var(--s3)" }}>No scanned page for this document.</div>
       )}
+    </div>
+  );
+}
+
+/* The PO document's own history — captured, approved/rejected, and edited
+   (the pencil-edit toggle lets an approved PO be corrected same as any
+   other document) — same event vocabulary and dot-and-line rail as a
+   delivery's own history in the Delivery info tab's Delivery Timeline, just
+   for one document instead of a whole group of them, so there's no
+   collapse/expand or "next delivery" concept needed here. */
+function DocumentTimeline({ doc }) {
+  const events = useMemo(() => {
+    const label = docTypeLabel(doc.document_type);
+    const list = [];
+    if (doc.uploaded_at) list.push({ at: doc.uploaded_at, text: `${label} captured` });
+    if (doc.status === "APPROVED" && doc.header?.reviewed_at) {
+      list.push({ at: doc.header.reviewed_at, text: `${label} approved by ${doc.header.reviewed_by ?? "—"}` });
+    } else if (doc.status === "REJECTED" && doc.header?.reviewed_at) {
+      list.push({
+        at: doc.header.reviewed_at,
+        text: `${label} rejected by ${doc.header.reviewed_by ?? "—"}`
+          + (doc.header.rejection_reason ? ` — ${doc.header.rejection_reason}` : ""),
+      });
+    }
+    if (doc.header?.edited_by && doc.header?.edited_at) {
+      list.push({ at: doc.header.edited_at, text: `${label} edited by ${doc.header.edited_by}` });
+    }
+    return list.sort((a, b) => toMs(a.at) - toMs(b.at));
+  }, [doc]);
+
+  if (!events.length) return null;
+
+  return (
+    <div className="card compare-links delivery-timeline">
+      <div className="aside-card-head">
+        <span className="aside-card-icon"><IconClock width={18} height={18} /></span>
+        <h3>Document Timeline</h3>
+      </div>
+      <ul className="timeline-events timeline-events-standalone">
+        {events.map((ev, i) => (
+          <li key={i}>
+            {ev.text} — <span className="timeline-event-time">{eventTime(ev.at)}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -343,22 +388,90 @@ function DeliverySummary({ po, deliveries, deliveredValue, status }) {
   );
 }
 
-/* One entry per delivery, dated by the earliest document any of its
-   Invoice/MIN Voucher/Purchase Bill actually carries — real capture dates,
-   not a promised delivery schedule this data has no concept of, which is
-   also why "Next delivery" below is always the same static placeholder
-   rather than a forecast. */
+// uploaded_at ("2026-09-26 11:51:27") and reviewed_at/edited_at/deleted_at
+// ("2026-09-26T11:51:39+00:00") come back in two different shapes — this is
+// the one place both get compared against each other, so it parses either
+// into a real instant rather than relying on either's own raw string order.
+// uploaded_at is genuinely UTC (SQLite's own datetime('now')) but carries no
+// offset, so it's forced to +00:00 explicitly here — left as-is, a browser
+// not itself on UTC parses it as *local* time instead, shifting every
+// "captured" event by the viewer's own UTC offset relative to every
+// reviewed_at/edited_at/deleted_at (which already says +00:00), and it was
+// exactly that shift burying a document's own "captured" line away from its
+// "approved" one even when the two were seconds apart.
+const toMs = (stamp) => {
+  const s = String(stamp).replace(" ", "T");
+  return new Date(/[+-]\d\d:\d\d$|Z$/.test(s) ? s : `${s}+00:00`).getTime();
+};
+
+/* One entry per delivery, oldest first — "Next delivery" (below) reads
+   naturally as moving forward in time from the one before it, and only runs
+   out once every real delivery has had its turn.
+
+   Each entry is its own document's worth of history, not one summary
+   sentence: captured (uploaded), approved or rejected, and — since the
+   pencil-edit toggle lets an approved document be corrected — edited,
+   across every document the delivery is made of (Invoice, MIN Voucher,
+   Purchase Bill, and a real Delivery challan when one exists). Sorted
+   chronologically so the sequence of events reads the way it happened, not
+   grouped by which document produced it.
+
+   The first delivery's own history starts open — openKeys is which
+   deliveries' history is currently showing, independent of one another:
+   opening one doesn't close any other that's already open, only its own
+   title click does that. */
 function DeliveryTimeline({ deliveries }) {
-  const events = useMemo(() => {
+  const entries = useMemo(() => {
     return deliveries
       .map((d) => {
-        const dates = d.documents.map((doc) => doc.uploaded_at).filter(Boolean).sort();
-        const types = [...new Set(d.documents.map((doc) => docTypeLabel(doc.document_type)))];
-        return { key: d.doc_number, date: dates[0], types, status: d.verification.status };
+        const events = [];
+        // deleted_documents is folded in here only — a document already
+        // deleted has nothing left to open, so it stays out of d.documents
+        // itself, which the Delivery info list below still renders as
+        // clickable rows (see po_reconciliation in main.py).
+        [...d.documents, ...(d.deleted_documents ?? [])].forEach((doc) => {
+          const label = docTypeLabel(doc.document_type);
+          if (doc.uploaded_at) events.push({ at: doc.uploaded_at, text: `${label} captured` });
+          if (doc.status === "APPROVED" && doc.reviewed_at) {
+            events.push({ at: doc.reviewed_at, text: `${label} approved by ${doc.reviewed_by ?? "—"}` });
+          } else if (doc.status === "REJECTED" && doc.reviewed_at) {
+            events.push({
+              at: doc.reviewed_at,
+              text: `${label} rejected by ${doc.reviewed_by ?? "—"}`
+                + (doc.rejection_reason ? ` — ${doc.rejection_reason}` : ""),
+            });
+          }
+          if (doc.edited_by && doc.edited_at) {
+            events.push({ at: doc.edited_at, text: `${label} edited by ${doc.edited_by}` });
+          }
+          if (doc.deleted_at) {
+            events.push({ at: doc.deleted_at, text: `${label} deleted` });
+          }
+        });
+        // Sorted by actual instant, not by the raw string — uploaded_at
+        // comes back as "2026-09-26 11:51:27" (a space) while reviewed_at/
+        // edited_at/deleted_at are ISO ("...T11:51:39+00:00"), and a plain
+        // string compare puts every space-formatted timestamp before every
+        // T-formatted one regardless of which actually happened first —
+        // which used to bury a document's own "captured" line away from
+        // its "approved"/"edited"/"deleted" line even when they were
+        // seconds apart.
+        events.sort((a, b) => toMs(a.at) - toMs(b.at));
+        return {
+          key: d.doc_number, docNumber: d.doc_number,
+          date: events[0]?.at, events, status: d.verification.status,
+        };
       })
       .filter((e) => e.date)
-      .sort((a, b) => (a.date < b.date ? 1 : -1));
+      .sort((a, b) => toMs(a.date) - toMs(b.date));
   }, [deliveries]);
+
+  const [openKeys, setOpenKeys] = useState(() => new Set(entries[0] ? [entries[0].key] : []));
+  const toggleOpen = (key) => setOpenKeys((prev) => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
 
   return (
     <div className="card compare-links delivery-timeline">
@@ -367,20 +480,35 @@ function DeliveryTimeline({ deliveries }) {
         <h3>Delivery Timeline</h3>
       </div>
       <ul className="timeline">
-        {events.map((e) => (
-          <li key={e.key}>
-            <span className={`timeline-dot ${e.status === "verified" ? "d-ok" : e.status === "mismatch" ? "d-no" : "d-ink"}`} />
-            <div>
-              <div className="timeline-date">{longDate(e.date)}</div>
-              <div className="timeline-desc">
-                {e.types.join(", ")} captured.{" "}
-                {e.status === "verified" ? "All documents extracted and verified."
-                  : e.status === "mismatch" ? "Documents disagree — see Issues below."
-                  : "Still awaiting a matching document."}
+        {entries.map((e) => {
+          const isOpen = openKeys.has(e.key);
+          return (
+            <li key={e.key}>
+              <span className={`timeline-dot ${e.status === "verified" ? "d-ok" : e.status === "mismatch" ? "d-no" : "d-ink"}`} />
+              <div>
+                <button
+                  type="button"
+                  className={`timeline-toggle ${isOpen ? "is-open" : ""}`}
+                  onClick={() => toggleOpen(e.key)}
+                  aria-expanded={isOpen}
+                >
+                  <span className="timeline-date">
+                    {longDate(e.date)}{e.docNumber ? ` · ${e.docNumber}` : ""}
+                  </span>
+                </button>
+                {isOpen ? (
+                  <ul className="timeline-events">
+                    {e.events.map((ev, j) => (
+                      <li key={j}>
+                        {ev.text} — <span className="timeline-event-time">{eventTime(ev.at)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
         <li className="is-future">
           <span className="timeline-dot d-mute" />
           <div>
@@ -500,6 +628,11 @@ export function ComparePage({
   const [recon, setRecon] = useState(null);
   const [reviewer, setReviewer] = useState(() => localStorage.getItem("reviewerName") ?? "");
   const [rejecting, setRejecting] = useState(false);
+  /* Reopens an APPROVED PO's form for a correction, without moving it back
+     to EXTRACTED — same pencil-edit toggle as ReviewModal's, on the PO tab
+     here instead of in a popup. Only ever true while po.status is still
+     APPROVED. */
+  const [editingApproved, setEditingApproved] = useState(false);
   const [reason, setReason] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -563,10 +696,10 @@ export function ComparePage({
       lines: d.lines.map((l) => (l.line_no === lineNo ? { ...l, [key]: value } : l)),
     }));
 
-  const save = useCallback(async ({ silent = false } = {}) => {
+  const save = useCallback(async ({ silent = false, extra = {} } = {}) => {
     setErr("");
     try {
-      const updated = await api.saveDocument(documentId, buildEdits(draft));
+      const updated = await api.saveDocument(documentId, { ...buildEdits(draft), ...extra });
       if (!silent) { setPo(updated); reload(); }
       return updated;
     } catch (e) {
@@ -574,6 +707,37 @@ export function ComparePage({
       return null;
     }
   }, [documentId, draft, reload]);
+
+  /* Pencil at the top of the PO tab — snapshots the PO's current
+     (already-approved) values into draft, same as ReviewModal's version. */
+  const beginEditApproved = () => {
+    setErr("");
+    setDraft({
+      header: { ...(po.header ?? {}) },
+      lines: (po.lines ?? []).map((l) => ({ ...l })),
+    });
+    setEditingApproved(true);
+  };
+
+  /* Same "enter your name first" gate Approve has always had here — see
+     decide() below — applied to this Save instead. Records the name onto
+     edited_by/edited_at server-side (reviewed_by/reviewed_at, the original
+     approval, is left untouched) and drops back to the read-only Approved
+     view on success. */
+  const saveApprovedEdit = async () => {
+    const name = reviewer.trim();
+    if (!name) { setErr("Enter your name first."); return; }
+    localStorage.setItem("reviewerName", name);
+    setBusy(true);
+    const ok = await save({ extra: { edited_by: name } });
+    setBusy(false);
+    if (ok) setEditingApproved(false);
+  };
+
+  const cancelEditApproved = () => {
+    setErr("");
+    setEditingApproved(false);
+  };
 
   const decide = async (kind) => {
     const name = reviewer.trim();
@@ -716,7 +880,7 @@ export function ComparePage({
     : recon.deliveries.every((d) => d.verification.status === "verified") ? "verified"
     : "pending";
 
-  const locked = isLocked(po);
+  const locked = isLocked(po) && !editingApproved;
   const header = locked ? (po.header ?? {}) : draft?.header;
   const lines = locked ? (po.lines ?? []) : draft?.lines;
 
@@ -808,6 +972,20 @@ export function ComparePage({
         {section === "po" ? (
         <div className="compare-layout">
           <div className="card compare-main">
+            {po.status === "APPROVED" && !editingApproved ? (
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="icon-btn-bare"
+                  onClick={beginEditApproved}
+                  title="Edit this PO"
+                  aria-label="Edit this PO"
+                >
+                  <IconEdit width={26} height={26} />
+                </button>
+              </div>
+            ) : null}
+
             {isWaiting(po) ? (
               <div className="banner banner-wait">Extraction in progress… this updates automatically.</div>
             ) : null}
@@ -832,6 +1010,22 @@ export function ComparePage({
                     {po.status === "APPROVED"
                       ? `Approved by ${po.header?.reviewed_by} on ${po.header?.reviewed_at}`
                       : `Rejected by ${po.header?.reviewed_by} on ${po.header?.reviewed_at}${po.header?.rejection_reason ? ` — ${po.header.rejection_reason}` : ""}`}
+                  </div>
+                ) : editingApproved ? (
+                  <div className="field-section">
+                    <h3>Decision</h3>
+                    <div className="reviewer-row">
+                      <input
+                        className="input"
+                        placeholder="Your name"
+                        value={reviewer}
+                        onChange={(e) => setReviewer(e.target.value)}
+                      />
+                      <button className="btn btn-ink" onClick={saveApprovedEdit} disabled={busy}>Save</button>
+                      <button className="btn btn-out" onClick={cancelEditApproved} disabled={busy}>Cancel</button>
+                    </div>
+
+                    {err ? <div className="banner banner-err" style={{ marginTop: 16 }}>{err}</div> : null}
                   </div>
                 ) : (
                   <div className="field-section">
@@ -875,6 +1069,7 @@ export function ComparePage({
 
           <div className="compare-aside">
             <DocumentPreview filePaths={po.file_paths} />
+            <DocumentTimeline doc={po} />
           </div>
         </div>
         ) : section === "delivery" ? (

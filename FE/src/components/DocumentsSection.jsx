@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { FilterBar } from "./FilterBar.jsx";
 import { StatusPill, TypePill } from "./Pills.jsx";
 import { IconArrow, IconFile } from "./Icons.jsx";
+import { api } from "../lib/api.js";
 import { IMAGE_RE, isWaiting, matchesFilter, money, refOf, shortDate } from "../lib/format.js";
 
 /* The same register row + filter bar the overall Document Register uses
@@ -10,17 +11,140 @@ import { IMAGE_RE, isWaiting, matchesFilter, money, refOf, shortDate } from "../
    its POs) and a PO's own Documents tab (that PO plus everything referencing
    it: invoice, MIN Voucher, Purchase Bill, anything else). The caller
    decides the scope by which `docs` it passes in; this only filters and
-   renders it. */
-export function DocumentsSection({ docs, projects = null, onOpenDocument, emptyLabel = "Nothing here yet." }) {
+   renders it.
+
+   bulkActions turns on row checkboxes plus a Process/Delete pair on the
+   filter bar's own line — opt-in, since the Document Register's read-only
+   table has no `reload` to hand back and no business doing either action
+   across every project at once. */
+export function DocumentsSection({
+  docs,
+  projects = null,
+  onOpenDocument,
+  emptyLabel = "Nothing here yet.",
+  bulkActions = false,
+  reload,
+}) {
   const [filter, setFilter] = useState({ q: "", project: "", type: "", status: "" });
+  const [selected, setSelected] = useState(() => new Set());
+  const [working, setWorking] = useState(false);
+  const [actionErr, setActionErr] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const shown = useMemo(() => docs.filter((d) => matchesFilter(d, filter)), [docs, filter]);
   const scanned = shown.filter((d) => d.source === "SCAN").length;
   const pending = shown.filter(isWaiting).length;
 
+  const selectedDocs = useMemo(
+    () => shown.filter((d) => selected.has(d.document_id)),
+    [shown, selected]
+  );
+  const allShownSelected = shown.length > 0 && selectedDocs.length === shown.length;
+  // PENDING is a document the console chose "Draft" for (or one that just
+  // hasn't been picked up yet) — confirmed, but extraction was never queued.
+  // Process only makes sense while every selected row is still in that state.
+  const canProcess = selectedDocs.length > 0 && selectedDocs.every((d) => d.status === "PENDING");
+  const canDelete = selectedDocs.length > 0;
+
+  const toggleOne = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const shownIds = shown.map((d) => d.document_id);
+      if (allShownSelected) shownIds.forEach((id) => next.delete(id));
+      else shownIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  const runProcess = async () => {
+    setWorking(true);
+    setActionErr("");
+    try {
+      await api.processDocuments(selectedDocs.map((d) => d.document_id));
+      setSelected(new Set());
+      await reload?.();
+    } catch (e) {
+      setActionErr(`Could not process — ${e.message}`);
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const runDelete = async () => {
+    setWorking(true);
+    setActionErr("");
+    try {
+      await Promise.all(selectedDocs.map((d) => api.deleteDocument(d.document_id)));
+      setSelected(new Set());
+      setConfirmingDelete(false);
+      await reload?.();
+    } catch (e) {
+      setActionErr(`Could not delete — ${e.message}`);
+    } finally {
+      setWorking(false);
+    }
+  };
+
   return (
     <div className="section">
-      <FilterBar value={filter} onChange={setFilter} projects={projects} />
+      <FilterBar
+        value={filter}
+        onChange={setFilter}
+        projects={projects}
+        actions={bulkActions ? (
+          <>
+            <button
+              className="btn btn-ink btn-sm"
+              type="button"
+              onClick={runProcess}
+              disabled={!canProcess || working}
+              title="Only available while every selected document is still a draft"
+            >
+              Process
+            </button>
+            <button
+              className="btn btn-signal btn-sm"
+              type="button"
+              onClick={() => setConfirmingDelete(true)}
+              disabled={!canDelete || working}
+            >
+              Delete
+            </button>
+          </>
+        ) : null}
+      />
+
+      {actionErr ? <div className="banner banner-err">{actionErr}</div> : null}
+
+      {confirmingDelete ? (
+        <div className="banner banner-err">
+          <div>
+            Delete {selectedDocs.length} document{selectedDocs.length === 1 ? "" : "s"}? This can't
+            be undone.
+          </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+            <button className="btn btn-signal btn-sm" type="button" onClick={runDelete} disabled={working}>
+              {working ? "Deleting…" : "Delete"}
+            </button>
+            <button
+              className="btn btn-out btn-sm"
+              type="button"
+              onClick={() => setConfirmingDelete(false)}
+              disabled={working}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="section-head">
         <span className="tag">{shown.length} of {docs.length}</span>
@@ -28,8 +152,18 @@ export function DocumentsSection({ docs, projects = null, onOpenDocument, emptyL
         {pending ? <span className="tag">{pending} still reading</span> : null}
       </div>
 
-      <div className="dgrid reg">
+      <div className={`dgrid reg${bulkActions ? " selectable" : ""}`}>
         <div className="dhead">
+          {bulkActions ? (
+            <span className="c-check">
+              <input
+                type="checkbox"
+                checked={allShownSelected}
+                onChange={toggleAll}
+                aria-label="Select all shown documents"
+              />
+            </span>
+          ) : null}
           <span />
           <span>Document</span>
           <span>Status</span>
@@ -46,13 +180,30 @@ export function DocumentsSection({ docs, projects = null, onOpenDocument, emptyL
           const file = d.file_paths?.[0];
           const isImage = file && IMAGE_RE.test(file);
           return (
-            <button
+            <div
               key={d.document_id}
               className="drow"
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => onOpenDocument(d.document_id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onOpenDocument(d.document_id);
+                }
+              }}
               aria-label={`Review ${d.document_id}`}
             >
+              {bulkActions ? (
+                <span className="c-check" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(d.document_id)}
+                    onChange={() => toggleOne(d.document_id)}
+                    aria-label={`Select ${d.document_id}`}
+                  />
+                </span>
+              ) : null}
               <span className="c-thumb">
                 {isImage
                   ? <img src={`/${file}`} alt="" loading="lazy" />
@@ -74,7 +225,7 @@ export function DocumentsSection({ docs, projects = null, onOpenDocument, emptyL
               <span className="open-sm" aria-hidden="true">
                 <IconArrow width={18} height={18} />
               </span>
-            </button>
+            </div>
           );
         }) : (
           <div className="empty">
